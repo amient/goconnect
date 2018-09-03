@@ -1,7 +1,6 @@
 package goconnect
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -20,6 +19,8 @@ type Pipeline struct {
 }
 
 func CreatePipeline(source *Source, sink *Sink, commitInterval *time.Duration) (*Pipeline) {
+	log.Print("Initializing Pipeline")
+
 	//initialize declared pipeline.go
 	if err := (*source).Initialize(); err != nil {
 		panic(err)
@@ -28,6 +29,7 @@ func CreatePipeline(source *Source, sink *Sink, commitInterval *time.Duration) (
 	if err := (*sink).Initialize(); err != nil {
 		panic(err)
 	}
+
 	return &Pipeline{
 		source:         source,
 		sink:           sink,
@@ -37,6 +39,8 @@ func CreatePipeline(source *Source, sink *Sink, commitInterval *time.Duration) (
 
 func (p *Pipeline) Run() {
 
+	log.Print("Running pipeline")
+
 	//open input data stream channel
 	input := (*p.source).Records()
 
@@ -44,18 +48,14 @@ func (p *Pipeline) Run() {
 	committerTick := time.NewTicker(*p.commitInterval).C
 
 	//open termination signal channel
-	sigterm := make(chan error)
-	go func() {
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGSTOP)
-		sigterm <- fmt.Errorf("Signal %v", <-c)
-	}()
-
+	sigterm := make(chan os.Signal, 1)
+	signal.Notify(sigterm, syscall.SIGINT, syscall.SIGTERM)
+	
 	for {
 		select {
 
 		case sig := <-sigterm:
-			log.Println("Exit:", sig)
+			log.Printf("Caught signal %v: terminating\n", sig)
 			p.commitWorkSoFar()
 			(*p.source).Close()
 
@@ -66,7 +66,7 @@ func (p *Pipeline) Run() {
 			}
 		case msg, more := <-input:
 			if !more {
-				log.Printf("handle: input Channel closed")
+				log.Printf("Source Channel Terminated")
 				(*p.sink).Close()
 				return
 			} else {
