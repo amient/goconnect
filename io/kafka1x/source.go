@@ -15,9 +15,15 @@ type Source struct {
 	c         *kafka.Consumer
 	closed    chan bool
 	cerr	chan error
+	records 	chan *goconnect.Record
 }
 
-func (source *Source) Initialize() error {
+func (source *Source) Apply() (goconnect.RecordStream) {
+	source.records = make(chan *goconnect.Record)
+	return source.records
+}
+
+func (source *Source) Materialize() error {
 	var err error
 	source.c, err = kafka.NewConsumer(&kafka.ConfigMap{
 		"bootstrap.servers": source.Bootstrap,
@@ -35,13 +41,11 @@ func (source *Source) Initialize() error {
 	source.closed = make(chan bool)
 	source.cerr = make(chan error)
 	log.Printf("Subscribing to kafka topic %s", source.Topic)
-	return source.c.Subscribe(source.Topic, nil)
-}
-
-func (source *Source) Records() (<-chan *goconnect.Record) {
-	result := make(chan *goconnect.Record)
+	if err := source.c.Subscribe(source.Topic, nil); err != nil {
+		panic(err)
+	}
 	go func() {
-		defer close(result)
+		defer close(source.records)
 		for {
 			select {
 			case <-source.closed:
@@ -57,7 +61,7 @@ func (source *Source) Records() (<-chan *goconnect.Record) {
 					source.c.Unassign()
 				case *kafka.Message:
 					pos := uint64(e.TopicPartition.Offset)
-					result <- &goconnect.Record{
+					source.records <- &goconnect.Record{
 						Position:  &pos,
 						Key:       &e.Key,
 						Value:     &e.Value,
@@ -72,8 +76,10 @@ func (source *Source) Records() (<-chan *goconnect.Record) {
 			}
 		}
 	}()
-	return result
+	return nil
 }
+
+
 
 func (source *Source) Commit(position uint64) {
 	source.c.Commit()

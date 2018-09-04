@@ -17,10 +17,17 @@ type Source struct {
 	Group        string
 	BindingKey   string
 	empty        []byte
+	output       chan *goconnect.Record
 }
 
-func (c *Source) Initialize() error {
+func (c *Source) Apply() (goconnect.RecordStream) {
+	if c.output == nil {
+		c.output = make(chan *goconnect.Record)
+	}
+	return c.output
+}
 
+func (c *Source) Materialize() error {
 	var err error
 
 	log.Printf("dialing %q", c.Uri)
@@ -69,10 +76,6 @@ func (c *Source) Initialize() error {
 	log.Printf("declared Queue (%q %d messages, %d consumers)",
 		queue.Name, queue.Messages, queue.Consumers)
 
-	return nil
-}
-
-func (c *Source) Records() (<-chan *goconnect.Record) {
 
 	log.Printf("binding to Exchange (key %q)", c.BindingKey)
 	if err := c.channel.QueueBind(c.QueueName, c.BindingKey, c.Exchange, false, nil, ); err != nil {
@@ -87,19 +90,21 @@ func (c *Source) Records() (<-chan *goconnect.Record) {
 		panic(err)
 	}
 
-	result := make(chan *goconnect.Record)
 	go func() {
+		log.Printf("AMQP Source Started")
+		defer log.Printf("AMQP Source Finished")
+		defer close(c.output)
 		for delivery := range deliveries {
-			result <- &goconnect.Record{
+			c.output <- &goconnect.Record{
 				&delivery.DeliveryTag,
 				&c.empty, //TODO amqp protocol has a concept of RoutingKey (string) so this could be used
 				&delivery.Body,
 				&delivery.Timestamp,
 			}
 		}
-		close(result)
 	}()
-	return result
+
+	return nil
 }
 
 func (c *Source) Commit(position uint64) {

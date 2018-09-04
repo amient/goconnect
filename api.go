@@ -9,18 +9,31 @@ type Record struct {
 	Timestamp *time.Time
 }
 
+type RecordStream <-chan *Record
+
+type RecordSource interface {
+	Apply() RecordStream
+}
+
+type Decoder interface {
+	Apply(input RecordSource) Decoder
+}
+
 type Source interface {
-	Initialize() error
-	Records() (<-chan *Record)
+	Apply() RecordStream
+	Materialize() error
 	Commit(position uint64)
 	Close() error
 }
 
-type Sink interface {
-	Initialize() error
-	Produce(record *Record)
-	Flush() error
-	Close() error
+type Checkpoint struct {
+	Position *uint64
+	Err      error
 }
 
-
+type Sink interface {
+	Materialize() error
+	Flush() error
+	Join() <-chan *Checkpoint
+	Close() error
+}

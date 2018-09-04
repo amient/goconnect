@@ -36,15 +36,14 @@ func main() {
 		Group:        *consumerTag,
 		BindingKey:   *bindingKey,
 	}
-	var sink goconnect.Sink = &kafka1x.Sink{
+
+	var sink = kafka1x.Sink{
 		Bootstrap: *kafkaBootstrap,
 		Topic:     *kafkaTopic,
-	}
+	}.Apply(source)
 
-	//initialize pipeline (this opens the connections to the respective backends)
-	pipeline := goconnect.CreatePipeline(&source, &sink, commitInterval)
+	//materialize and run the pipeline (this opens the connections to the respective backends)
+	goconnect.Execute(source, sink, *commitInterval)
 
-	//start streaming and processing the data with at-least-once guarantees
-	pipeline.Run()
 
 }

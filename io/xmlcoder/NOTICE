@@ -1,0 +1,5 @@
+node.go and reader.go in this package are borrowed and adapted from:
+
+https://github.com/fluhus/gostuff/tree/master/xmlnode
+
+Copyright (c) 2015-2017 Amit Lavon

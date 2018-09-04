@@ -11,20 +11,36 @@ type Sink struct {
 	Bootstrap string
 	Topic     string
 	p         *kafka.Producer
+	output    chan *goconnect.Checkpoint
+	input     goconnect.RecordStream
 }
 
-func (sink *Sink) Initialize() error {
+func (sink *Sink) Apply(input goconnect.Source) goconnect.Sink {
+	sink.input = input.Apply()
+	sink.output = make(chan *goconnect.Checkpoint)
+	return sink
+}
+
+
+func (sink *Sink) Materialize() error {
 	var err error
 	sink.p, err = kafka.NewProducer(&kafka.ConfigMap{"bootstrap.servers": sink.Bootstrap})
 	if err != nil {
 		return err
 	}
-	return nil
-}
+	go func() {
+		log.Printf("Kafka Sink Started")
+		defer log.Printf("Kafka Sink Finished")
+		defer close(sink.output)
+		for inputRecord := range sink.input {
+			sink.process(inputRecord)
+			sink.output <- &goconnect.Checkpoint {
+				Position: inputRecord.Position,
+				Err: nil,
+			}
+		}
 
-func (sink *Sink) Close() error {
-	defer log.Printf("Kafka Producer shutdown OK")
-	sink.p.Close()
+	}()
 	return nil
 }
 
@@ -37,7 +53,20 @@ func (sink *Sink) Flush() error {
 	}
 }
 
-func (sink *Sink) Produce(record *goconnect.Record) {
+func (sink *Sink) Join() <- chan *goconnect.Checkpoint {
+	return sink.output
+}
+
+
+func (sink *Sink) Close() error {
+	defer log.Printf("Kafka Producer shutdown OK")
+
+	sink.p.Close()
+	return nil
+}
+
+
+func (sink *Sink) process(record *goconnect.Record) {
 
 	// Delivery report handler for produced messages
 	go func() {
