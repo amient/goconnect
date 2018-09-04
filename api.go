@@ -7,7 +7,7 @@ type Record struct {
 	Key       *[]byte
 	Value     *[]byte
 	Timestamp *time.Time
-}
+
 
 type Source interface {
 	Initialize() error
