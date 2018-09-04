@@ -3,8 +3,8 @@ package std
 import (
 	"bufio"
 	"fmt"
-	"github.com/amient/goconnect"
-	"github.com/amient/goconnect/io/xmlcoder"
+	"github.com/amient/goconnect/pkg"
+	"github.com/amient/goconnect/pkg/coder/xmlcoder"
 	"log"
 	"os"
 )

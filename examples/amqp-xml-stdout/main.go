@@ -1,10 +1,10 @@
 package main
 
 import (
-	"github.com/amient/goconnect"
-	"github.com/amient/goconnect/io/amqp091"
-	"github.com/amient/goconnect/io/std"
-	"github.com/amient/goconnect/io/xmlcoder"
+	"github.com/amient/goconnect/pkg"
+	"github.com/amient/goconnect/pkg/io/amqp091"
+	"github.com/amient/goconnect/pkg/io/std"
+	"github.com/amient/goconnect/pkg/coder/xmlcoder"
 	"time"
 )
 

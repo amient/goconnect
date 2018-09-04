@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-type Pipeline struct {
+type pipeline struct {
 	source               *Source
 	sink                 *Sink
 	commitInterval       *time.Duration
@@ -19,7 +19,7 @@ type Pipeline struct {
 }
 
 func Execute(source Source, sink Sink, commitInterval time.Duration) {
-	log.Print("Materializing Pipeline")
+	log.Print("Materializing pipeline")
 
 	//Materialize declared pipeline.go
 	if err := source.Materialize(); err != nil {
@@ -30,7 +30,7 @@ func Execute(source Source, sink Sink, commitInterval time.Duration) {
 		panic(err)
 	}
 
-	p := &Pipeline{
+	p := &pipeline{
 		source:         &source,
 		sink:           &sink,
 		commitInterval: &commitInterval,
@@ -38,7 +38,7 @@ func Execute(source Source, sink Sink, commitInterval time.Duration) {
 	p.Run()
 }
 
-func (p *Pipeline) Run() error {
+func (p *pipeline) Run() error {
 
 	log.Print("Running pipeline")
 
@@ -80,7 +80,7 @@ func (p *Pipeline) Run() error {
 	}
 }
 
-func (p *Pipeline) commitWorkSoFar() {
+func (p *pipeline) commitWorkSoFar() {
 	if p.copiedMessages > 0 {
 		log.Printf("Committing %d messages / %d bytes", p.copiedMessages, p.copiedBytes)
 		if err := (*p.sink).Flush(); err != nil {

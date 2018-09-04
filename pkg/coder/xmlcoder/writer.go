@@ -2,7 +2,7 @@ package xmlcoder
 
 import (
 	"fmt"
-	"github.com/amient/goconnect/io/util"
+	"github.com/amient/goconnect/pkg/io/util"
 	"io"
 )
 

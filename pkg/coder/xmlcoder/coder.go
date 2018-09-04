@@ -2,7 +2,7 @@ package xmlcoder
 
 import (
 	"bytes"
-	"github.com/amient/goconnect"
+	"github.com/amient/goconnect/pkg"
 	"log"
 	"time"
 )

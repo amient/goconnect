@@ -2,7 +2,7 @@ package kafka1x
 
 import (
 	"fmt"
-	"github.com/amient/goconnect"
+	"github.com/amient/goconnect/pkg"
 	"github.com/confluentinc/confluent-kafka-go/kafka" //KAFKA 1.0+ client
 	"log"
 )

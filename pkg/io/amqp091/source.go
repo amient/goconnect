@@ -2,7 +2,7 @@ package amqp091
 
 import (
 	"fmt"
-	"github.com/amient/goconnect"
+	"github.com/amient/goconnect/pkg"
 	"github.com/streadway/amqp" //AMQP 0.9.1 Compatible Client
 	"log"
 )

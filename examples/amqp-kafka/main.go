@@ -2,9 +2,9 @@ package main
 
 import (
 	"flag"
-	"github.com/amient/goconnect"
-	"github.com/amient/goconnect/io/amqp091"
-	"github.com/amient/goconnect/io/kafka1x"
+	"github.com/amient/goconnect/pkg"
+	"github.com/amient/goconnect/pkg/io/amqp091"
+	"github.com/amient/goconnect/pkg/io/kafka1x"
 	"time"
 )
 
@@ -37,7 +37,8 @@ func main() {
 		BindingKey:   *bindingKey,
 	}
 
-	sink := kafka1x.Sink{Bootstrap: *kafkaBootstrap, Topic: *kafkaTopic}.Apply(source)
+	sink := &kafka1x.Sink{Bootstrap: *kafkaBootstrap, Topic: *kafkaTopic}
+	sink.Apply(source)
 
 	//materialize and run the pipeline (this opens the connections to the respective backends)
 	goconnect.Execute(source, sink, *commitInterval)
