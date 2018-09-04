@@ -10,6 +10,7 @@ a lot more efficient and has a low package and memory footprint so it can run ha
 - it scales simliarly to Kafka Connect by simply running mulitple instances of the same adapter
 - it guarantees at-least-once processing at minimum 
 - exactly-once guarantees are optional and designed in general similarly to Beam   
+- it has a concept of EventTime built in to the basic concept
 
 
 (NOTE: THE PROTOTYPE IN THIS CODEBASE DOESN'T HAVE ALL THE FEATURES LISTED ABOVE BUT THOSE ARE THE AIM AND WILL APPEAR SOON)
