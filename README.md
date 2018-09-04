@@ -14,6 +14,8 @@ a lot more efficient and has a low package and memory footprint - it can run hap
 - it is a unified data processing framework in terms of batch/stream semantics 
   if the input data is bounded the pipeline will terminate when all input elements are fully processed
   if the input data is unbounded the pipeline will run indefinitely 
+- it has a first-class support for Avro with Schema Registry
+- pipelines have a distinct declaration and materialization phases  
 
 
 (NOTE: THE PROTOTYPE IN THIS CODEBASE DOESN'T HAVE ALL THE FEATURES LISTED ABOVE BUT THOSE ARE THE AIM AND WILL APPEAR SOON)
