@@ -11,3 +11,5 @@ a lot more efficient and has a low package and memory footprint so it can run ha
 - it guarantees at-least-once processing at minimum 
 - exactly-once guarantees are optional and designed in general similarly to Beam   
 
+
+(NOTE: THE PROTOTYPE IN THIS CODEBASE DOESN'T HAVE ALL THE FEATURES LISTED ABOVE BUT THOSE ARE THE AIM AND WILL APPEAR SOON)
