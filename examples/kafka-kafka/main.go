@@ -20,7 +20,7 @@ var (
 
 func main() {
 
-	//declared pipeline stages (pure structs, no i/o happens at this point)
+	//declared pipeline stages (no i/o happens at this point, only channels are chained)
 	var source goconnect.Source = &kafka1x.Source{
 		Bootstrap: *kafkaSourceBootstrap,
 		Topic:     *kafkaSourceTopic,

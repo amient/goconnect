@@ -27,8 +27,8 @@ func main() {
 
 	flag.Parse()
 
-	//declared pipeline stages (pure structs, no i/o happens at this point)
-	var source goconnect.Source = &amqp091.Source{
+	//declared pipeline stages (no i/o happens at this point, only channels are chained)
+	source := &amqp091.Source{
 		Uri:          *uri,
 		Exchange:     *exchange,
 		ExchangeType: *exchangeType,
@@ -37,13 +37,9 @@ func main() {
 		BindingKey:   *bindingKey,
 	}
 
-	var sink = kafka1x.Sink{
-		Bootstrap: *kafkaBootstrap,
-		Topic:     *kafkaTopic,
-	}.Apply(source)
+	sink := kafka1x.Sink{Bootstrap: *kafkaBootstrap, Topic: *kafkaTopic}.Apply(source)
 
 	//materialize and run the pipeline (this opens the connections to the respective backends)
 	goconnect.Execute(source, sink, *commitInterval)
-
 
 }

@@ -8,17 +8,17 @@ import (
 	"time"
 )
 
+/**
+	wrong:
+		<?xml version =\"1.0\"?><xml attr=\"world\">hello</xml>
+	correct:
+		<?xml version ="1.0"?><xml attr="world">hello</xml>
+*/
+
 func main() {
 
-
-	//wrong:
-	// <?xml version =\"1.0\"?><xml attr=\"world\">hello</xml>
-	//correct:
-	// <?xml version ="1.0"?><xml attr="world">hello</xml>
-
-	//declared pipeline stages (pure structs, no i/o happens at this point)
-
-	source := &amqp091.Source {
+	//declared pipeline stages (no i/o happens at this point, only channels are chained)
+	source := &amqp091.Source{
 		Uri:          "amqp://guest:guest@localhost:5672",
 		Exchange:     "test-exchange",
 		ExchangeType: "direct",
@@ -33,8 +33,5 @@ func main() {
 
 	//materialize and run the pipeline (this opens the connections to the respective backends)
 	goconnect.Execute(source, sink, time.Second)
-
-
-
 
 }
