@@ -11,6 +11,7 @@ a lot more efficient and has a low package and memory footprint - it can run hap
 - it guarantees at-least-once processing at minimum 
 - exactly-once guarantees are optional and designed in general similarly to Beam   
 - it has a concept of EventTime built in to the basic concept
+- it has a first-class support for Avro with Schema Registry
 
 
 (NOTE: THE PROTOTYPE IN THIS CODEBASE DOESN'T HAVE ALL THE FEATURES LISTED ABOVE BUT THOSE ARE THE AIM AND WILL APPEAR SOON)
