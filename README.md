@@ -1,7 +1,7 @@
 # Go Connect
 
 Is a framework which sits somewhere between Kafka Connect and Apache Beam implemented in Go instead of JVM so its 
-a lot more efficient and has a low package and memory footprint so it can run happily even on tiny chips.
+a lot more efficient and has a low package and memory footprint - it can run happily even on tiny chips.
 
 - it builds linear pipelines for similar to Kafka Connect so it's goal data connectivity not general data processing 
 - it is more general than Kafka Connect and can build file-for-a-file pipelines
