@@ -20,7 +20,7 @@ type Source struct {
 	output       chan *goconnect.Record
 }
 
-func (c *Source) Apply() (goconnect.RecordStream) {
+func (c *Source) Output() <-chan *goconnect.Record {
 	if c.output == nil {
 		c.output = make(chan *goconnect.Record)
 	}

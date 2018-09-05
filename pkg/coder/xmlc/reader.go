@@ -1,4 +1,4 @@
-package xmlcoder
+package xmlc
 
 import (
 	"encoding/xml"

@@ -12,11 +12,11 @@ type Sink struct {
 	Topic     string
 	p         *kafka.Producer
 	output    chan *goconnect.Checkpoint
-	input     goconnect.RecordStream
+	input     <- chan *goconnect.Record
 }
 
-func (sink *Sink) Apply(input goconnect.Source) goconnect.Sink {
-	sink.input = input.Apply()
+func (sink *Sink) Apply(input goconnect.RecordSource) goconnect.Sink {
+	sink.input = input.Output()
 	sink.output = make(chan *goconnect.Checkpoint)
 	return sink
 }
@@ -34,10 +34,7 @@ func (sink *Sink) Materialize() error {
 		defer close(sink.output)
 		for inputRecord := range sink.input {
 			sink.process(inputRecord)
-			sink.output <- &goconnect.Checkpoint {
-				Position: inputRecord.Position,
-				Err: nil,
-			}
+			sink.output <- goconnect.NewCheckpoint(inputRecord.Position)
 		}
 
 	}()

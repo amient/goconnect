@@ -14,13 +14,15 @@ type Source struct {
 	Group     string
 	c         *kafka.Consumer
 	closed    chan bool
-	cerr	chan error
-	records 	chan *goconnect.Record
+	cerr      chan error
+	output    chan *goconnect.Record
 }
 
-func (source *Source) Apply() (goconnect.RecordStream) {
-	source.records = make(chan *goconnect.Record)
-	return source.records
+func (source *Source) Output() <-chan *goconnect.Record {
+	if source.output == nil {
+		source.output = make(chan *goconnect.Record)
+	}
+	return source.output
 }
 
 func (source *Source) Materialize() error {
@@ -32,8 +34,8 @@ func (source *Source) Materialize() error {
 			"auto.offset.reset":  "earliest", //TODO pass this as config
 			"enable.auto.commit": "false",
 		},
-		"enable.auto.commit": "false",
-		"go.events.channel.enable":        true,
+		"enable.auto.commit":       "false",
+		"go.events.channel.enable": true,
 	})
 	if err != nil {
 		return err
@@ -45,7 +47,7 @@ func (source *Source) Materialize() error {
 		panic(err)
 	}
 	go func() {
-		defer close(source.records)
+		defer close(source.output)
 		for {
 			select {
 			case <-source.closed:
@@ -61,7 +63,7 @@ func (source *Source) Materialize() error {
 					source.c.Unassign()
 				case *kafka.Message:
 					pos := uint64(e.TopicPartition.Offset)
-					source.records <- &goconnect.Record{
+					source.output <- &goconnect.Record{
 						Position:  &pos,
 						Key:       &e.Key,
 						Value:     &e.Value,
@@ -79,13 +81,11 @@ func (source *Source) Materialize() error {
 	return nil
 }
 
-
-
 func (source *Source) Commit(position uint64) {
 	source.c.Commit()
 }
 
 func (source *Source) Close() error {
 	source.closed <- true
-	return <- source.cerr
+	return <-source.cerr
 }

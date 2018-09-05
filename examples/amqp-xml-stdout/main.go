@@ -2,9 +2,9 @@ package main
 
 import (
 	"github.com/amient/goconnect/pkg"
+	"github.com/amient/goconnect/pkg/coder/xmlc"
 	"github.com/amient/goconnect/pkg/io/amqp091"
 	"github.com/amient/goconnect/pkg/io/std"
-	"github.com/amient/goconnect/pkg/coder/xmlcoder"
 	"time"
 )
 
@@ -17,6 +17,7 @@ import (
 
 func main() {
 
+
 	//declared pipeline stages (no i/o happens at this point, only channels are chained)
 	source := &amqp091.Source{
 		Uri:          "amqp://guest:guest@localhost:5672",
@@ -27,9 +28,11 @@ func main() {
 		BindingKey:   "test-key",
 	}
 
-	decoder := new(xmlcoder.Decoder).Apply(source)
+	decoder := new(xmlc.Decoder).Apply(source)
 
-	sink := new(std.OutSink).Apply(decoder)
+	encoder := new(xmlc.Encoder).Apply(decoder)
+
+	sink := new(std.OutSink).Apply(encoder)
 
 	//materialize and run the pipeline (this opens the connections to the respective backends)
 	goconnect.Execute(source, sink, time.Second)
