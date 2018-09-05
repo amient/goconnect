@@ -13,8 +13,7 @@ type pipeline struct {
 	sink                 *Sink
 	commitInterval       *time.Duration
 	lastCommit           time.Time
-	copiedMessages       uint32
-	copiedBytes          uint64
+	numProcessedElements uint32
 	lastConsumedPosition uint64
 }
 
@@ -71,7 +70,7 @@ func (p *pipeline) Run() error {
 				panic(checkpoint.Err)
 			} else {
 				p.lastConsumedPosition = *checkpoint.Position
-				p.copiedMessages++
+				p.numProcessedElements++
 				//p.copiedBytes += uint64(len(*msg.Value)) //FIXME
 			}
 
@@ -81,15 +80,14 @@ func (p *pipeline) Run() error {
 }
 
 func (p *pipeline) commitWorkSoFar() {
-	if p.copiedMessages > 0 {
-		log.Printf("Committing %d messages / %d bytes", p.copiedMessages, p.copiedBytes)
+	if p.numProcessedElements > 0 {
+		log.Printf("Committing %d elements at source position: %d", p.numProcessedElements, p.lastConsumedPosition)
 		if err := (*p.sink).Flush(); err != nil {
 			panic(err)
 		}
 		(*p.source).Commit(p.lastConsumedPosition)
 		log.Print("Commit successful")
-		p.copiedMessages = 0
-		p.copiedBytes = 0
+		p.numProcessedElements = 0
 	}
 
 }
