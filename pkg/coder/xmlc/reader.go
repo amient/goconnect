@@ -3,7 +3,12 @@ package xmlc
 import (
 	"encoding/xml"
 	"io"
+	"strings"
 )
+
+func ReadNodeFromString(input string) (Node, error) {
+	return ReadNode(strings.NewReader(input))
+}
 
 // Reads all XML data from the given reader and stores it in a root node.
 func ReadNode(r io.Reader) (Node, error) {

@@ -3,7 +3,6 @@ package xmlc
 import (
 	"bufio"
 	"bytes"
-	"fmt"
 	"github.com/amient/goconnect/pkg"
 	"log"
 	"time"
@@ -11,7 +10,7 @@ import (
 
 type XmlRecord struct {
 	Position  *uint64
-	Value     *Node
+	Value     Node
 	Timestamp *time.Time
 }
 
@@ -31,9 +30,6 @@ type Decoder struct {
 }
 
 func (d *Decoder) Apply(source goconnect.RecordSource) *Decoder {
-	if d.output != nil {
-		panic(fmt.Errorf("xmlc.Decoder already Applied"))
-	}
 	d.input = source.Output()
 	d.output = make(chan *XmlRecord)
 	go func() {
@@ -49,12 +45,14 @@ func (d *Decoder) Apply(source goconnect.RecordSource) *Decoder {
 			d.output <- &XmlRecord {
 				Position: ir.Position,
 				Timestamp: ir.Timestamp,
-				Value: &node,
+				Value: node,
 			}
 		}
 	}()
 	return d
 }
+
+//TODO func (e *Decoder) Materialize() error
 
 func (d *Decoder) Output() <-chan *XmlRecord {
 	return d.output
@@ -62,19 +60,16 @@ func (d *Decoder) Output() <-chan *XmlRecord {
 
 
 func (e *Encoder) Apply(source XmlRecordSource) *Encoder {
-	if e.output != nil {
-		panic(fmt.Errorf("xmlc.Encoder already Applied"))
-	}
-	e.output = make(chan *goconnect.Record)
 	e.input = source.Output()
+	e.output = make(chan *goconnect.Record)
 	go func() {
 		log.Printf("Xml Encoder Started")
 		defer log.Printf("Xml Encoder Finished")
 		defer close(e.output)
-		for ir := range e.input {
+		for inputRecord := range e.input {
 			var b bytes.Buffer
 			w := bufio.NewWriter(&b)
-			_, err := WriteNode(w, *ir.Value)
+			_, err := WriteNode(w, inputRecord.Value)
 			w.Flush()
 			value := b.Bytes()
 			if err != nil {
@@ -82,15 +77,17 @@ func (e *Encoder) Apply(source XmlRecordSource) *Encoder {
 				panic(err)
 			}
 			e.output <- &goconnect.Record {
-				Position: ir.Position,
-				Timestamp: ir.Timestamp,
-				Key: nil,
-				Value: &value,
+				Position:  inputRecord.Position,
+				Timestamp: inputRecord.Timestamp,
+				Key:       nil,
+				Value:     &value,
 			}
 		}
 	}()
 	return e
 }
+
+//TODO func (e *Encoder) Materialize() error
 
 func (e *Encoder) Output() <-chan *goconnect.Record {
 	return e.output
