@@ -96,7 +96,7 @@ func (c *Source) Materialize() error {
 		defer close(c.output)
 		for delivery := range deliveries {
 			c.output <- &goconnect.Record{
-				&delivery.DeliveryTag,
+				delivery.DeliveryTag,
 				&c.empty, //TODO amqp protocol has a concept of RoutingKey (string) so this could be used
 				&delivery.Body,
 				&delivery.Timestamp,

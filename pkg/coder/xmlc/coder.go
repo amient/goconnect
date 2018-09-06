@@ -9,7 +9,7 @@ import (
 )
 
 type XmlRecord struct {
-	Position  *uint64
+	Position  interface{}
 	Value     Node
 	Timestamp *time.Time
 }

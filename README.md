@@ -17,6 +17,6 @@ a lot more efficient and has a low package and memory footprint - it can run hap
   if the input data is unbounded the pipeline will run indefinitely 
 - it has a first-class support for Avro with Schema Registry
 - pipelines have a distinct declaration and materialization phases  
-- everything is statically typed (so far, but this may need to change in order to provide transparent coders and rpc)
+- in the api prototype everything is statically typed but in the final api reflection will be used
 
 (NOTE: THE PROTOTYPE IN THIS CODEBASE DOESN'T HAVE ALL THE FEATURES LISTED ABOVE BUT THOSE ARE THE AIM AND WILL APPEAR SOON)

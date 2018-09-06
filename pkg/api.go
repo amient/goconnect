@@ -3,7 +3,7 @@ package goconnect
 import "time"
 
 type Record struct {
-	Position  *uint64
+	Position  interface {}
 	Key       *[]byte
 	Value     *[]byte
 	Timestamp *time.Time
