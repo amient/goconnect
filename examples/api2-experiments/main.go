@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/amient/goconnect/pkg/coder/xmlc"
+	"log"
 	"reflect"
 	"sync"
 )
@@ -52,24 +53,18 @@ func main() {
 		return nil
 	}))
 
-	//TODO make forking possible
-	//sink2 := xmls.Apply(Fn(func(input xmlc.Node) error {
-	//	fmt.Println(sink2)
-	//	return nil
-	//}))
+	RunPipeline(sink1)
 
-	var group = new(sync.WaitGroup)
-	group.Add(1)
-	go func() {
-		for range sink1.Data() {}
-		group.Done()
-	}()
-
-	group.Wait()
-
-	//source := FromList(data)
-	//source.Apply(Modify(func () {}))
 }
+
+//TODO Pipeline options - optimistic or pessimistic commit logic
+//TODO maybe forking outputs is possible without breaking guarantees
+//TODO probably merging from multiple inputs would be possible if all of them support optimistic commit
+//sink2 := xmls.Apply(Fn(func(input xmlc.Node) error {
+//	fmt.Println(sink2)
+//	return nil
+//}))
+
 
 type Stream struct {
 	C  chan interface{}
@@ -77,11 +72,10 @@ type Stream struct {
 	up Transform
 }
 
-func (s *Stream) Data() <-chan interface{} {
+func (s *Stream) Materialize() <-chan interface{} {
 
-	fmt.Printf("Materilaizing Stream of %q \n", s.T)
+	log.Printf("Materilaizing Stream of %q \n", s.T)
 	if s.up != nil {
-		fmt.Println("Materilaizing Stream FnVal")
 		s.up.materialize()
 	}
 	return s.C
@@ -102,7 +96,7 @@ func FromList(list interface{}) Stream {
 		for i := 0; i < val.Len(); i++ {
 			result.C <- val.Index(i).Interface()
 		}
-		//fmt.Println("Closing Root List")
+		log.Println("Closing Root List")
 		close(result.C)
 
 	}()
@@ -179,7 +173,7 @@ func (fn *AggTransform) materialize() {
 	intermediateIn := reflect.MakeChan(fn.FnTyp.In(0), 0)
 	go func() {
 		defer intermediateIn.Close()
-		for d := range fn.up.Data() {
+		for d := range fn.up.Materialize() {
 			intermediateIn.Send(reflect.ValueOf(d))
 		}
 	}()
@@ -260,7 +254,7 @@ func (fn *FnTransform) output() *Stream {
 func (fn *FnTransform) materialize() {
 	go func() {
 		defer close(fn.out.C)
-		for d := range fn.up.Data() {
+		for d := range fn.up.Materialize() {
 			v := reflect.ValueOf(d)
 			r := fn.FnVal.Call([]reflect.Value{v})
 			fn.out.C <- r[0].Interface()
@@ -268,30 +262,37 @@ func (fn *FnTransform) materialize() {
 	}()
 }
 
-//
-//func Modify(fn interface{}) Transform {
-//
-//}
-//
-//type Class struct {
-//	arity int
-//}
-//
-//type Element struct {
-//	class Class
-//	value interface {}
-//}
-//
-//type Stream interface {
-//	Class() Class
-//	Channel() chan *Element
-//}
-//
-//type Transform interface {
-//	Input() Stream
-//	Output() Stream
-//	Apply(stage Transform) Transform
-//}
+
+
+
+
+
+
+func RunPipeline(outputs...*Stream) {
+
+	log.Printf("Materializing Pipeline of %d outputs\n", len(outputs))
+
+	var channels []<-chan interface{}
+	for _, s := range outputs {
+		channels = append(channels, s.Materialize())
+	}
+
+	var group = new(sync.WaitGroup)
+	for _, c:= range channels {
+		group.Add(1)
+		go func() {
+			for range c {
+				//TODO this is where checkpointing will hook in
+			}
+			group.Done()
+		}()
+	}
+
+	log.Println("Draining Pipeline")
+
+	group.Wait()
+
+}
 
 /*
 
@@ -324,7 +325,3 @@ Pipeline with injected Coders
 
 
  */
-
-func first(x, _ interface{}) interface{} {
-	return x
-}
