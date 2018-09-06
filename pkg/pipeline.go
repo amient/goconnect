@@ -79,7 +79,6 @@ func (p *pipeline) Run() error {
 }
 
 func (p *pipeline) commitWorkSoFar() {
-	//TODO drain the pipeline first
 	if p.numProcessedElements > 0 {
 		log.Printf("Committing %d elements at source position: %d", p.numProcessedElements, p.lastConsumedPosition)
 		if err := p.sink.Flush(); err != nil {

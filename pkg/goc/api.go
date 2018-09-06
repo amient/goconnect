@@ -1,69 +1,17 @@
-package main
+package goc
+
 
 import (
 	"fmt"
-	"github.com/amient/goconnect/pkg/coder/xmlc"
 	"log"
 	"reflect"
 	"sync"
 )
 
-func main() {
-
-	list := []string{
-		"<name>Adam</name>",
-		"<name>Alice</name>",
-		"<name>Alex</name>",
-		"<name>Bart</name>",
-		"<name>Bob</name>",
-		"<name>Brittney</name>",
-		"<name>Brenda</name>",
-		"<name>Chad</name>",
-	}
-
-	messages := FromList(list)
-
-	xmls := messages.Apply(Fn(func(input string) xmlc.Node {
-		var node, err = xmlc.ReadNodeFromString(input)
-		if err != nil {
-			panic(err)
-		}
-		return node
-	}))
-
-	bytes := xmls.Apply(Fn(func(input xmlc.Node) []byte {
-		s, err := xmlc.WriteNodeAsString(input)
-		if err != nil {
-			panic(err)
-		}
-		return []byte(s)
-	}))
-
-	total := bytes.Apply(Agg(func(input chan []byte, output chan int) {
-		l := 0
-		for b := range input {
-			l += len(b)
-		}
-		output <- l
-	}))
 
 
-	sink1 := total.Apply(Fn(func(element int) error {
-		fmt.Println("Total processed bytes:", element)
-		return nil
-	}))
 
-	RunPipeline(sink1)
 
-}
-
-//TODO Pipeline options - optimistic or pessimistic commit logic
-//TODO maybe forking outputs is possible without breaking guarantees
-//TODO probably merging from multiple inputs would be possible if all of them support optimistic commit
-//sink2 := xmls.Apply(Fn(func(input xmlc.Node) error {
-//	fmt.Println(sink2)
-//	return nil
-//}))
 
 
 type Stream struct {
@@ -116,10 +64,6 @@ type Transform interface {
 	output() *Stream
 	materialize()
 }
-
-
-
-
 
 
 
@@ -294,34 +238,3 @@ func RunPipeline(outputs...*Stream) {
 
 }
 
-/*
-
-1. declaration
-
-2. runtime type and parallelism analysis > coder injection
-
-3. materialization
-
-4. run
-
-
----------------------------------------------------------------------------
-
-
-Declared pipeline:
-
-[]:SRC:[Bytes] >> [Node]:FILTER:[Node] >> [Bytes]:STD:[]
-
-Pipeline with injected Network
-
-[]:SRC:[Bytes] >> [Node]:FILTER:[Node] >> [Bytes]:STD:[]
-
-[]:SRC:[Bytes] >> [Bytes]Decoder:[Node] >> [Node]:FILTER:[Node] >> [Node]:STD:[Bytes] >> [Bytes]:STD:[]
-
-Pipeline with injected Coders
-
-
----------------------------------------------------------------------------
-
-
- */

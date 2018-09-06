@@ -43,4 +43,5 @@ func main() {
 	//materialize and run the pipeline (this opens the connections to the respective backends)
 	goconnect.Execute(source, sink, *commitInterval)
 
+	//TODO verify that optimistic checkpointer works in this scenario
 }
