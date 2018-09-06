@@ -16,12 +16,12 @@ type RecordSource interface {
 type Source interface {
 	Output() <-chan *Record
 	Materialize() error
-	Commit(position uint64)
+	Commit(position interface {})
 	Close() error
 }
 
 type Checkpoint struct {
-	Position *uint64
+	Position interface {}
 	Err      error
 }
 
@@ -32,7 +32,7 @@ type Sink interface {
 	Close() error
 }
 
-func NewCheckpoint(position *uint64) *Checkpoint {
+func NewCheckpoint(position interface {}) *Checkpoint {
 	return &Checkpoint{
 		Position: position,
 		Err: nil,

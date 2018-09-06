@@ -81,7 +81,8 @@ func (source *Source) Materialize() error {
 	return nil
 }
 
-func (source *Source) Commit(position uint64) {
+func (source *Source) Commit(position interface{}) {
+	//TODO make sure there is no other consumed data that will get
 	source.c.Commit()
 }
 

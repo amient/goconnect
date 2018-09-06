@@ -107,8 +107,8 @@ func (c *Source) Materialize() error {
 	return nil
 }
 
-func (c *Source) Commit(position uint64) {
-	c.channel.Ack(position, true)
+func (c *Source) Commit(position interface {}) {
+	c.channel.Ack(position.(uint64), true)
 }
 
 func (c *Source) Close() error {
