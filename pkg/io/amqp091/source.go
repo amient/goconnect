@@ -41,13 +41,13 @@ func (c *Source) Materialize() error {
 		log.Printf("Closing AMQP source")
 	}()
 
-	log.Printf("got Connection, getting Channel")
+	log.Printf("got Connection, getting channel")
 	c.channel, err = c.conn.Channel()
 	if err != nil {
 		panic(err)
 	}
 
-	log.Printf("got Channel, declaring Exchange (%q)", c.Exchange)
+	log.Printf("got channel, declaring Exchange (%q)", c.Exchange)
 	if err = c.channel.ExchangeDeclare(
 		c.Exchange,     // name of the Exchange
 		c.ExchangeType, // type

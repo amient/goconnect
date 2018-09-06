@@ -63,7 +63,7 @@ func (p *pipeline) Run() error {
 			}
 		case checkpoint, more := <-p.sink.Join():
 			if !more {
-				log.Printf("Source Channel Terminated")
+				log.Printf("Source channel Terminated")
 				p.sink.Close()
 				return nil
 			} else if checkpoint.Err != nil {

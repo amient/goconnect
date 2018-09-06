@@ -4,7 +4,7 @@ import "reflect"
 
 
 type Fn struct {
-	up    *Stream
+	in    *Stream
 	out   *Stream
 	FnVal reflect.Value
 	FnTyp reflect.Type

@@ -6,10 +6,13 @@ import (
 	"github.com/amient/goconnect/pkg/goc/io"
 	"github.com/amient/goconnect/pkg/goc/io/std"
 	"strings"
-	"time"
 )
 
 func main() {
+
+	pipeline := new(goc.Pipeline)
+
+	//////////////////////////////////////////////////////////////////////////////////////////
 
 	list := []string{
 		"<name>Adam</name>",
@@ -21,8 +24,11 @@ func main() {
 		"<name>Brenda</name>",
 		"<name>Chad</name>",
 	}
-
 	//root source of text elements
+	// TODO this must be done with pipeline.Root(...) becase
+	// TODO a) checkpointing control
+	// TODO b) generated lists are one of the examples which must be coordinated and run on any one instance
+	// TODO however the result must be a Stream whose .Type is not interface{} but is derived from the collection
 	messages := io.FromList(list)
 
 	//decode strings to xml by applying a coder
@@ -50,9 +56,9 @@ func main() {
 	//output the aggregation result by applying a general StdOutSink transform
 	sink1 := total.Apply(std.StdOutSink())
 
-	////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////////////////
 
-	goc.RunPipeline(time.Second, sink1)
+	pipeline.Run(sink1)
 
 }
 

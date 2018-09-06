@@ -9,14 +9,14 @@ import (
 type Stream struct {
 	Type      reflect.Type
 	Channel   chan interface{}
-	generator *Fn
+	Generator *Fn
 	transform Transform
 }
 
 func (stream *Stream) Materialize() {
 	log.Printf("Materilaizing Stream of %q \n", stream.Type)
-	if stream.generator != nil {
-		stream.generator.materialize()
+	if stream.Generator != nil {
+		stream.Generator.materialize()
 	}
 }
 
@@ -30,7 +30,7 @@ func (stream *Stream) Flush() error {
 
 func (stream *Stream) Apply(t Transform) *Stream {
 	if method, exists := reflect.TypeOf(t).MethodByName("Fn"); !exists {
-		panic(fmt.Errorf("transform must provide Fn method: %q", method))
+		panic(fmt.Errorf("transform must provide Fn method"))
 	} else {
 		v := reflect.ValueOf(t)
 		args := make([]reflect.Type, method.Type.NumIn()-1)
@@ -80,13 +80,13 @@ func (stream *Stream) Map(fn interface{}) *Stream {
 	////////////////////////////////////////////////////////////////////////////
 
 	f := &Fn{
-		up:    stream,
+		in:    stream,
 		FnVal: reflect.ValueOf(fn),
 		FnTyp: fnType,
 	}
 
 	f.out = &Stream{
-		generator: f,
+		Generator: f,
 		Channel:   make(chan interface{}),
 		Type:      fnType.Out(0),
 	}
@@ -122,13 +122,13 @@ func (stream *Stream) Filter(fn interface{}) *Stream {
 	////////////////////////////////////////////////////////////////////////////
 
 	f := &Fn{
-		up:    stream,
+		in:    stream,
 		FnVal: reflect.ValueOf(fn),
 		FnTyp: fnType,
 	}
 
 	f.out = &Stream{
-		generator: f,
+		Generator: f,
 		Channel:   make(chan interface{}),
 		Type:      fnType.In(0),
 	}
@@ -172,7 +172,7 @@ func (stream *Stream) Transform(fn interface{}) *Stream {
 	////////////////////////////////////////////////////////////////////////////
 
 	f := &Fn{
-		up:    stream,
+		in:    stream,
 		FnVal: reflect.ValueOf(fn),
 		FnTyp: fnType,
 	}
@@ -180,7 +180,7 @@ func (stream *Stream) Transform(fn interface{}) *Stream {
 	f.out = &Stream{
 		Type:      outChannelType.Elem(),
 		Channel:   make(chan interface{}),
-		generator: f,
+		Generator: f,
 	}
 
 	f.mat = func() {

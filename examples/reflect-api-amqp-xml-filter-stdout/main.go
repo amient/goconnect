@@ -25,15 +25,18 @@ func main() {
 	//flag.Parse()
 	//
 	////declared pipeline stages (no i/o happens at this point, only channels are chained)
-	//messages := amqp091.FromSource(/*{
+	//pipeline := new(goc.Pipeline)
+	//
+	//messages :=  pipeline.Root(amqp09.Source {
 	//	Uri:          *uri,
 	//	Exchange:     *exchange,
 	//	ExchangeType: *exchangeType,
 	//	QueueName:    *queue,
 	//	Group:        *consumerTag,
 	//	BindingKey:   *bindingKey,
-	//}*/)
+	//})
 	//
-	//goc.RunPipeline(messages.Apply(std.StdOutSink()))
+	//pipeline.Run(5 * time.Second)
+	//goc.RunPipeline(5 * time.Second, messages.Apply(std.StdOutSink()))
 
 }

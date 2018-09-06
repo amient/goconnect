@@ -9,31 +9,29 @@ import (
 )
 
 type Pipeline struct {
-	outputs              []*Stream
+	outputs				 []*Stream
 	commitInterval       time.Duration
 	lastCommit           time.Time
 	numProcessedElements uint32
 	lastConsumedPosition interface{}
 }
 
-func RunPipeline(commitInterval time.Duration, outputs ...*Stream) error {
-	p := new(Pipeline)
+func (p *Pipeline) Run(outputs ...*Stream) error {
+
 	p.outputs = outputs
-	p.commitInterval = commitInterval
-	return p.Run()
-}
-
-func (p *Pipeline) Run() error {
-
 	log.Printf("Materializing and Running Pipeline of %d outputs\n", len(p.outputs))
-	for _, stream := range p.outputs {
+	for _, stream := range outputs {
 		stream.Materialize()
 	}
 
-	//open committer tick channel
+	//open committer tick Channel
+	if p.commitInterval == 0 {
+		p.commitInterval = 5 * time.Second
+		log.Printf("Using default commit interval %q\n", p.commitInterval)
+	}
 	committerTick := time.NewTicker(p.commitInterval).C
 
-	//open termination signal channel
+	//open termination signal Channel
 	sigterm := make(chan os.Signal, 1)
 	signal.Notify(sigterm, syscall.SIGINT, syscall.SIGTERM)
 
@@ -82,3 +80,24 @@ func (p *Pipeline) commitWorkSoFar() {
 	}
 
 }
+
+//func (p *Pipeline) Root(t Transform) *Stream {
+//	if method, exists := reflect.TypeOf(t).MethodByName("Fn"); !exists {
+//		panic(fmt.Errorf("transform must provide Fn method"))
+//	} else if method.Type.NumOut() != 0 {
+//		panic(fmt.Errorf("root transform must provide Fn method with no outputs"))
+//	} else if method.Type.NumIn() != 2 {
+//		panic(fmt.Errorf("root transform must provide Fn method with 1 argument"))
+//	} else {
+//		chanType := method.Type.In(1)
+//		fmt.Println(chanType.Elem())
+//		return &Stream{
+//			Type: chanType.Elem(),
+//			Channel : make (chan interface{}),
+//			generator: &Fn {
+//
+//			},
+//			transform: t,
+//		}
+//	}
+//}
