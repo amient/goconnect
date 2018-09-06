@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/amient/goconnect/pkg"
 	"github.com/amient/goconnect/pkg/coder/xmlc"
+	"github.com/amient/goconnect/pkg/goc/coder/gocxml"
 	"github.com/amient/goconnect/pkg/io/amqp091"
 	"github.com/amient/goconnect/pkg/io/std"
 	"strings"
@@ -30,16 +31,16 @@ func main() {
 
 	decoder := new(xmlc.Decoder).Apply(source)
 
-	filter := xmlc.Filter(func(in xmlc.Node) (bool, error) {
+	filter := xmlc.Filter(func(in gocxml.Node) (bool, error) {
 		//filter only valid xml that start with <?xml instruction
-		return in.Children()[0].Type() == xmlc.ProcInst, nil
+		return in.Children()[0].Type() == gocxml.ProcInst, nil
 	}).Apply(decoder)
 
-	modifiy := xmlc.Modify(func(in xmlc.Node) (xmlc.Node, error) {
+	modifiy := xmlc.Modify(func(in gocxml.Node) (gocxml.Node, error) {
 		//if the xml is a single tag with text content, uppercase it
-		if in.Children()[1].Children()[0].Type() == xmlc.Text {
+		if in.Children()[1].Children()[0].Type() == gocxml.Text {
 			currentTest := in.Children()[1].Children()[0]
-			if newText, err := xmlc.ReadNodeFromString(strings.ToUpper(currentTest.Text())); err != nil {
+			if newText, err := gocxml.ReadNodeFromString(strings.ToUpper(currentTest.Text())); err != nil {
 				return nil, err
 			} else {
 				in.Children()[1].Children()[0] = newText

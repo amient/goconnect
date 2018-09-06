@@ -1,12 +1,13 @@
 package xmlc
 
+import "github.com/amient/goconnect/pkg/goc/coder/gocxml"
 
-func Modify(fn func(Node) (Node, error)) *XmlFilterModifyFn {
+func Modify(fn func(gocxml.Node) (gocxml.Node, error)) *XmlFilterModifyFn {
 	return &XmlFilterModifyFn{fn: fn}
 }
 
-func Filter(fn func(Node) (bool, error)) *XmlFilterModifyFn {
-	return &XmlFilterModifyFn{fn: func(n Node) (Node, error) {
+func Filter(fn func(gocxml.Node) (bool, error)) *XmlFilterModifyFn {
+	return &XmlFilterModifyFn{fn: func(n gocxml.Node) (gocxml.Node, error) {
 		if pass, err := fn(n); pass {
 			return n, err
 		} else {
@@ -17,7 +18,7 @@ func Filter(fn func(Node) (bool, error)) *XmlFilterModifyFn {
 
 
 type XmlFilterModifyFn struct {
-	fn     func(Node) (Node, error)
+	fn     func(gocxml.Node) (gocxml.Node, error)
 	input  <-chan *XmlRecord
 	output chan *XmlRecord
 }

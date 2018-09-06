@@ -4,13 +4,14 @@ import (
 	"bufio"
 	"bytes"
 	"github.com/amient/goconnect/pkg"
+	"github.com/amient/goconnect/pkg/goc/coder/gocxml"
 	"log"
 	"time"
 )
 
 type XmlRecord struct {
 	Position  interface{}
-	Value     Node
+	Value     gocxml.Node
 	Timestamp *time.Time
 }
 
@@ -37,7 +38,7 @@ func (d *Decoder) Apply(source goconnect.RecordSource) *Decoder {
 		defer log.Printf("Xml Decoder Finished")
 		defer close(d.output)
 		for ir := range d.input {
-			node, err := ReadNode(bytes.NewReader(*ir.Value))
+			node, err := gocxml.ReadNode(bytes.NewReader(*ir.Value))
 			if err != nil {
 				//TODO error porpagation instead of immediate escalation
 				panic(err)
@@ -69,7 +70,7 @@ func (e *Encoder) Apply(source XmlRecordSource) *Encoder {
 		for inputRecord := range e.input {
 			var b bytes.Buffer
 			w := bufio.NewWriter(&b)
-			_, err := WriteNode(w, inputRecord.Value)
+			_, err := gocxml.WriteNode(w, inputRecord.Value)
 			w.Flush()
 			value := b.Bytes()
 			if err != nil {

@@ -1,4 +1,4 @@
-package xmlc
+package gocxml
 
 import (
 	"fmt"
