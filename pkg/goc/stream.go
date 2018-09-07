@@ -74,29 +74,12 @@ func (stream *Stream) Map(fn interface{}) *Stream {
 		panic(fmt.Errorf("map func must have exactly 1 output"))
 	}
 
-	////////////////////////////////////////////////////////////////////////////
-
-	return stream.pipeline.Register(&Stream{
-		Type: fnType.Out(0),
-		runner: func(output chan *Element) {
-			//FIXME
-			input := make(chan interface{})
-			go func() {
-				defer close(input)
-				for d := range stream.output {
-					if d.isMarker() {
-						output <- d
-					} else {
-						input <- d.Value
-					}
-				}
-			}()
-			for d := range input {
-				v := reflect.ValueOf(d)
-				r := fnVal.Call([]reflect.Value{v})
-				output <- &Element{Value: r[0].Interface()}
-			}
-		},
+	return stream.pipeline.Transform(stream, fnType.Out(0), func(input chan *Element, output chan *Element){
+		for d := range input {
+			v := reflect.ValueOf(d.Value)
+			r := fnVal.Call([]reflect.Value{v})
+			output <- &Element{Value: r[0].Interface()}
+		}
 	})
 
 }
@@ -118,31 +101,15 @@ func (stream *Stream) Filter(fn interface{}) *Stream {
 		panic(fmt.Errorf("FnVal must have exactly 1 output and it should be bool"))
 	}
 
-	////////////////////////////////////////////////////////////////////////////
-
-	return stream.pipeline.Register(&Stream{
-		Type: fnType.In(0),
-		runner: func(output chan *Element) {
-			//FIXME
-			input := make(chan interface{})
-			go func() {
-				defer close(input)
-				for d := range stream.output {
-					if d.isMarker() {
-						output <- d
-					} else {
-						input <- d.Value
-					}
-				}
-			}()
-			for d := range input {
-				v := reflect.ValueOf(d)
-				if fnVal.Call([]reflect.Value{v})[0].Bool() {
-					output <- &Element{Value: d}
-				}
+	return stream.pipeline.Transform(stream, fnType.In(0), func(input chan *Element, output chan *Element){
+		for d := range input {
+			v := reflect.ValueOf(d.Value)
+			if fnVal.Call([]reflect.Value{v})[0].Bool() {
+				output <- d
 			}
-		},
+		}
 	})
+
 }
 
 func (stream *Stream) Transform(fn interface{}) *Stream {
@@ -169,46 +136,30 @@ func (stream *Stream) Transform(fn interface{}) *Stream {
 		panic(fmt.Errorf("transform func input argument must be a underlying of %q, got underlying of %q", stream.Type, fnType.In(0).Elem()))
 	}
 
-	////////////////////////////////////////////////////////////////////////////
 
-	return stream.pipeline.Register(&Stream{
-		Type: outChannelType.Elem(),
-		runner: func(output chan *Element) {
-			intermediateIn := reflect.MakeChan(inChannelType, 0)
-			go func() {
-				defer intermediateIn.Close()
-				//FIXME
-				input := make(chan interface{})
-				go func() {
-					defer close(input)
-					for d := range stream.output {
-						if d.isMarker() {
-							output <- d
-						} else {
-							input <- d.Value
-						}
-					}
-				}()
-				for d := range input {
-					intermediateIn.Send(reflect.ValueOf(d))
-				}
-			}()
-
-			intermediateOut := reflect.MakeChan(outChannelType, 0)
-			go func() {
-				defer intermediateOut.Close()
-				fnVal.Call([]reflect.Value{intermediateIn, intermediateOut})
-			}()
-
-			for {
-				o, ok := intermediateOut.Recv()
-				if !ok {
-					return
-				} else {
-					output <- &Element{Value: o.Interface()}
-				}
+	return stream.pipeline.Transform(stream, outChannelType.Elem(), func(input chan *Element, output chan *Element){
+		intermediateIn := reflect.MakeChan(inChannelType, 0)
+		go func() {
+			defer intermediateIn.Close()
+			for d := range input {
+				intermediateIn.Send(reflect.ValueOf(d.Value))
 			}
-		},
+		}()
+
+		intermediateOut := reflect.MakeChan(outChannelType, 0)
+		go func() {
+			defer intermediateOut.Close()
+			fnVal.Call([]reflect.Value{intermediateIn, intermediateOut})
+		}()
+
+		for {
+			o, ok := intermediateOut.Recv()
+			if !ok {
+				return
+			} else {
+				output <- &Element{Value: o.Interface()}
+			}
+		}
 	})
 
 }

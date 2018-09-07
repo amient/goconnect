@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"reflect"
 	"syscall"
 	"time"
 )
@@ -31,6 +32,28 @@ func (p *Pipeline) From(source RootTransform) *Stream {
 		transform: source,
 	})
 }
+
+func (p *Pipeline) Transform(that *Stream, out reflect.Type, fn func(input chan *Element, output chan *Element)) *Stream {
+	return p.Register(&Stream{
+		Type: out,
+		runner: func(output chan *Element) {
+			transient := make(chan *Element)
+			go func(in *Stream) {
+				defer close(transient)
+				for d := range in.output {
+					if d.isMarker() {
+						output <- d
+					} else {
+						transient <- d
+					}
+				}
+			}(that)
+			fn(transient, output)
+		},
+	})
+
+}
+
 
 func (p *Pipeline) Register(stream *Stream) *Stream {
 	stream.pipeline = p

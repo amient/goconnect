@@ -1,6 +1,9 @@
 package gocxml
 
-import "github.com/amient/goconnect/pkg/goc"
+import (
+	"github.com/amient/goconnect/pkg/goc"
+	"reflect"
+)
 
 func StringDecoder() *stringDecoder {
 	return &stringDecoder{}
@@ -8,6 +11,10 @@ func StringDecoder() *stringDecoder {
 
 
 type stringDecoder struct {}
+
+func (d *stringDecoder) InType() reflect.Type {
+	return goc.StringType
+}
 
 func (d *stringDecoder) Fn(input string) Node {
 	var node, err = ReadNodeFromString(input)
