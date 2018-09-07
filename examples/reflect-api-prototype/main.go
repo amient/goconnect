@@ -17,13 +17,17 @@ func main() {
 
 	data := []string{
 		"<name>Adam</name>",
+		"<name>Albert</name>",
 		"<name>Alice</name>",
 		"<name>Alex</name>",
 		"<name>Bart</name>",
 		"<name>Bob</name>",
 		"<name>Brittney</name>",
 		"<name>Brenda</name>",
+		"<name>Cecilia</name>",
 		"<name>Chad</name>",
+		"<name>Elliot</name>",
+		"<name>Wojtek</name>",
 	}
 	//root source of text elements
 	// TODO generated lists are one of the examples which must be coordinated and run on any one instance
@@ -42,7 +46,7 @@ func main() {
 		return !strings.Contains(input, "B")
 	})
 
-	//do total aggregation using custom Transform fn
+	//do total aggregation using custom Fn fn
 	total := filtered.Transform(func(input chan string, output chan int) {
 		l := 0
 		for b := range input {

@@ -1,7 +1,10 @@
-package amqp_stdout
+package main
 
 import (
 	"flag"
+	"github.com/amient/goconnect/pkg/goc"
+	"github.com/amient/goconnect/pkg/goc/io/amqp09"
+	"github.com/amient/goconnect/pkg/goc/io/std"
 	"time"
 )
 
@@ -22,21 +25,22 @@ var (
 
 func main() {
 
-	//flag.Parse()
-	//
-	////declared pipeline stages (no i/o happens at this point, only channels are chained)
-	//pipeline := new(goc.Pipeline)
-	//
-	//messages :=  pipeline.Root(amqp09.Source {
-	//	Uri:          *uri,
-	//	Exchange:     *exchange,
-	//	ExchangeType: *exchangeType,
-	//	QueueName:    *queue,
-	//	Group:        *consumerTag,
-	//	BindingKey:   *bindingKey,
-	//})
-	//
-	//pipeline.Run(5 * time.Second)
-	//goc.RunPipeline(5 * time.Second, messages.Apply(std.StdOutSink()))
+	flag.Parse()
+
+	//declared pipeline stages (no i/o happens at this point, only channels are chained)
+	pipeline := goc.NewPipeline()
+
+	messages :=  pipeline.From(&amqp09.Source {
+		Uri:          *uri,
+		Exchange:     *exchange,
+		ExchangeType: *exchangeType,
+		QueueName:    *queue,
+		Group:        *consumerTag,
+		BindingKey:   *bindingKey,
+	})
+
+	messages.Apply(std.StdOutSink())
+
+	pipeline.Run(2 * time.Second)
 
 }

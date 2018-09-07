@@ -2,46 +2,31 @@ package goc
 
 import (
 	"fmt"
-	"log"
 	"reflect"
 )
 
+type Element struct {
+	signal     ControlSignal
+	Checkpoint Checkpoint
+	Value      interface{}
+}
+
+func (element *Element) isMarker() bool {
+	return element.signal != NoSignal
+}
+
 type Stream struct {
 	Type         reflect.Type
-	Materializer func(chan interface{})
-	underlying   chan interface{}
-	pipeline	 *Pipeline
-	transform    Transform
-}
-
-type Checkpoint []interface{}
-
-type Transform interface {
-	Commit(Checkpoint) error
+	Materializer func(chan *Element)
+	output       chan *Element
+	pipeline     *Pipeline
+	transform    Fn
 }
 
 
-func (stream *Stream) Materialize() {
-	log.Printf("Materilaizing Stream of %q \n", stream.Type)
-	if stream.underlying != nil {
-		panic(fmt.Errorf("stream already materialized"))
-	}
-	stream.underlying = make(chan interface{})
-	go func() {
-		defer close(stream.underlying)
-		stream.Materializer(stream.underlying)
-	}()
-}
 
-func (stream *Stream) Commit(checkpoint Checkpoint) error {
-	if stream.transform != nil {
-		return stream.transform.Commit(checkpoint)
-	} else {
-		return nil
-	}
-}
 
-func (stream *Stream) Apply(t Transform) *Stream {
+func (stream *Stream) Apply(t Fn) *Stream {
 	if method, exists := reflect.TypeOf(t).MethodByName("Fn"); !exists {
 		panic(fmt.Errorf("transform must provide Fn method"))
 	} else {
@@ -61,7 +46,7 @@ func (stream *Stream) Apply(t Transform) *Stream {
 
 		var output *Stream
 		if len(ret) > 1 {
-			panic(fmt.Errorf("transform must have 0 or 1 return value"))
+			panic(fmt.Errorf("transform must have 0 or 1 return Value"))
 		} else if len(ret) == 0 {
 			output = stream.Transform(fn.Interface())
 		} else {
@@ -93,13 +78,25 @@ func (stream *Stream) Map(fn interface{}) *Stream {
 
 	////////////////////////////////////////////////////////////////////////////
 
-	return stream.pipeline.From(&Stream{
+	return stream.pipeline.Register(&Stream{
 		Type: fnType.Out(0),
-		Materializer: func(output chan interface{}) {
-			for d := range stream.underlying {
+		Materializer: func(output chan *Element) {
+			//FIXME
+			input := make(chan interface{})
+			go func() {
+				defer close(input)
+				for d := range stream.output {
+					if d.isMarker() {
+						output <- d
+					} else {
+						input <- d.Value
+					}
+				}
+			}()
+			for d := range input {
 				v := reflect.ValueOf(d)
 				r := fnVal.Call([]reflect.Value{v})
-				output <- r[0].Interface()
+				output <- &Element{Value: r[0].Interface()}
 			}
 		},
 	})
@@ -125,13 +122,25 @@ func (stream *Stream) Filter(fn interface{}) *Stream {
 
 	////////////////////////////////////////////////////////////////////////////
 
-	return stream.pipeline.From(&Stream{
+	return stream.pipeline.Register(&Stream{
 		Type: fnType.In(0),
-		Materializer: func(output chan interface{}) {
-			for d := range stream.underlying {
+		Materializer: func(output chan *Element) {
+			//FIXME
+			input := make(chan interface{})
+			go func() {
+				defer close(input)
+				for d := range stream.output {
+					if d.isMarker() {
+						output <- d
+					} else {
+						input <- d.Value
+					}
+				}
+			}()
+			for d := range input {
 				v := reflect.ValueOf(d)
 				if fnVal.Call([]reflect.Value{v})[0].Bool() {
-					output <- d
+					output <- &Element{Value: d}
 				}
 			}
 		},
@@ -164,13 +173,25 @@ func (stream *Stream) Transform(fn interface{}) *Stream {
 
 	////////////////////////////////////////////////////////////////////////////
 
-	return stream.pipeline.From(&Stream{
+	return stream.pipeline.Register(&Stream{
 		Type: outChannelType.Elem(),
-		Materializer: func(output chan interface{}) {
+		Materializer: func(output chan *Element) {
 			intermediateIn := reflect.MakeChan(inChannelType, 0)
 			go func() {
 				defer intermediateIn.Close()
-				for d := range stream.underlying {
+				//FIXME
+				input := make(chan interface{})
+				go func() {
+					defer close(input)
+					for d := range stream.output {
+						if d.isMarker() {
+							output <- d
+						} else {
+							input <- d.Value
+						}
+					}
+				}()
+				for d := range input {
 					intermediateIn.Send(reflect.ValueOf(d))
 				}
 			}()
@@ -186,7 +207,7 @@ func (stream *Stream) Transform(fn interface{}) *Stream {
 				if !ok {
 					return
 				} else {
-					output <- o.Interface()
+					output <- &Element{Value: o.Interface()}
 				}
 			}
 		},

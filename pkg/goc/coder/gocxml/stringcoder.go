@@ -21,6 +21,11 @@ func (d *stringDecoder) Commit(checkpoint goc.Checkpoint) error {
 	return nil
 }
 
+func (d*stringDecoder) Close() error {
+	return nil
+}
+
+
 
 func StringEncoder() *stringEncoder {
 	return &stringEncoder{}
@@ -40,4 +45,6 @@ func (e *stringEncoder) Commit(checkpoint goc.Checkpoint) error {
 	return nil
 }
 
-
+func (e *stringEncoder) Close() error {
+	return nil
+}

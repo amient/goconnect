@@ -13,11 +13,11 @@ import (
 // search for a specific text, you don't need to check which nodes are actually
 // text nodes.
 //
-// You can, of course, check node types (returned by Type()) if you still need
+// You can, of course, check node types (returned by OutType()) if you still need
 // to.
 
 // DESIGN NOTE (2):
-// The Type() function is used instead of exported types to avoid cluttering
+// The OutType() function is used instead of exported types to avoid cluttering
 // the package's godoc.
 
 // Represents a single XML node. Can be one of: Root, Tag, Text, Comment,
@@ -62,7 +62,7 @@ type Node interface {
 	// markers. Empty for other node types.
 	Directive() string
 
-	// Type of this node. Returns one of: Root, Tag, Text, Comment, ProcInst
+	// OutType of this node. Returns one of: Root, Tag, Text, Comment, ProcInst
 	// or Directive.
 	Type() int
 
@@ -177,7 +177,7 @@ func (n *directive) Directive() string { return n.directive }
 func (n *directive) Type() int         { return Directive }
 
 
-// Possible return values of Type().
+// Possible return values of OutType().
 const (
 	Root = iota
 	Tag

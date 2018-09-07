@@ -1,6 +1,7 @@
 package goc
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -9,25 +10,70 @@ import (
 )
 
 type Pipeline struct {
-	streams				 []*Stream
+	Control              *Control
+	streams              []*Stream
+	source               RootTransform
 	lastCommit           time.Time
 	numProcessedElements uint32
 	lastConsumedPosition interface{}
 }
 
 func NewPipeline() *Pipeline {
-	return &Pipeline {
+	return &Pipeline{
 		streams: []*Stream{},
 	}
+}
+
+func (p *Pipeline) From(source RootTransform) *Stream {
+	return p.Register(&Stream{
+		Type:         source.OutType(),
+		Materializer: source.Run,
+		transform:    source,
+	})
+}
+
+func (p *Pipeline) Register(stream *Stream) *Stream {
+	stream.pipeline = p
+	p.streams = append(p.streams, stream)
+	return stream
 }
 
 func (p *Pipeline) Run(commitInterval time.Duration) error {
 
 	log.Printf("Materializing and Running Pipeline of %d stages\n", len(p.streams))
+	p.Control = &Control{make(chan *ControlSignal)}
+
 	for _, stream := range p.streams {
-		stream.Materialize()
+		log.Printf("Materilaizing Stream of %q \n", stream.Type)
+		if stream.output != nil {
+			panic(fmt.Errorf("stream already materialized"))
+		}
+
+		interceptedOutput := make(chan *Element)
+		go func(stream *Stream) {
+			defer close(interceptedOutput)
+			stream.Materializer(interceptedOutput)
+		}(stream)
+
+		stream.output = make(chan *Element)
+		go func(stream *Stream) {
+			defer close(stream.output)
+			for {
+				select {
+				case <-p.Control.Signals(stream.output):
+				case element, ok := <-interceptedOutput:
+					if !ok {
+						return
+					} else {
+						stream.output <- element
+					}
+				}
+			}
+		}(stream)
 	}
-	output := p.streams[len(p.streams) -1]
+
+	p.source = p.streams[0].transform.(RootTransform)
+	sink := p.streams[len(p.streams)-1]
 
 	//open committer tick underlying
 	committerTick := time.NewTicker(commitInterval).C
@@ -40,19 +86,23 @@ func (p *Pipeline) Run(commitInterval time.Duration) error {
 		select {
 		case sig := <-sigterm:
 			log.Printf("Caught signal %v: terminating\n", sig)
-			p.commitWorkSoFar()
-			//TODO p.source.Close()
+			p.Control.Send(ControlCleanStop)
 
 		case timestamp := <-committerTick:
 			if timestamp.Sub(p.lastCommit) > commitInterval {
-				p.commitWorkSoFar()
-				p.lastCommit = timestamp
+				p.startCommit(timestamp)
 			}
-		case _, more := <- output.underlying:
+
+		case e, more := <-sink.output:
 			if !more {
-				p.commitWorkSoFar()
+				//this is the only place that exits the for-select
+				p.concludeCommit()
+				p.Control.Close()
 				//TODO p.sink.Close()
 				return nil
+			} else if e.isMarker() {
+				p.concludeCommit()
+				p.Control.Send(ControlResume)
 			} else {
 				//TODO p.lastConsumedPosition = checkpoint.Position
 				p.numProcessedElements++
@@ -63,23 +113,31 @@ func (p *Pipeline) Run(commitInterval time.Duration) error {
 	}
 
 }
+func (p *Pipeline) startCommit(timestamp time.Time) {
+	if p.numProcessedElements > 0 {
+		log.Println("Start Commit")
+		//draining should not be necessary if optimistic checkpointing is possible - see comments in goc.Checkpoint
+		p.Control.Send(ControlDrain)
+		p.lastCommit = timestamp
+	}
 
-func (p *Pipeline) commitWorkSoFar() {
+}
+
+func (p *Pipeline) concludeCommit() {
 	if p.numProcessedElements > 0 {
 		log.Printf("Committing %d elements at source position: %q", p.numProcessedElements, p.lastConsumedPosition)
-		for _, stream := range p.streams {
-			if err := stream.Commit(Checkpoint{}); err != nil {
-				panic(err)
+
+		for i := len(p.streams) - 1; i >= 0; i-- {
+			stream := p.streams[i]
+			if stream.transform != nil {
+				//TODO collect emited stream.transform.checkpoint associated with output.checkkpoint
+				if err := stream.transform.Commit(nil); err != nil {
+					panic(err)
+				}
 			}
 		}
 		log.Print("Commit successful")
 		p.numProcessedElements = 0
 	}
 
-}
-
-func (p *Pipeline) From(stream *Stream) *Stream {
-	stream.pipeline = p
-	p.streams = append(p.streams, stream)
-	return stream
 }
