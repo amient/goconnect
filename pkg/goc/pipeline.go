@@ -26,9 +26,9 @@ func NewPipeline() *Pipeline {
 
 func (p *Pipeline) From(source RootTransform) *Stream {
 	return p.Register(&Stream{
-		Type:         source.OutType(),
-		Materializer: source.Run,
-		transform:    source,
+		Type:      source.OutType(),
+		runner:    source.Run,
+		transform: source,
 	})
 }
 
@@ -52,7 +52,7 @@ func (p *Pipeline) Run(commitInterval time.Duration) error {
 		interceptedOutput := make(chan *Element)
 		go func(stream *Stream) {
 			defer close(interceptedOutput)
-			stream.Materializer(interceptedOutput)
+			stream.runner(interceptedOutput)
 		}(stream)
 
 		stream.output = make(chan *Element)

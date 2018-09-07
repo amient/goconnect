@@ -19,7 +19,7 @@ type stdOutSink struct {
 }
 
 func (sink *stdOutSink) InType() reflect.Type {
-	return goc.AnyType()
+	return goc.AnyType
 }
 
 func (sink *stdOutSink) Fn(element interface {}) error {

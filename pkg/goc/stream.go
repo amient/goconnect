@@ -16,17 +16,15 @@ func (element *Element) isMarker() bool {
 }
 
 type Stream struct {
-	Type         reflect.Type
-	Materializer func(chan *Element)
-	output       chan *Element
-	pipeline     *Pipeline
-	transform    Fn
+	Type      reflect.Type
+	runner    func(chan *Element)
+	output    chan *Element
+	pipeline  *Pipeline
+	transform Fn
 }
 
 
-
-
-func (stream *Stream) Apply(t Fn) *Stream {
+func (stream *Stream) Apply(t ForEachDo) *Stream {
 	if method, exists := reflect.TypeOf(t).MethodByName("Fn"); !exists {
 		panic(fmt.Errorf("transform must provide Fn method"))
 	} else {
@@ -80,7 +78,7 @@ func (stream *Stream) Map(fn interface{}) *Stream {
 
 	return stream.pipeline.Register(&Stream{
 		Type: fnType.Out(0),
-		Materializer: func(output chan *Element) {
+		runner: func(output chan *Element) {
 			//FIXME
 			input := make(chan interface{})
 			go func() {
@@ -124,7 +122,7 @@ func (stream *Stream) Filter(fn interface{}) *Stream {
 
 	return stream.pipeline.Register(&Stream{
 		Type: fnType.In(0),
-		Materializer: func(output chan *Element) {
+		runner: func(output chan *Element) {
 			//FIXME
 			input := make(chan interface{})
 			go func() {
@@ -175,7 +173,7 @@ func (stream *Stream) Transform(fn interface{}) *Stream {
 
 	return stream.pipeline.Register(&Stream{
 		Type: outChannelType.Elem(),
-		Materializer: func(output chan *Element) {
+		runner: func(output chan *Element) {
 			intermediateIn := reflect.MakeChan(inChannelType, 0)
 			go func() {
 				defer intermediateIn.Close()

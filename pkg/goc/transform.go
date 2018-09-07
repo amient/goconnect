@@ -2,10 +2,12 @@ package goc
 
 import "reflect"
 
-func AnyType() reflect.Type {
-	var sliceOfEmptyInterface []interface{}
-	return reflect.TypeOf(sliceOfEmptyInterface).Elem()
-}
+var _anySlice []interface{}
+var AnySliceType = reflect.TypeOf(_anySlice)
+var AnyType = AnySliceType.Elem()
+
+
+
 
 type Fn interface {
 	Commit(Checkpoint) error
@@ -26,7 +28,7 @@ type Transform interface {
 	Close() error
 }
 
-type Do interface {
+type ForEachDo interface {
 	InType() reflect.Type
 	Commit(Checkpoint) error
 	Close() error
