@@ -8,7 +8,7 @@ package amqp09
 //
 //func From(spec Source) *goc.Stream {
 //	result := &goc.Stream {
-//		Channel: make(chan interface{}),
+//		underlying: make(chan interface{}),
 //		Type:    reflect.TypeOf([]byte(nil)),
 //		//generator: spec,
 //	}
@@ -17,7 +17,7 @@ package amqp09
 //
 //type Source struct {
 //	conn         *amqp.Connection
-//	channel      *amqp.Channel
+//	channel      *amqp.underlying
 //	Uri          string
 //	Exchange     string
 //	ExchangeType string

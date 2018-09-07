@@ -24,14 +24,14 @@ func (p *Pipeline) Run(outputs ...*Stream) error {
 		stream.Materialize()
 	}
 
-	//open committer tick Channel
+	//open committer tick underlying
 	if p.commitInterval == 0 {
 		p.commitInterval = 5 * time.Second
 		log.Printf("Using default commit interval %q\n", p.commitInterval)
 	}
 	committerTick := time.NewTicker(p.commitInterval).C
 
-	//open termination signal Channel
+	//open termination signal underlying
 	sigterm := make(chan os.Signal, 1)
 	signal.Notify(sigterm, syscall.SIGINT, syscall.SIGTERM)
 
@@ -48,9 +48,9 @@ func (p *Pipeline) Run(outputs ...*Stream) error {
 					p.commitWorkSoFar()
 					p.lastCommit = timestamp
 				}
-			case _, more := <-stream.Channel:
+			case _, more := <-stream.underlying:
 				if !more {
-					log.Printf("Source Channel Terminated")
+					log.Printf("Source underlying Terminated")
 					p.commitWorkSoFar()
 					//TODO p.sink.Close()
 					return nil
@@ -93,7 +93,7 @@ func (p *Pipeline) commitWorkSoFar() {
 //		fmt.Println(chanType.Elem())
 //		return &Stream{
 //			Type: chanType.Elem(),
-//			Channel : make (chan interface{}),
+//			underlying : make (chan interface{}),
 //			generator: &Fn {
 //
 //			},

@@ -6,17 +6,28 @@ import (
 	"reflect"
 )
 
+type Transform interface {
+	Flush() error
+}
+
 type Stream struct {
-	Type      reflect.Type
-	Channel   chan interface{}
-	Generator *Fn
-	transform Transform
+	Type         reflect.Type
+	Materializer func(chan interface{})
+	underlying   chan interface{}
+	transform    Transform
 }
 
 func (stream *Stream) Materialize() {
 	log.Printf("Materilaizing Stream of %q \n", stream.Type)
-	if stream.Generator != nil {
-		stream.Generator.materialize()
+	if stream.underlying != nil {
+		panic(fmt.Errorf("stream already materialized"))
+	}
+	stream.underlying = make(chan interface{})
+	if stream.Materializer != nil {
+		go func() {
+			defer close(stream.underlying)
+			stream.Materializer(stream.underlying)
+		}()
 	}
 }
 
@@ -50,7 +61,7 @@ func (stream *Stream) Apply(t Transform) *Stream {
 		if len(ret) > 1 {
 			panic(fmt.Errorf("transform must have 0 or 1 return value"))
 		} else if len(ret) == 0 {
-			output = stream.Transform(fn)
+			output = stream.Transform(fn.Interface())
 		} else {
 			output = stream.Map(fn.Interface())
 		}
@@ -63,6 +74,7 @@ func (stream *Stream) Apply(t Transform) *Stream {
 func (stream *Stream) Map(fn interface{}) *Stream {
 
 	fnType := reflect.TypeOf(fn)
+	fnVal := reflect.ValueOf(fn)
 
 	if fnType.NumIn() != 1 {
 		panic(fmt.Errorf("map func must have exactly 1 input argument"))
@@ -79,33 +91,24 @@ func (stream *Stream) Map(fn interface{}) *Stream {
 
 	////////////////////////////////////////////////////////////////////////////
 
-	f := &Fn{
-		in:    stream,
-		FnVal: reflect.ValueOf(fn),
-		FnTyp: fnType,
+	return &Stream{
+		Type: fnType.Out(0),
+		Materializer: func(output chan interface{}) {
+			stream.Materialize()
+			for d := range stream.underlying {
+				v := reflect.ValueOf(d)
+				r := fnVal.Call([]reflect.Value{v})
+				output <- r[0].Interface()
+			}
+		},
 	}
 
-	f.out = &Stream{
-		Generator: f,
-		Channel:   make(chan interface{}),
-		Type:      fnType.Out(0),
-	}
-
-	f.mat = func() {
-		stream.Materialize()
-		for d := range stream.Channel {
-			v := reflect.ValueOf(d)
-			r := f.FnVal.Call([]reflect.Value{v})
-			f.out.Channel <- r[0].Interface()
-		}
-	}
-
-	return f.out
 }
 
 func (stream *Stream) Filter(fn interface{}) *Stream {
 
 	fnType := reflect.TypeOf(fn)
+	fnVal := reflect.ValueOf(fn)
 
 	if fnType.NumIn() != 1 {
 		panic(fmt.Errorf("filter func must have exactly 1 input argument of type %q", stream.Type))
@@ -121,37 +124,27 @@ func (stream *Stream) Filter(fn interface{}) *Stream {
 
 	////////////////////////////////////////////////////////////////////////////
 
-	f := &Fn{
-		in:    stream,
-		FnVal: reflect.ValueOf(fn),
-		FnTyp: fnType,
-	}
-
-	f.out = &Stream{
-		Generator: f,
-		Channel:   make(chan interface{}),
-		Type:      fnType.In(0),
-	}
-
-	f.mat = func() {
-		stream.Materialize()
-		for d := range stream.Channel {
-			v := reflect.ValueOf(d)
-			if f.FnVal.Call([]reflect.Value{v})[0].Bool() {
-				f.out.Channel <- d
+	return &Stream{
+		Type: fnType.In(0),
+		Materializer: func(output chan interface{}) {
+			stream.Materialize()
+			for d := range stream.underlying {
+				v := reflect.ValueOf(d)
+				if fnVal.Call([]reflect.Value{v})[0].Bool() {
+					output <- d
+				}
 			}
-		}
+		},
 	}
-
-	return f.out
 }
 
 func (stream *Stream) Transform(fn interface{}) *Stream {
 
 	fnType := reflect.TypeOf(fn)
+	fnVal := reflect.ValueOf(fn)
 
 	if fnType.NumIn() != 2 || fnType.NumOut() != 0 {
-		panic(fmt.Errorf("transform func must have zero return values and exatly 2 arguments: input Channel and an output Channel"))
+		panic(fmt.Errorf("transform func must have zero return values and exatly 2 arguments: input underlying and an output underlying"))
 	}
 
 	inChannelType := fnType.In(0)
@@ -166,50 +159,38 @@ func (stream *Stream) Transform(fn interface{}) *Stream {
 
 	//TODO this check will deffered on after network and type coders injection
 	if !stream.Type.AssignableTo(inChannelType.Elem()) {
-		panic(fmt.Errorf("transform func input argument must be a Channel of %q, got Channel of %q", stream.Type, fnType.In(0).Elem()))
+		panic(fmt.Errorf("transform func input argument must be a underlying of %q, got underlying of %q", stream.Type, fnType.In(0).Elem()))
 	}
 
 	////////////////////////////////////////////////////////////////////////////
 
-	f := &Fn{
-		in:    stream,
-		FnVal: reflect.ValueOf(fn),
-		FnTyp: fnType,
-	}
+	return &Stream{
+		Type: outChannelType.Elem(),
+		Materializer: func(output chan interface{}) {
+			intermediateIn := reflect.MakeChan(inChannelType, 0)
+			go func() {
+				stream.Materialize()
+				defer intermediateIn.Close()
+				for d := range stream.underlying {
+					intermediateIn.Send(reflect.ValueOf(d))
+				}
+			}()
 
-	f.out = &Stream{
-		Type:      outChannelType.Elem(),
-		Channel:   make(chan interface{}),
-		Generator: f,
-	}
+			intermediateOut := reflect.MakeChan(outChannelType, 0)
+			go func() {
+				defer intermediateOut.Close()
+				fnVal.Call([]reflect.Value{intermediateIn, intermediateOut})
+			}()
 
-	f.mat = func() {
-		intermediateIn := reflect.MakeChan(inChannelType, 0)
-		go func() {
-			stream.Materialize()
-			defer intermediateIn.Close()
-			for d := range stream.Channel {
-				intermediateIn.Send(reflect.ValueOf(d))
+			for {
+				o, ok := intermediateOut.Recv()
+				if !ok {
+					return
+				} else {
+					output <- o.Interface()
+				}
 			}
-		}()
-
-		intermediateOut := reflect.MakeChan(outChannelType, 0)
-		go func() {
-			defer intermediateOut.Close()
-			f.FnVal.Call([]reflect.Value{intermediateIn, intermediateOut})
-		}()
-
-		for {
-			o, ok := intermediateOut.Recv()
-			if !ok {
-				return
-			} else {
-				f.out.Channel <- o.Interface()
-			}
-		}
-
+		},
 	}
-
-	return f.out
 
 }

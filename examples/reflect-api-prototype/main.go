@@ -31,7 +31,7 @@ func main() {
 	// TODO however the result must be a Stream whose .Type is not interface{} but is derived from the collection
 	messages := io.FromList(list)
 
-	//decode strings to xml by applying a coder
+	//decode strings to xml by applying a coder //TODO this stage should be injected by the second stage analysis
 	xmls := messages.Apply(gocxml.StringDecoder())
 
 	//extract names with custom Map fn
