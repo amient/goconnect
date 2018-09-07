@@ -86,8 +86,8 @@ func (s *Source) Run(output chan *goc.Element) {
 		panic(err)
 	}
 
-	log.Printf("AMQP RootTransform Started")
-	defer log.Printf("AMQP RootTransform Finished")
+	log.Printf("AMQP RootFn Started")
+	defer log.Printf("AMQP RootFn Finished")
 
 	for delivery := range deliveries {
 		//TODO emit delivery.Timestamp as event time

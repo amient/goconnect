@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/amient/goconnect/pkg/goc"
 	"os"
-	"reflect"
 )
 
 func StdOutSink() *stdOutSink {
@@ -18,10 +17,6 @@ type stdOutSink struct {
 	stdout   *bufio.Writer
 }
 
-func (sink *stdOutSink) InType() reflect.Type {
-	return goc.AnyType
-}
-
 func (sink *stdOutSink) Fn(element interface {}) error {
 	switch e := element.(type) {
 		case []byte: sink.stdout.Write(e)
@@ -29,7 +24,6 @@ func (sink *stdOutSink) Fn(element interface {}) error {
 		default: fmt.Fprint(sink.stdout, element)
 	}
 	sink.stdout.WriteByte('\n')
-	sink.stdout.Flush()
 	return nil
 }
 

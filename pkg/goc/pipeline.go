@@ -13,7 +13,7 @@ import (
 type Pipeline struct {
 	Control              *Control
 	streams              []*Stream
-	source               RootTransform
+	source               RootFn
 	lastCommit           time.Time
 	numProcessedElements uint32
 	lastConsumedPosition interface{}
@@ -25,7 +25,7 @@ func NewPipeline() *Pipeline {
 	}
 }
 
-func (p *Pipeline) From(source RootTransform) *Stream {
+func (p *Pipeline) From(source RootFn) *Stream {
 	return p.Register(&Stream{
 		Type:      source.OutType(),
 		runner:    source.Run,
@@ -51,9 +51,7 @@ func (p *Pipeline) Transform(that *Stream, out reflect.Type, fn func(input chan 
 			fn(transient, output)
 		},
 	})
-
 }
-
 
 func (p *Pipeline) Register(stream *Stream) *Stream {
 	stream.pipeline = p
@@ -95,7 +93,7 @@ func (p *Pipeline) Run(commitInterval time.Duration) error {
 		}(stream)
 	}
 
-	p.source = p.streams[0].transform.(RootTransform)
+	p.source = p.streams[0].transform.(RootFn)
 	sink := p.streams[len(p.streams)-1]
 
 	//open committer tick underlying

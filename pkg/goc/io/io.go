@@ -5,7 +5,7 @@ import (
 	"reflect"
 )
 
-func Iterable(list interface{}) goc.RootTransform {
+func Iterable(list interface{}) goc.RootFn {
 	//TODO validate array or slice
 	return &iterable{
 		val: reflect.ValueOf(list),

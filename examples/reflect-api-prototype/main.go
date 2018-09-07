@@ -9,32 +9,23 @@ import (
 	"time"
 )
 
+var data = []string{
+	"<name>Adam</name>", "<name>Albert</name>", "<name>Alice</name>", "<name>Alex</name>",
+	"<name>Bart</name>", "<name>Bob</name>", "<name>Brittney</name>", "<name>Brenda</name>",
+	"<name>Cecilia</name>", "<name>Chad</name>", "<name>Elliot</name>", "<name>Wojtek</name>",
+}
+
 func main() {
 
 	pipeline := goc.NewPipeline()
 
-	//////////////////////////////////////////////////////////////////////////////////////////
-
-	data := []string{
-		"<name>Adam</name>",
-		"<name>Albert</name>",
-		"<name>Alice</name>",
-		"<name>Alex</name>",
-		"<name>Bart</name>",
-		"<name>Bob</name>",
-		"<name>Brittney</name>",
-		"<name>Brenda</name>",
-		"<name>Cecilia</name>",
-		"<name>Chad</name>",
-		"<name>Elliot</name>",
-		"<name>Wojtek</name>",
-	}
 	//root source of text elements
 	// TODO generated lists are one of the examples which must be coordinated and run on any one instance
 	messages := pipeline.From(io.Iterable(data))
 
-	//decode strings to xml by applying a coder //TODO this stage should be injected by the coder analysis step
+	//decode strings to xml by applying a coder
 	xmls := messages.Apply(gocxml.StringDecoder())
+	//TODO this stage should be injected by the coder analysis step
 
 	//extract names with custom Map fn
 	extracted := xmls.Map(func(input gocxml.Node) string {
@@ -59,14 +50,8 @@ func main() {
 	//TODO StdOOut sink must be network-merged to the single instance which last joined the group
 	total.Apply(std.StdOutSink())
 
-	//////////////////////////////////////////////////////////////////////////////////////////
-
 	pipeline.Run(5 * time.Second)
 
 }
 
 //TODO next step is adding networking-friendly checkpointer with pipeline options of optimistic or pessimistic one
-
-
-
-

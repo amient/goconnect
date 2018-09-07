@@ -41,6 +41,6 @@ func main() {
 
 	messages.Apply(std.StdOutSink())
 
-	pipeline.Run(2 * time.Second)
+	pipeline.Run(500 * time.Millisecond)
 
 }

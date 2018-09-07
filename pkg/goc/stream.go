@@ -3,10 +3,12 @@ package goc
 import (
 	"fmt"
 	"reflect"
+	"time"
 )
 
 type Element struct {
 	signal     ControlSignal
+	Timestamp  time.Time
 	Checkpoint Checkpoint
 	Value      interface{}
 }
@@ -24,7 +26,7 @@ type Stream struct {
 }
 
 
-func (stream *Stream) Apply(t ForEachDo) *Stream {
+func (stream *Stream) Apply(t Fn) *Stream {
 	if method, exists := reflect.TypeOf(t).MethodByName("Fn"); !exists {
 		panic(fmt.Errorf("transform must provide Fn method"))
 	} else {
