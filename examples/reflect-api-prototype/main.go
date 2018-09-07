@@ -6,15 +6,16 @@ import (
 	"github.com/amient/goconnect/pkg/goc/io"
 	"github.com/amient/goconnect/pkg/goc/io/std"
 	"strings"
+	"time"
 )
 
 func main() {
 
-	pipeline := new(goc.Pipeline)
+	pipeline := goc.NewPipeline()
 
 	//////////////////////////////////////////////////////////////////////////////////////////
 
-	list := []string{
+	data := []string{
 		"<name>Adam</name>",
 		"<name>Alice</name>",
 		"<name>Alex</name>",
@@ -25,13 +26,10 @@ func main() {
 		"<name>Chad</name>",
 	}
 	//root source of text elements
-	// TODO this must be done with pipeline.Root(...) becase
-	// TODO a) checkpointing control
-	// TODO b) generated lists are one of the examples which must be coordinated and run on any one instance
-	// TODO however the result must be a Stream whose .Type is not interface{} but is derived from the collection
-	messages := io.FromList(list)
+	// TODO generated lists are one of the examples which must be coordinated and run on any one instance
+	messages := pipeline.From(io.Iterable(data))
 
-	//decode strings to xml by applying a coder //TODO this stage should be injected by the second stage analysis
+	//decode strings to xml by applying a coder //TODO this stage should be injected by the coder analysis step
 	xmls := messages.Apply(gocxml.StringDecoder())
 
 	//extract names with custom Map fn
@@ -54,20 +52,17 @@ func main() {
 	})
 
 	//output the aggregation result by applying a general StdOutSink transform
-	sink1 := total.Apply(std.StdOutSink())
+	//TODO StdOOut sink must be network-merged to the single instance which last joined the group
+	total.Apply(std.StdOutSink())
 
 	//////////////////////////////////////////////////////////////////////////////////////////
 
-	pipeline.Run(sink1)
+	pipeline.Run(5 * time.Second)
 
 }
 
-//TODO next step is adding checkpointer with pipeline options of optimistic or pessimistic one
-//TODO maybe forking outputs is possible without breaking guarantees
-//TODO probably merging from multiple inputs would be possible if all of them support optimistic commit
-//sink2 := xmls.Transform(FnEW(func(input xmlc.Node) error {
-//	fmt.Println(sink2)
-//	return nil
-//}))
+//TODO next step is adding networking-friendly checkpointer with pipeline options of optimistic or pessimistic one
+
+
 
 

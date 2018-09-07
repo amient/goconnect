@@ -3,6 +3,7 @@ package gocxml
 import (
 	"bufio"
 	"bytes"
+	"github.com/amient/goconnect/pkg/goc"
 )
 
 func BytesDecoder() *bytesDecoder {
@@ -18,7 +19,7 @@ func (d *bytesDecoder) Fn(input []byte) Node {
 	return node
 }
 
-func (d *bytesDecoder) Flush() error {
+func (d *bytesDecoder) Commit(goc.Checkpoint) error {
 	return nil
 }
 
@@ -40,6 +41,6 @@ func (e *bytesEncoder) Fn(input Node) []byte {
 	return b.Bytes()
 }
 
-func (e *bytesEncoder) Flush() error {
+func (e *bytesEncoder) Commit(goc.Checkpoint) error {
 	return nil
 }

@@ -3,6 +3,7 @@ package std
 import (
 	"bufio"
 	"fmt"
+	"github.com/amient/goconnect/pkg/goc"
 	"os"
 )
 
@@ -21,6 +22,6 @@ func (sink *stdOutSink) Fn(element interface {}) error {
 	return nil
 }
 
-func (sink *stdOutSink) Flush() error {
+func (sink *stdOutSink) Commit(goc.Checkpoint) error {
 	return sink.stdout.Flush()
 }

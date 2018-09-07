@@ -6,16 +6,20 @@ import (
 	"reflect"
 )
 
-type Transform interface {
-	Flush() error
-}
-
 type Stream struct {
 	Type         reflect.Type
 	Materializer func(chan interface{})
 	underlying   chan interface{}
+	pipeline	 *Pipeline
 	transform    Transform
 }
+
+type Checkpoint []interface{}
+
+type Transform interface {
+	Commit(Checkpoint) error
+}
+
 
 func (stream *Stream) Materialize() {
 	log.Printf("Materilaizing Stream of %q \n", stream.Type)
@@ -23,17 +27,15 @@ func (stream *Stream) Materialize() {
 		panic(fmt.Errorf("stream already materialized"))
 	}
 	stream.underlying = make(chan interface{})
-	if stream.Materializer != nil {
-		go func() {
-			defer close(stream.underlying)
-			stream.Materializer(stream.underlying)
-		}()
-	}
+	go func() {
+		defer close(stream.underlying)
+		stream.Materializer(stream.underlying)
+	}()
 }
 
-func (stream *Stream) Flush() error {
+func (stream *Stream) Commit(checkpoint Checkpoint) error {
 	if stream.transform != nil {
-		return stream.transform.Flush()
+		return stream.transform.Commit(checkpoint)
 	} else {
 		return nil
 	}
@@ -91,17 +93,16 @@ func (stream *Stream) Map(fn interface{}) *Stream {
 
 	////////////////////////////////////////////////////////////////////////////
 
-	return &Stream{
+	return stream.pipeline.From(&Stream{
 		Type: fnType.Out(0),
 		Materializer: func(output chan interface{}) {
-			stream.Materialize()
 			for d := range stream.underlying {
 				v := reflect.ValueOf(d)
 				r := fnVal.Call([]reflect.Value{v})
 				output <- r[0].Interface()
 			}
 		},
-	}
+	})
 
 }
 
@@ -124,10 +125,9 @@ func (stream *Stream) Filter(fn interface{}) *Stream {
 
 	////////////////////////////////////////////////////////////////////////////
 
-	return &Stream{
+	return stream.pipeline.From(&Stream{
 		Type: fnType.In(0),
 		Materializer: func(output chan interface{}) {
-			stream.Materialize()
 			for d := range stream.underlying {
 				v := reflect.ValueOf(d)
 				if fnVal.Call([]reflect.Value{v})[0].Bool() {
@@ -135,7 +135,7 @@ func (stream *Stream) Filter(fn interface{}) *Stream {
 				}
 			}
 		},
-	}
+	})
 }
 
 func (stream *Stream) Transform(fn interface{}) *Stream {
@@ -164,12 +164,11 @@ func (stream *Stream) Transform(fn interface{}) *Stream {
 
 	////////////////////////////////////////////////////////////////////////////
 
-	return &Stream{
+	return stream.pipeline.From(&Stream{
 		Type: outChannelType.Elem(),
 		Materializer: func(output chan interface{}) {
 			intermediateIn := reflect.MakeChan(inChannelType, 0)
 			go func() {
-				stream.Materialize()
 				defer intermediateIn.Close()
 				for d := range stream.underlying {
 					intermediateIn.Send(reflect.ValueOf(d))
@@ -191,6 +190,6 @@ func (stream *Stream) Transform(fn interface{}) *Stream {
 				}
 			}
 		},
-	}
+	})
 
 }
