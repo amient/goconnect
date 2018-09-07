@@ -23,7 +23,6 @@ func (it *iterable) OutType() reflect.Type {
 }
 
 func (it *iterable) Run(output chan *goc.Element) {
-	//OutType:
 	for i := 0; i < it.val.Len(); i++ {
 		output <- &goc.Element{
 			Checkpoint: i,
