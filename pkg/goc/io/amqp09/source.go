@@ -90,8 +90,8 @@ func (s *Source) Run(output chan *goc.Element) {
 	defer log.Printf("AMQP RootFn Finished")
 
 	for delivery := range deliveries {
-		//TODO emit delivery.Timestamp as event time
 		output <- &goc.Element{
+			Timestamp:  delivery.Timestamp,
 			Checkpoint: delivery.DeliveryTag,
 			Value:      delivery.Body,
 		}
@@ -99,7 +99,7 @@ func (s *Source) Run(output chan *goc.Element) {
 }
 
 func (s *Source) Commit(checkpoint goc.Checkpoint) error {
-	return nil //return s.channel.Ack(checkpoint.(uint64), true)
+	return s.channel.Ack(checkpoint.(uint64), true)
 }
 
 func (s *Source) Close() error {
