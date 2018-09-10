@@ -29,7 +29,7 @@ func (source *Source) OutType() reflect.Type {
 	return reflect.TypeOf(goc.KVBytes{})
 }
 
-func (source *Source) Run(output chan *goc.Element) {
+func (source *Source) Run(output goc.OutputChannel) {
 	var err error
 	source.consumer, err = kafka.NewConsumer(&kafka.ConfigMap{
 		"bootstrap.servers": source.Bootstrap,

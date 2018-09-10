@@ -37,20 +37,21 @@ func main() {
 		return !strings.Contains(input, "B")
 	})
 
-	//do total aggregation using custom SideEffect fn
-	total := filtered.Transform(func(input chan string, output chan int) {
-		l := 0
-		for b := range input {
-			l += len(b)
-		}
-		output <- l
-	})
+	filtered.Apply(std.StdOutSink())
+	////do total aggregation using custom SideEffect fn
+	//total := filtered.Transform(func(input chan string, output chan int) {
+	//	l := 0
+	//	for b := range input {
+	//		l += len(b)
+	//	}
+	//	output <- l
+	//})
+	//
+	////output the aggregation result by applying a general StdOutSink transform
+	////TODO StdOOut sink must be network-merged to the single instance which last joined the group
+	//total.Apply(std.StdOutSink())
 
-	//output the aggregation result by applying a general StdOutSink transform
-	//TODO StdOOut sink must be network-merged to the single instance which last joined the group
-	total.Apply(std.StdOutSink())
-
-	pipeline.Run(5 * time.Second)
+	pipeline.Run(100 * time.Millisecond)
 
 }
 

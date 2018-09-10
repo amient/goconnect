@@ -6,18 +6,24 @@ type Fn interface {}
 
 type RootFn interface {
 	OutType() reflect.Type
-	Run(output chan *Element)
+	Run(output OutputChannel)
+}
+
+type ElementWiseFn interface {
+	InType() reflect.Type
+	OutType() reflect.Type
+	Process(input *Element, output OutputChannel)
+}
+
+type ForEachFn interface {
+	InType() reflect.Type
+	Process(input *Element)
 }
 
 type TransformFn interface {
 	InType() reflect.Type
 	OutType() reflect.Type
-	Run(input <-chan *Element, output chan *Element)
-}
-
-type DoFn interface {
-	InType() reflect.Type
-	Run(input <-chan *Element)
+	Run(input InputChannel, output OutputChannel)
 }
 
 type Closeable interface {
@@ -25,7 +31,7 @@ type Closeable interface {
 }
 
 type SideEffect interface {
-	Flush(*Checkpoint) error
+	Flush() error
 }
 
 type Commitable interface {

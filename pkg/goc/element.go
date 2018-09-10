@@ -6,10 +6,18 @@ type Element struct {
 	Timestamp  *time.Time
 	Checkpoint Checkpoint
 	Value      interface{}
-	Signal     ControlSignal //FIXME this should not be exported but it is used to complete bounded sources atm
+	signal     ControlSignal
 }
 
 type ControlSignal uint8
 
 const NoSignal ControlSignal = 0
 const ControlDrain ControlSignal = 1
+
+type InputChannel <- chan *Element
+
+type OutputChannel chan *Element
+
+func (o OutputChannel) Collect(e interface{}) {
+
+}

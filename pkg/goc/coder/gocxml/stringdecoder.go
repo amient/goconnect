@@ -19,10 +19,8 @@ func (d *stringDecoder) OutType() reflect.Type {
 	return reflect.TypeOf([]Node{}).Elem()
 }
 
-func (d *stringDecoder) Run(input <-chan *goc.Element, output chan *goc.Element) {
-	for in := range input {
-		output <- &goc.Element{Value: d.Fn(in.Value.(string))}
-	}
+func (d *stringDecoder) Process(input *goc.Element, output goc.OutputChannel) {
+	output <- &goc.Element{Value: d.Fn(input.Value.(string))}
 }
 
 func (d *stringDecoder) Fn(input string) Node {

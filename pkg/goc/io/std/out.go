@@ -22,13 +22,12 @@ func (sink *stdOutSink) InType() reflect.Type {
 	return goc.AnyType
 }
 
-func (sink *stdOutSink) Run(input <- chan *goc.Element) {
-	for e := range input {
-		sink.Fn(e.Value)
-	}
+
+func (sink *stdOutSink) Process(input *goc.Element) {
+	sink.Fn(input.Value)
 }
 
-func (sink *stdOutSink) Fn(element interface {}) error {
+func (sink *stdOutSink) Fn(element interface {})  {
 	switch e := element.(type) {
 		case []byte: sink.stdout.Write(e)
 		case string: sink.stdout.WriteString(e)
@@ -43,9 +42,8 @@ func (sink *stdOutSink) Fn(element interface {}) error {
 		default: fmt.Fprint(sink.stdout, element)
 	}
 	sink.stdout.WriteByte('\n')
-	return nil
 }
 
-func (sink *stdOutSink) Flush(*goc.Checkpoint) error {
+func (sink *stdOutSink) Flush() error {
 	return sink.stdout.Flush()
 }

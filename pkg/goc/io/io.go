@@ -22,7 +22,7 @@ func (it *iterable) OutType() reflect.Type {
 	return it.typ.Elem()
 }
 
-func (it *iterable) Run(output chan *goc.Element) {
+func (it *iterable) Run(output goc.OutputChannel) {
 	for i := 0; i < it.val.Len(); i++ {
 		output <- &goc.Element{
 			Checkpoint: goc.Checkpoint {
@@ -31,6 +31,5 @@ func (it *iterable) Run(output chan *goc.Element) {
 			Value:      it.val.Index(i).Interface(),
 		}
 	}
-	output <- &goc.Element{Signal: goc.ControlDrain}
 }
 
