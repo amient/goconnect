@@ -2,9 +2,9 @@ package main
 
 import (
 	"flag"
-	"github.com/amient/goconnect/pkg"
-	"github.com/amient/goconnect/pkg/io/amqp091"
-	"github.com/amient/goconnect/pkg/io/kafka1x"
+	"github.com/amient/goconnect/pkg/goc"
+	"github.com/amient/goconnect/pkg/goc/io/amqp09"
+	"github.com/amient/goconnect/pkg/goc/io/std"
 	"time"
 )
 
@@ -27,21 +27,21 @@ func main() {
 
 	flag.Parse()
 
-	//declared pipeline stages (no i/o happens at this point, only channels are chained)
-	source := &amqp091.Source{
+	pipeline := goc.NewPipeline()
+
+	messages :=  pipeline.Root(&amqp09.Source {
 		Uri:          *uri,
 		Exchange:     *exchange,
 		ExchangeType: *exchangeType,
 		QueueName:    *queue,
 		Group:        *consumerTag,
 		BindingKey:   *bindingKey,
-	}
+	})
 
-	sink := &kafka1x.Sink{Bootstrap: *kafkaBootstrap, Topic: *kafkaTopic}
-	sink.Apply(source)
+	messages.Apply(std.StdOutSink())
 
-	//materialize and run the pipeline (this opens the connections to the respective backends)
-	goconnect.Execute(source, sink, *commitInterval)
+	pipeline.Run(500 * time.Millisecond)
+
 
 	//TODO verify that optimistic checkpointer works in this scenario
 }

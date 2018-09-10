@@ -21,7 +21,7 @@ func main() {
 
 	//root source of text elements
 	// TODO generated lists are one of the examples which must be coordinated and run on any one instance
-	messages := pipeline.From(io.Iterable(data))
+	messages := pipeline.Root(io.Iterable(data))
 
 	//decode strings to xml by applying a coder
 	xmls := messages.Apply(gocxml.StringDecoder())

@@ -11,12 +11,8 @@ import (
 )
 
 type Pipeline struct {
-	Control              *Control
-	streams              []*Stream
-	source               RootFn
-	lastCommit           time.Time
-	numProcessedElements uint32
-	lastConsumedPosition interface{}
+	streams    []*Stream
+	lastCommit time.Time
 }
 
 func NewPipeline() *Pipeline {
@@ -25,75 +21,69 @@ func NewPipeline() *Pipeline {
 	}
 }
 
-func (p *Pipeline) From(source RootFn) *Stream {
-	return p.Register(&Stream{
+func (p *Pipeline) register(stream *Stream) *Stream {
+	stream.pipeline = p
+	p.streams = append(p.streams, stream)
+	return stream
+}
+
+func (p *Pipeline) Root(source RootFn) *Stream {
+	return p.register(&Stream{
 		Type:      source.OutType(),
 		runner:    source.Run,
 		transform: source,
 	})
 }
 
-func (p *Pipeline) Transform(that *Stream, out reflect.Type, fn func(input chan *Element, output chan *Element)) *Stream {
-	return p.Register(&Stream{
-		Type: out,
+func (p *Pipeline) Apply(that *Stream, out reflect.Type, fn Fn, run func(input <-chan *Element, output chan *Element)) *Stream {
+	return p.register(&Stream{
+		Type:      out,
+		transform: fn,
 		runner: func(output chan *Element) {
-			transient := make(chan *Element)
-			go func(in *Stream) {
-				defer close(transient)
-				for d := range in.output {
-					if d.isMarker() {
-						output <- d
-					} else {
-						transient <- d
-					}
-				}
-			}(that)
-			fn(transient, output)
+			run(that.forward(output), output)
 		},
 	})
 }
 
-func (p *Pipeline) Register(stream *Stream) *Stream {
-	stream.pipeline = p
-	p.streams = append(p.streams, stream)
-	return stream
+func (p *Pipeline) Do(that *Stream, fn DoFn) *Stream {
+	if !that.Type.AssignableTo(fn.InType()) {
+		//TODO this check will be removed and resolved during coder injection step
+		panic(fmt.Errorf("cannot Apply Fn with input type %q to consume stream of type %q",
+			fn.InType(), that.Type))
+	}
+	return p.Apply(that, ErrorType, fn, func(input <-chan *Element, output chan *Element) {
+		fn.Run(that.forward(output))
+	})
 }
 
-func (p *Pipeline) Run(commitInterval time.Duration) error {
+func (p *Pipeline) Transform(that *Stream, fn TransformFn) *Stream {
+	if !that.Type.AssignableTo(fn.InType()) {
+		//TODO this check will be removed and resolved during coder injection step
+		panic(fmt.Errorf("cannot Apply Fn with input type %q to consume stream of type %q",
+			fn.InType(), that.Type))
+	}
+	return p.Apply(that, fn.OutType(), fn, fn.Run)
+}
 
-	log.Printf("Materializing and Running Pipeline of %d stages\n", len(p.streams))
-	p.Control = &Control{make(chan *ControlSignal)}
+func (p *Pipeline) Run(commitInterval time.Duration) {
 
-	for _, stream := range p.streams {
+	log.Printf("Running Pipeline of %d stages\n", len(p.streams))
+
+	for s, stream := range p.streams {
 		log.Printf("Materilaizing Stream of %q \n", stream.Type)
 		if stream.output != nil {
 			panic(fmt.Errorf("stream already materialized"))
 		}
 
-		interceptedOutput := make(chan *Element)
-		go func(stream *Stream) {
-			defer close(interceptedOutput)
-			stream.runner(interceptedOutput)
-		}(stream)
-
 		stream.output = make(chan *Element)
-		go func(stream *Stream) {
-			defer close(stream.output)
-			for {
-				select {
-				case <-p.Control.Signals(stream.output):
-				case element, ok := <-interceptedOutput:
-					if !ok {
-						return
-					} else {
-						stream.output <- element
-					}
-				}
-			}
-		}(stream)
+		go func(s int, stream *Stream) {
+			defer log.Println("stage terminated[%d]: %q", s, stream.Type)
+			defer stream.close()
+			stream.runner(stream.output)
+		}(s, stream)
+
 	}
 
-	p.source = p.streams[0].transform.(RootFn)
 	sink := p.streams[len(p.streams)-1]
 
 	//open committer tick underlying
@@ -106,59 +96,62 @@ func (p *Pipeline) Run(commitInterval time.Duration) error {
 	for {
 		select {
 		case sig := <-sigterm:
-			log.Printf("Caught signal %v: terminating\n", sig)
-			p.Control.Send(ControlCleanStop)
+			log.Printf("Caught signal %v: Cancelling\n", sig)
+			//TODO assuming a single root
+			p.streams[0].close()
 
 		case timestamp := <-committerTick:
 			if timestamp.Sub(p.lastCommit) > commitInterval {
-				p.startCommit(timestamp)
+				log.Println("Start Commit")
+				//draining should not be necessary if optimistic checkpointing is possible - see comments in goc.Checkpoint
+				p.streams[0].output <- &Element{signal: ControlDrain}
+				log.Println("Control Drain")
+				p.lastCommit = timestamp
 			}
 
 		case e, more := <-sink.output:
 			if !more {
-				//this is the only place that exits the for-select
-				p.concludeCommit()
-				p.Control.Close()
-				//TODO p.sink.Close()
-				return nil
-			} else if e.isMarker() {
-				p.concludeCommit()
-				p.Control.Send(ControlResume)
-			} else {
-				//TODO p.lastConsumedPosition = checkpoint.Position
-				p.numProcessedElements++
-			}
+				log.Println("Pipeline Terminated")
+				p.commit() //TODO this commit is here for bounded pipelines but needs to be verified that it doesn't break guarantees of unbouded pipeliens
+				for i := len(p.streams) - 1; i >= 0; i-- {
+					stream := p.streams[i]
+					if stream.transform != nil {
+						stream.transform.Close()
+					}
+				}
+				//this is the only place that exits the for-select which in turn is only possible by ControlCancel signal below
+				return
+			} else if e.hasSignal() {
+				switch e.signal {
 
-		}
+				case ControlDrain:
+					log.Printf("Concluding Commit via Marker")
+					p.commit()
 
-	}
-
-}
-func (p *Pipeline) startCommit(timestamp time.Time) {
-	if p.numProcessedElements > 0 {
-		log.Println("Start Commit")
-		//draining should not be necessary if optimistic checkpointing is possible - see comments in goc.Checkpoint
-		p.Control.Send(ControlDrain)
-		p.lastCommit = timestamp
-	}
-
-}
-
-func (p *Pipeline) concludeCommit() {
-	if p.numProcessedElements > 0 {
-		log.Printf("Committing %d elements at source position: %q", p.numProcessedElements, p.lastConsumedPosition)
-
-		for i := len(p.streams) - 1; i >= 0; i-- {
-			stream := p.streams[i]
-			if stream.transform != nil {
-				//TODO collect emited stream.transform.checkpoint associated with output.checkkpoint
-				if err := stream.transform.Commit(nil); err != nil {
-					panic(err)
+				//case ControlCancel:
+				//	p.Control.Close()
+				//	for i := len(p.streams) - 1; i >= 0; i-- {
+				//		stream := p.streams[i]
+				//		if stream.transform != nil {
+				//			stream.transform.Close()
+				//		}
+				//	}
 				}
 			}
-		}
-		log.Print("Commit successful")
-		p.numProcessedElements = 0
-	}
 
+		}
+
+	}
+}
+
+func (p *Pipeline) commit() {
+	for i := len(p.streams) - 1; i >= 0; i-- {
+		stream := p.streams[i]
+		if stream.transform != nil {
+			//TODO collect emited stream.transform.checkpoint associated with output.checkkpoint
+			if err := stream.transform.Commit(nil); err != nil {
+				panic(err)
+			}
+		}
+	}
 }

@@ -3,59 +3,49 @@ package goc
 import (
 	"fmt"
 	"reflect"
-	"time"
 )
-
-type Element struct {
-	signal     ControlSignal
-	Timestamp  time.Time
-	Checkpoint Checkpoint
-	Value      interface{}
-}
-
-func (element *Element) isMarker() bool {
-	return element.signal != NoSignal
-}
 
 type Stream struct {
 	Type      reflect.Type
-	runner    func(chan *Element)
+	runner    func(output chan *Element)
 	output    chan *Element
 	pipeline  *Pipeline
 	transform Fn
+	closed    bool
 }
 
-
-func (stream *Stream) Apply(t Fn) *Stream {
-	if method, exists := reflect.TypeOf(t).MethodByName("Fn"); !exists {
-		panic(fmt.Errorf("transform must provide Fn method"))
-	} else {
-		v := reflect.ValueOf(t)
-		args := make([]reflect.Type, method.Type.NumIn()-1)
-		for i := 1; i < method.Type.NumIn(); i++ {
-			args[i-1] = method.Type.In(i)
-		}
-		ret := make([]reflect.Type, method.Type.NumOut())
-		for i := 0; i < method.Type.NumOut(); i++ {
-			ret[i] = method.Type.Out(i)
-		}
-		fn := reflect.MakeFunc(reflect.FuncOf(args, ret, false), func(args []reflect.Value) (results []reflect.Value) {
-			methodArgs := append([]reflect.Value{v}, args...)
-			return method.Func.Call(methodArgs)
-		})
-
-		var output *Stream
-		if len(ret) > 1 {
-			panic(fmt.Errorf("transform must have 0 or 1 return Value"))
-		} else if len(ret) == 0 {
-			output = stream.Transform(fn.Interface())
-		} else {
-			output = stream.Map(fn.Interface())
-		}
-		output.transform = t
-		return output
+func (stream *Stream) close() {
+	if ! stream.closed {
+		close(stream.output)
+		stream.closed = true
 	}
+}
 
+func (stream *Stream) forward(to chan *Element) chan *Element {
+	interceptedOutput := make(chan *Element)
+	go func(source *Stream) {
+		defer close(interceptedOutput)
+		for element := range source.output {
+			if element.hasSignal() {
+				to <- element
+			} else {
+				interceptedOutput <- element
+			}
+		}
+	}(stream)
+	return interceptedOutput
+}
+
+func (stream *Stream) Apply(f Fn) *Stream {
+	switch fn := f.(type) {
+	case TransformFn:
+		return stream.pipeline.Transform(stream, fn)
+	case DoFn:
+		return stream.pipeline.Do(stream, fn)
+	default:
+		panic(fmt.Errorf("not implemented Apply of ", reflect.TypeOf(fn)))
+
+	}
 }
 
 func (stream *Stream) Map(fn interface{}) *Stream {
@@ -76,11 +66,14 @@ func (stream *Stream) Map(fn interface{}) *Stream {
 		panic(fmt.Errorf("map func must have exactly 1 output"))
 	}
 
-	return stream.pipeline.Transform(stream, fnType.Out(0), func(input chan *Element, output chan *Element){
-		for d := range input {
-			v := reflect.ValueOf(d.Value)
+	return stream.pipeline.Apply(stream, fnType.Out(0), nil, func(input <-chan *Element, output chan *Element) {
+		for inputElement := range input {
+			v := reflect.ValueOf(inputElement.Value)
 			r := fnVal.Call([]reflect.Value{v})
-			output <- &Element{Value: r[0].Interface()}
+			output <- &Element{
+				Value:     r[0].Interface(),
+				Timestamp: inputElement.Timestamp,
+			}
 		}
 	})
 
@@ -103,7 +96,7 @@ func (stream *Stream) Filter(fn interface{}) *Stream {
 		panic(fmt.Errorf("FnVal must have exactly 1 output and it should be bool"))
 	}
 
-	return stream.pipeline.Transform(stream, fnType.In(0), func(input chan *Element, output chan *Element){
+	return stream.pipeline.Apply(stream, fnType.In(0), nil, func(input <-chan *Element, output chan *Element) {
 		for d := range input {
 			v := reflect.ValueOf(d.Value)
 			if fnVal.Call([]reflect.Value{v})[0].Bool() {
@@ -138,8 +131,7 @@ func (stream *Stream) Transform(fn interface{}) *Stream {
 		panic(fmt.Errorf("transform func input argument must be a underlying of %q, got underlying of %q", stream.Type, fnType.In(0).Elem()))
 	}
 
-
-	return stream.pipeline.Transform(stream, outChannelType.Elem(), func(input chan *Element, output chan *Element){
+	return stream.pipeline.Apply(stream, outChannelType.Elem(), nil, func(input <-chan *Element, output chan *Element) {
 		intermediateIn := reflect.MakeChan(inChannelType, 0)
 		go func() {
 			defer intermediateIn.Close()

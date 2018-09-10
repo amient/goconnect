@@ -26,8 +26,8 @@ func (sink *OutSink) Apply(upstream goconnect.RecordSource) *OutSink {
 
 func (sink *OutSink) Materialize() error {
 	go func() {
-		log.Printf("StdOut Sink Started")
-		defer log.Printf("StdOut Sink Finished")
+		log.Printf("StdOut Do Started")
+		defer log.Printf("StdOut Do Finished")
 		defer close(sink.output)
 		for o := range sink.upstream.Output() {
 			bytes := *o.Value

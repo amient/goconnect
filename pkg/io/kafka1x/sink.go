@@ -29,8 +29,8 @@ func (sink *Sink) Materialize() error {
 		return err
 	}
 	go func() {
-		log.Printf("Kafka Sink Started")
-		defer log.Printf("Kafka Sink Finished")
+		log.Printf("Kafka Do Started")
+		defer log.Printf("Kafka Do Finished")
 		defer close(sink.output)
 		for inputRecord := range sink.input {
 			sink.process(inputRecord)

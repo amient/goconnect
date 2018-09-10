@@ -91,7 +91,7 @@ func (s *Source) Run(output chan *goc.Element) {
 
 	for delivery := range deliveries {
 		output <- &goc.Element{
-			Timestamp:  delivery.Timestamp,
+			Timestamp:  &delivery.Timestamp,
 			Checkpoint: delivery.DeliveryTag,
 			Value:      delivery.Body,
 		}

@@ -2,8 +2,8 @@ package main
 
 import (
 	"flag"
-	"github.com/amient/goconnect/pkg"
-	"github.com/amient/goconnect/pkg/io/kafka1x"
+	"github.com/amient/goconnect/pkg/goc"
+	"github.com/amient/goconnect/pkg/goc/io/kafka1"
 	"time"
 )
 
@@ -20,18 +20,19 @@ var (
 
 func main() {
 
-	//declared pipeline stages (no i/o happens at this point, only channels are chained)
-	var source goconnect.Source = &kafka1x.Source{
+	pipeline := goc.NewPipeline()
+
+	source := pipeline.Root(&kafka1.Source{
 		Bootstrap: *kafkaSourceBootstrap,
 		Topic:     *kafkaSourceTopic,
 		Group:     *kafkaSourceGroup,
-	}
+	})
 
-	sink := &kafka1x.Sink{Bootstrap: *kafkaSinkBootstrap, Topic: *kafkaSinkTopic}
-	sink.Apply(source)
+	source.Apply(&kafka1.Sink{
+		Bootstrap: *kafkaSinkBootstrap,
+		Topic: *kafkaSinkTopic,
+	})
 
-	//materialize and run the pipeline (this opens the connections to the respective backends)
-	goconnect.Execute(source, sink, *commitInterval)
-
+	pipeline.Run(*commitInterval)
 
 }
