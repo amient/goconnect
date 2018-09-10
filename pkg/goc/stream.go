@@ -6,12 +6,12 @@ import (
 )
 
 type Stream struct {
-	Type      reflect.Type
-	runner    func(output chan *Element)
-	output    chan *Element
-	pipeline  *Pipeline
-	transform Fn
-	closed    bool
+	Type       reflect.Type
+	output     chan *Element
+	runner     func(output chan *Element)
+	pipeline   *Pipeline
+	closed     bool
+	sideEffect SideEffect
 }
 
 func (stream *Stream) close() {
@@ -29,6 +29,10 @@ func (stream *Stream) forward(to chan *Element) chan *Element {
 			if element.hasSignal() {
 				to <- element
 			} else {
+				if element.Checkpoint != nil {
+					//TODO stamp each record for checkpointing and make sure those stamps are automatically propagated through transforms
+					//log.Println(element.Checkpoint)
+				}
 				interceptedOutput <- element
 			}
 		}
@@ -36,7 +40,7 @@ func (stream *Stream) forward(to chan *Element) chan *Element {
 	return interceptedOutput
 }
 
-func (stream *Stream) Apply(f Fn) *Stream {
+func (stream *Stream) Apply(f SideEffect) *Stream {
 	switch fn := f.(type) {
 	case TransformFn:
 		return stream.pipeline.Transform(stream, fn)
@@ -113,22 +117,22 @@ func (stream *Stream) Transform(fn interface{}) *Stream {
 	fnVal := reflect.ValueOf(fn)
 
 	if fnType.NumIn() != 2 || fnType.NumOut() != 0 {
-		panic(fmt.Errorf("transform func must have zero return values and exatly 2 arguments: input underlying and an output underlying"))
+		panic(fmt.Errorf("sideEffect func must have zero return values and exatly 2 arguments: input underlying and an output underlying"))
 	}
 
 	inChannelType := fnType.In(0)
 	outChannelType := fnType.In(1)
 	if inChannelType.Kind() != reflect.Chan {
-		panic(fmt.Errorf("transform func type input argument must be a chnnel"))
+		panic(fmt.Errorf("sideEffect func type input argument must be a chnnel"))
 	}
 
 	if outChannelType.Kind() != reflect.Chan {
-		panic(fmt.Errorf("transform func type output argument must be a chnnel"))
+		panic(fmt.Errorf("sideEffect func type output argument must be a chnnel"))
 	}
 
 	//TODO this check will deffered on after network and type coders injection
 	if !stream.Type.AssignableTo(inChannelType.Elem()) {
-		panic(fmt.Errorf("transform func input argument must be a underlying of %q, got underlying of %q", stream.Type, fnType.In(0).Elem()))
+		panic(fmt.Errorf("sideEffect func input argument must be a underlying of %q, got underlying of %q", stream.Type, fnType.In(0).Elem()))
 	}
 
 	return stream.pipeline.Apply(stream, outChannelType.Elem(), nil, func(input <-chan *Element, output chan *Element) {

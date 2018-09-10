@@ -31,11 +31,3 @@ func (it *iterable) Run(output chan *goc.Element) {
 	}
 }
 
-
-func (it *iterable) Commit(goc.Checkpoint) error {
-	return nil
-}
-
-func (it *iterable) Close() error {
-	return nil
-}

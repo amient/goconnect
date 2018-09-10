@@ -21,24 +21,26 @@ func NewPipeline() *Pipeline {
 	}
 }
 
-func (p *Pipeline) register(stream *Stream) *Stream {
+func (p *Pipeline) register(fn interface {}, stream *Stream) *Stream {
+	switch fn := fn.(type) {
+		case SideEffect: stream.sideEffect = fn
+		default: stream.sideEffect = nil
+	}
 	stream.pipeline = p
 	p.streams = append(p.streams, stream)
 	return stream
 }
 
 func (p *Pipeline) Root(source RootFn) *Stream {
-	return p.register(&Stream{
+	return p.register(source, &Stream{
 		Type:      source.OutType(),
 		runner:    source.Run,
-		transform: source,
 	})
 }
 
-func (p *Pipeline) Apply(that *Stream, out reflect.Type, fn Fn, run func(input <-chan *Element, output chan *Element)) *Stream {
-	return p.register(&Stream{
+func (p *Pipeline) Apply(that *Stream, out reflect.Type, fn interface {}, run func(input <-chan *Element, output chan *Element)) *Stream {
+	return p.register(fn, &Stream{
 		Type:      out,
-		transform: fn,
 		runner: func(output chan *Element) {
 			run(that.forward(output), output)
 		},
@@ -115,8 +117,8 @@ func (p *Pipeline) Run(commitInterval time.Duration) {
 				p.commit() //TODO this commit is here for bounded pipelines but needs to be verified that it doesn't break guarantees of unbouded pipeliens
 				for i := len(p.streams) - 1; i >= 0; i-- {
 					stream := p.streams[i]
-					if stream.transform != nil {
-						stream.transform.Close()
+					if stream.sideEffect != nil {
+						stream.sideEffect.Close()
 					}
 				}
 				//this is the only place that exits the for-select which in turn is only possible by ControlCancel signal below
@@ -128,14 +130,6 @@ func (p *Pipeline) Run(commitInterval time.Duration) {
 					log.Printf("Concluding Commit via Marker")
 					p.commit()
 
-				//case ControlCancel:
-				//	p.Control.Close()
-				//	for i := len(p.streams) - 1; i >= 0; i-- {
-				//		stream := p.streams[i]
-				//		if stream.transform != nil {
-				//			stream.transform.Close()
-				//		}
-				//	}
 				}
 			}
 
@@ -147,9 +141,9 @@ func (p *Pipeline) Run(commitInterval time.Duration) {
 func (p *Pipeline) commit() {
 	for i := len(p.streams) - 1; i >= 0; i-- {
 		stream := p.streams[i]
-		if stream.transform != nil {
-			//TODO collect emited stream.transform.checkpoint associated with output.checkkpoint
-			if err := stream.transform.Commit(nil); err != nil {
+		if stream.sideEffect != nil {
+			//TODO collect emited stream.sideEffect.checkpoint associated with output.checkkpoint
+			if err := stream.sideEffect.Commit(nil); err != nil {
 				panic(err)
 			}
 		}

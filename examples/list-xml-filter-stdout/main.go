@@ -37,7 +37,7 @@ func main() {
 		return !strings.Contains(input, "B")
 	})
 
-	//do total aggregation using custom Fn fn
+	//do total aggregation using custom SideEffect fn
 	total := filtered.Transform(func(input chan string, output chan int) {
 		l := 0
 		for b := range input {

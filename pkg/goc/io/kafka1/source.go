@@ -14,6 +14,10 @@ type ConsumerCheckpoint struct {
 	Offset    uint64
 }
 
+func (c ConsumerCheckpoint) String() string {
+	return fmt.Sprintf("%d:%d", c.Partition, c.Offset)
+}
+
 type Source struct {
 	Bootstrap string
 	Topic     string

@@ -1,7 +1,5 @@
 package gocxml
 
-import "github.com/amient/goconnect/pkg/goc"
-
 func StringEncoder() *stringEncoder {
 	return &stringEncoder{}
 }
@@ -14,13 +12,5 @@ func (e *stringEncoder) Fn(input Node) string {
 		panic(err)
 	}
 	return s
-}
-
-func (e *stringEncoder) Commit(checkpoint goc.Checkpoint) error {
-	return nil
-}
-
-func (e *stringEncoder) Close() error {
-	return nil
 }
 
