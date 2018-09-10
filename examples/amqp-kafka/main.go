@@ -10,7 +10,7 @@ import (
 
 var (
 	//general pipleline arguments
-	commitInterval = flag.Duration("commit-interval", 5*time.Second, "Commit interval of the whole connector")
+	commitInterval = flag.Duration("commit-interval", 1*time.Second, "Commit interval of the whole connector")
 	//source arguments
 	uri          = flag.String("amqp-uri", "amqp://guest:guest@localhost:5672/", "AMQP URI")
 	exchange     = flag.String("amqp-exchange", "test-exchange", "Durable, non-auto-deleted AMQP exchange name")
@@ -40,8 +40,6 @@ func main() {
 
 	messages.Apply(std.StdOutSink())
 
-	pipeline.Run(500 * time.Millisecond)
+	pipeline.Run(*commitInterval)
 
-
-	//TODO verify that optimistic checkpointer works in this scenario
 }

@@ -6,7 +6,7 @@ type Element struct {
 	Timestamp  *time.Time
 	Checkpoint Checkpoint
 	Value      interface{}
-	signal     ControlSignal
+	Signal     ControlSignal //FIXME this should not be exported but it is used to complete bounded sources atm
 }
 
 type ControlSignal uint8

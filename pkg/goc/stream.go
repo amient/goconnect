@@ -2,6 +2,7 @@ package goc
 
 import (
 	"fmt"
+	"log"
 	"reflect"
 )
 
@@ -22,13 +23,14 @@ func (stream *Stream) close() {
 	}
 }
 
+//FIXME forward has to be inverted and applied on the outputs not on inputs, otherwise sinks are missed and roots have to be treated specially
 func (stream *Stream) forward(to chan *Element) chan *Element {
 	interceptedOutput := make(chan *Element)
 	go func(source *Stream) {
 		defer close(interceptedOutput)
 		var checkpoint = make(Checkpoint)
 		for element := range source.output {
-			switch element.signal {
+			switch element.Signal {
 			case NoSignal:
 				if element.Checkpoint != nil {
 					for k, v := range element.Checkpoint {
@@ -42,7 +44,9 @@ func (stream *Stream) forward(to chan *Element) chan *Element {
 					stream.checkpoint[k] = v
 				}
 				checkpoint = make(Checkpoint)
+				log.Println("?" , reflect.TypeOf(stream.fn))
 				if fn, ok := stream.fn.(SideEffect); ok {
+					log.Println("!", stream.fn)
 					fn.Flush(&stream.checkpoint)
 				}
 			}

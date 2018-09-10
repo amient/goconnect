@@ -20,96 +20,95 @@ type Source struct {
 	empty        []byte
 }
 
-func (it *Source) OutType() reflect.Type {
-	return reflect.TypeOf([]byte(nil))
+func (source *Source) OutType() reflect.Type {
+	return goc.ByteArrayType
 }
 
-func (s *Source) Run(output chan *goc.Element) {
+func (source *Source) Run(output chan *goc.Element) {
 	var err error
 
-	log.Printf("dialing %q", s.Uri)
-	s.conn, err = amqp.Dial(s.Uri)
+	log.Printf("dialing %q", source.Uri)
+	source.conn, err = amqp.Dial(source.Uri)
 	if err != nil {
 		panic(err)
 	}
 
 	go func() {
-		<-s.conn.NotifyClose(make(chan *amqp.Error))
+		<-source.conn.NotifyClose(make(chan *amqp.Error))
 		log.Printf("Closing AMQP source")
 	}()
 
 	log.Printf("got Connection, getting channel")
-	s.channel, err = s.conn.Channel()
+	source.channel, err = source.conn.Channel()
 	if err != nil {
 		panic(err)
 	}
 
-	log.Printf("got channel, declaring Exchange (%q)", s.Exchange)
-	if err = s.channel.ExchangeDeclare(
-		s.Exchange,     // name of the Exchange
-		s.ExchangeType, // type
-		true,           // durable
-		false,          // delete when complete
-		false,          // internal
-		false,          // noWait
-		nil,            // arguments
+	log.Printf("got channel, declaring Exchange (%q)", source.Exchange)
+	if err = source.channel.ExchangeDeclare(
+		source.Exchange,     // name of the Exchange
+		source.ExchangeType, // type
+		true,                // durable
+		false,               // delete when complete
+		false,               // internal
+		false,               // noWait
+		nil,                 // arguments
 	); err != nil {
-		panic(fmt.Errorf("exchange Declare: %s", err))
+		panic(fmt.Errorf("exchange Declare: %source", err))
 	}
 
-	log.Printf("declared Exchange, declaring Queue %q", s.QueueName)
-	queue, err := s.channel.QueueDeclare(
-		s.QueueName, // name of the queue
-		true,        // durable
-		false,       // delete when unused
-		false,       // exclusive
-		false,       // noWait
-		nil,         // arguments
+	log.Printf("declared Exchange, declaring Queue %q", source.QueueName)
+	queue, err := source.channel.QueueDeclare(
+		source.QueueName, // name of the queue
+		true,             // durable
+		false,            // delete when unused
+		false,            // exclusive
+		false,            // noWait
+		nil,              // arguments
 	)
 	if err != nil {
-		panic(fmt.Errorf("Queue Declare: %s", err))
+		panic(fmt.Errorf("Queue Declare: %source", err))
 	}
 
 	log.Printf("declared Queue (%q %d messages, %d consumers)",
 		queue.Name, queue.Messages, queue.Consumers)
 
-	log.Printf("binding to Exchange (key %q)", s.BindingKey)
-	if err := s.channel.QueueBind(s.QueueName, s.BindingKey, s.Exchange, false, nil, ); err != nil {
+	log.Printf("binding to Exchange (key %q)", source.BindingKey)
+	if err := source.channel.QueueBind(source.QueueName, source.BindingKey, source.Exchange, false, nil, ); err != nil {
 		panic(err)
 	}
-	log.Printf("Queue bound to Exchange, starting Consume (consumer Group %q)", s.Group)
+	log.Printf("Queue bound to Exchange, starting Consume (consumer Group %q)", source.Group)
 
-	deliveries, err := s.channel.Consume(
-		s.QueueName, s.Group, false, false, false, false, nil, )
+	deliveries, err := source.channel.Consume(
+		source.QueueName, source.Group, false, false, false, false, nil, )
 
 	if err != nil {
 		panic(err)
 	}
 
-	log.Printf("AMQP RootFn Started")
-	defer log.Printf("AMQP RootFn Finished")
-
 	for delivery := range deliveries {
 		output <- &goc.Element{
 			Timestamp:  &delivery.Timestamp,
-			Checkpoint: delivery.DeliveryTag,
+			Checkpoint: goc.Checkpoint{
+				0: delivery.DeliveryTag,
+			},
 			Value:      delivery.Body,
 		}
 	}
 }
 
-func (s *Source) Commit(checkpoint goc.Checkpoint) error {
-	return s.channel.Ack(checkpoint.(uint64), true)
+func (source *Source) Commit(checkpoint goc.Checkpoint) error {
+	return source.channel.Ack(checkpoint[0].(uint64), true)
 }
 
-func (s *Source) Close() error {
+func (source *Source) Close() error {
 
-	if err := s.channel.Cancel(s.Group, true); err != nil {
-		return fmt.Errorf("source cancel failed: %s", err)
+	if err := source.channel.Cancel(source.Group, true); err != nil {
+		return fmt.Errorf("source cancel failed: %source", err)
 	}
 
-	if err := s.conn.Close(); err != nil {
-		return fmt.Errorf("AMQP connection close error: %s", err)
+	if err := source.conn.Close(); err != nil {
+		return fmt.Errorf("AMQP connection close error: %source", err)
 	}
 
 	return nil

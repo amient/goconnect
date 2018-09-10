@@ -21,16 +21,16 @@ func NewPipeline() *Pipeline {
 	}
 }
 
-func (p *Pipeline) register(fn Fn, stream *Stream) *Stream {
-	stream.fn = fn
+func (p *Pipeline) register(stream *Stream) *Stream {
 	stream.pipeline = p
 	p.streams = append(p.streams, stream)
 	return stream
 }
 
 func (p *Pipeline) apply(that *Stream, out reflect.Type, fn interface{}, run func(input <-chan *Element, output chan *Element)) *Stream {
-	return p.register(fn, &Stream{
+	return p.register(&Stream{
 		Type: out,
+		fn: fn,
 		runner: func(output chan *Element) {
 			run(that.forward(output), output)
 		},
@@ -38,8 +38,9 @@ func (p *Pipeline) apply(that *Stream, out reflect.Type, fn interface{}, run fun
 }
 
 func (p *Pipeline) Root(source RootFn) *Stream {
-	return p.register(source, &Stream{
+	return p.register(&Stream{
 		Type:   source.OutType(),
+		fn: source,
 		runner: source.Run,
 	})
 }
@@ -50,8 +51,9 @@ func (p *Pipeline) Transform(that *Stream, fn TransformFn) *Stream {
 		panic(fmt.Errorf("cannot Apply Fn with input type %q to consume stream of type %q",
 			fn.InType(), that.Type))
 	}
-	return p.register(fn, &Stream{
+	return p.register(&Stream{
 		Type: fn.OutType(),
+		fn: fn,
 		runner: func(output chan *Element) {
 			fn.Run(that.forward(output), output)
 		},
@@ -64,8 +66,9 @@ func (p *Pipeline) Do(that *Stream, fn DoFn) *Stream {
 		panic(fmt.Errorf("cannot Apply Fn with input type %q to consume stream of type %q",
 			fn.InType(), that.Type))
 	}
-	return p.register(fn, &Stream{
+	return p.register(&Stream{
 		Type: ErrorType,
+		fn: fn,
 		runner: func(output chan *Element) {
 			fn.Run(that.forward(output))
 		},
@@ -99,14 +102,14 @@ func (p *Pipeline) Run(commitInterval time.Duration) {
 	//open committer tick underlying
 	committerTick := time.NewTicker(commitInterval).C
 
-	//open termination signal underlying
+	//open termination Signal underlying
 	sigterm := make(chan os.Signal, 1)
 	signal.Notify(sigterm, syscall.SIGINT, syscall.SIGTERM)
 
 	for {
 		select {
 		case sig := <-sigterm:
-			log.Printf("Caught signal %v: Cancelling\n", sig)
+			log.Printf("Caught Signal %v: Cancelling\n", sig)
 			//TODO assuming a single root
 			p.streams[0].close()
 
@@ -114,7 +117,7 @@ func (p *Pipeline) Run(commitInterval time.Duration) {
 			if timestamp.Sub(p.lastCommit) > commitInterval {
 				//log.Println("Start Commit")
 				//draining should not be necessary if optimistic checkpointing is possible - see comments in goc.Checkpoint
-				p.streams[0].output <- &Element{signal: ControlDrain}
+				p.streams[0].output <- &Element{Signal: ControlDrain}
 				p.lastCommit = timestamp
 			}
 
@@ -130,10 +133,10 @@ func (p *Pipeline) Run(commitInterval time.Duration) {
 						}
 					}
 				}
-				//this is the only place that exits the for-select which in turn is only possible by ControlCancel signal below
+				//this is the only place that exits the for-select which in turn is only possible by ControlCancel Signal below
 				return
 			}
-			switch e.signal {
+			switch e.Signal {
 			case NoSignal:
 			case ControlDrain:
 				p.commit()
@@ -149,8 +152,8 @@ func (p *Pipeline) Run(commitInterval time.Duration) {
 func (p *Pipeline) commit() {
 	for i := len(p.streams) - 1; i >= 0; i-- {
 		if p.streams[i].commit() {
-			//log.Printf("Committed stage %d\n", i)
+			log.Printf("Committed stage %d\n", i)
 		}
 	}
-	//log.Printf("Committing completed\n")
+	log.Printf("Committing completed\n")
 }
