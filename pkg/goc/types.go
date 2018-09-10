@@ -5,7 +5,7 @@ import (
 	"reflect"
 )
 
-var AnyType reflect.Type = reflect.TypeOf([]interface{}{}).Elem()
+var AnyType = reflect.TypeOf([]interface{}{}).Elem()
 var ErrorType = reflect.TypeOf(fmt.Errorf("{}"))
 var StringType = reflect.TypeOf("")
 

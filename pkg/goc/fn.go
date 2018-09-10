@@ -2,6 +2,7 @@ package goc
 
 import "reflect"
 
+type Fn interface {}
 
 type RootFn interface {
 	OutType() reflect.Type
@@ -19,9 +20,16 @@ type DoFn interface {
 	Run(input <-chan *Element)
 }
 
-type SideEffect interface {
-	Commit(Checkpoint) error
+type Closeable interface {
 	Close() error
+}
+
+type SideEffect interface {
+	Flush(*Checkpoint) error
+}
+
+type Commitable interface {
+	Commit(*Checkpoint) error
 }
 
 

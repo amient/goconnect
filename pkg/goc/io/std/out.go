@@ -46,10 +46,6 @@ func (sink *stdOutSink) Fn(element interface {}) error {
 	return nil
 }
 
-func (sink *stdOutSink) Commit(goc.Checkpoint) error {
+func (sink *stdOutSink) Flush(goc.Checkpoint) error {
 	return sink.stdout.Flush()
-}
-
-func (sink *stdOutSink) Close() error {
-	return nil
 }

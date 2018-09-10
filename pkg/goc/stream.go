@@ -11,7 +11,8 @@ type Stream struct {
 	runner     func(output chan *Element)
 	pipeline   *Pipeline
 	closed     bool
-	sideEffect SideEffect
+	checkpoint Checkpoint
+	fn         Fn
 }
 
 func (stream *Stream) close() {
@@ -25,22 +26,43 @@ func (stream *Stream) forward(to chan *Element) chan *Element {
 	interceptedOutput := make(chan *Element)
 	go func(source *Stream) {
 		defer close(interceptedOutput)
+		var checkpoint = make(Checkpoint)
 		for element := range source.output {
-			if element.hasSignal() {
-				to <- element
-			} else {
+			switch element.signal {
+			case NoSignal:
 				if element.Checkpoint != nil {
-					//TODO stamp each record for checkpointing and make sure those stamps are automatically propagated through transforms
-					//log.Println(element.Checkpoint)
+					for k, v := range element.Checkpoint {
+						checkpoint[k] = v
+					}
 				}
 				interceptedOutput <- element
+			case ControlDrain:
+				to <- element
+				for k, v := range checkpoint {
+					stream.checkpoint[k] = v
+				}
+				checkpoint = make(Checkpoint)
+				if fn, ok := stream.fn.(SideEffect); ok {
+					fn.Flush(&stream.checkpoint)
+				}
 			}
 		}
 	}(stream)
 	return interceptedOutput
 }
 
-func (stream *Stream) Apply(f SideEffect) *Stream {
+func (stream *Stream) commit() bool {
+	if fn, ok := stream.fn.(Commitable); ok {
+		if err := fn.Commit(&stream.checkpoint); err != nil {
+			panic(err)
+		}
+		return true
+	} else {
+		return false
+	}
+}
+
+func (stream *Stream) Apply(f Fn) *Stream {
 	switch fn := f.(type) {
 	case TransformFn:
 		return stream.pipeline.Transform(stream, fn)
@@ -52,10 +74,10 @@ func (stream *Stream) Apply(f SideEffect) *Stream {
 	}
 }
 
-func (stream *Stream) Map(fn interface{}) *Stream {
+func (stream *Stream) Map(f interface{}) *Stream {
 
-	fnType := reflect.TypeOf(fn)
-	fnVal := reflect.ValueOf(fn)
+	fnType := reflect.TypeOf(f)
+	fnVal := reflect.ValueOf(f)
 
 	if fnType.NumIn() != 1 {
 		panic(fmt.Errorf("map func must have exactly 1 input argument"))
@@ -70,7 +92,7 @@ func (stream *Stream) Map(fn interface{}) *Stream {
 		panic(fmt.Errorf("map func must have exactly 1 output"))
 	}
 
-	return stream.pipeline.Apply(stream, fnType.Out(0), nil, func(input <-chan *Element, output chan *Element) {
+	return stream.pipeline.apply(stream, fnType.Out(0), nil, func(input <-chan *Element, output chan *Element) {
 		for inputElement := range input {
 			v := reflect.ValueOf(inputElement.Value)
 			r := fnVal.Call([]reflect.Value{v})
@@ -83,10 +105,10 @@ func (stream *Stream) Map(fn interface{}) *Stream {
 
 }
 
-func (stream *Stream) Filter(fn interface{}) *Stream {
+func (stream *Stream) Filter(f interface{}) *Stream {
 
-	fnType := reflect.TypeOf(fn)
-	fnVal := reflect.ValueOf(fn)
+	fnType := reflect.TypeOf(f)
+	fnVal := reflect.ValueOf(f)
 
 	if fnType.NumIn() != 1 {
 		panic(fmt.Errorf("filter func must have exactly 1 input argument of type %q", stream.Type))
@@ -100,7 +122,7 @@ func (stream *Stream) Filter(fn interface{}) *Stream {
 		panic(fmt.Errorf("FnVal must have exactly 1 output and it should be bool"))
 	}
 
-	return stream.pipeline.Apply(stream, fnType.In(0), nil, func(input <-chan *Element, output chan *Element) {
+	return stream.pipeline.apply(stream, fnType.In(0), nil, func(input <-chan *Element, output chan *Element) {
 		for d := range input {
 			v := reflect.ValueOf(d.Value)
 			if fnVal.Call([]reflect.Value{v})[0].Bool() {
@@ -111,10 +133,10 @@ func (stream *Stream) Filter(fn interface{}) *Stream {
 
 }
 
-func (stream *Stream) Transform(fn interface{}) *Stream {
+func (stream *Stream) Transform(f interface{}) *Stream {
 
-	fnType := reflect.TypeOf(fn)
-	fnVal := reflect.ValueOf(fn)
+	fnType := reflect.TypeOf(f)
+	fnVal := reflect.ValueOf(f)
 
 	if fnType.NumIn() != 2 || fnType.NumOut() != 0 {
 		panic(fmt.Errorf("sideEffect func must have zero return values and exatly 2 arguments: input underlying and an output underlying"))
@@ -135,7 +157,7 @@ func (stream *Stream) Transform(fn interface{}) *Stream {
 		panic(fmt.Errorf("sideEffect func input argument must be a underlying of %q, got underlying of %q", stream.Type, fnType.In(0).Elem()))
 	}
 
-	return stream.pipeline.Apply(stream, outChannelType.Elem(), nil, func(input <-chan *Element, output chan *Element) {
+	return stream.pipeline.apply(stream, outChannelType.Elem(), nil, func(input <-chan *Element, output chan *Element) {
 		intermediateIn := reflect.MakeChan(inChannelType, 0)
 		go func() {
 			defer intermediateIn.Close()

@@ -61,9 +61,8 @@ func (source *Source) Run(output chan *goc.Element) {
 		case *kafka.Message:
 			output <- &goc.Element{
 				Timestamp: &e.Timestamp,
-				Checkpoint: &ConsumerCheckpoint{
-					Partition: e.TopicPartition.Partition,
-					Offset:    uint64(e.TopicPartition.Offset),
+				Checkpoint: goc.Checkpoint{
+					int(e.TopicPartition.Partition): e.TopicPartition.Offset + 1,
 				},
 				Value: goc.KVBytes{
 					Key:   e.Key,
@@ -71,7 +70,7 @@ func (source *Source) Run(output chan *goc.Element) {
 				},
 			}
 		case kafka.PartitionEOF:
-			log.Printf("%% Reached %v\n", e)
+			//not used
 		case kafka.Error:
 			panic(e)
 		}
@@ -79,9 +78,25 @@ func (source *Source) Run(output chan *goc.Element) {
 
 }
 
-func (source *Source) Commit(checkpoint goc.Checkpoint) error {
-	log.Println(fmt.Errorf("kafka source commit not implemented"))
-	//TODO need to commit
+func (source *Source) Commit(checkpoint *goc.Checkpoint) error {
+	var offsets []kafka.TopicPartition
+	for k, v := range *checkpoint {
+		offsets = append(offsets, kafka.TopicPartition{
+			Topic:     &source.Topic,
+			Partition: int32(k),
+			Offset:    v.(kafka.Offset),
+		})
+	}
+	if len(offsets) > 0 {
+		if committed, err := source.consumer.CommitOffsets(offsets); err != nil {
+			return err
+		} else {
+			for _, tp := range committed {
+				//log.Printf("Kafka Source Committed, %q\n", tp)
+				delete(*checkpoint, int(tp.Partition))
+			}
+		}
+	}
 	return nil
 }
 
