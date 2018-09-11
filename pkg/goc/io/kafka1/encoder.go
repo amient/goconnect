@@ -5,7 +5,7 @@ import (
 	"reflect"
 )
 
-func Encoder() *encoder {
+func NilKeyEncoder() *encoder {
 	return &encoder{}
 }
 

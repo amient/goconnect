@@ -2,7 +2,7 @@ package gocxml
 
 import (
 	"fmt"
-	"github.com/amient/goconnect/pkg/io/util"
+	"github.com/amient/goconnect/pkg/goc/util"
 	"io"
 )
 

@@ -38,7 +38,7 @@ func main() {
 		BindingKey:   *bindingKey,
 	})
 
-	kvs := messages.Apply(kafka1.Encoder())
+	kvs := messages.Apply(kafka1.NilKeyEncoder())
 
 	kvs.Apply(&kafka1.Sink{
 		Bootstrap: *kafkaSinkBootstrap,
