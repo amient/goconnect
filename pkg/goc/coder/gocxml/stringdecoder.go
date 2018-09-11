@@ -19,8 +19,8 @@ func (d *stringDecoder) OutType() reflect.Type {
 	return reflect.TypeOf([]Node{}).Elem()
 }
 
-func (d *stringDecoder) Process(input *goc.Element, output goc.OutputChannel) {
-	output <- &goc.Element{Value: d.Fn(input.Value.(string))}
+func (d *stringDecoder) Process(input *goc.Element) *goc.Element {
+	return &goc.Element{Value: d.Fn(input.Value.(string))}
 }
 
 func (d *stringDecoder) Fn(input string) Node {
@@ -31,13 +31,5 @@ func (d *stringDecoder) Fn(input string) Node {
 		return node
 	}
 
-}
-
-func (d *stringDecoder) Commit(checkpoint goc.Checkpoint) error {
-	return nil
-}
-
-func (d *stringDecoder) Close() error {
-	return nil
 }
 

@@ -42,7 +42,7 @@ func (sink *Sink) Process(input *goc.Element) {
 
 func (sink *Sink) Flush() error {
 	if sink.numProduced > 0 {
-		log.Println("Kafka Sink Commit - Number of Produced Messages", sink.numProduced)
+		log.Println("Kafka Sink Flush - Number of Produced Messages", sink.numProduced)
 		numNotFlushed := sink.producer.Flush(15 * 1000)
 		if numNotFlushed > 0 {
 			return fmt.Errorf("could not flush all messages in timeout, numNotFlushed: %d", numNotFlushed)

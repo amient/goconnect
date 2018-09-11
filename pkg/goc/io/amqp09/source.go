@@ -9,22 +9,22 @@ import (
 )
 
 type Source struct {
-	conn         *amqp.Connection
-	channel      *amqp.Channel
 	Uri          string
 	Exchange     string
 	ExchangeType string
 	QueueName    string
 	Group        string
 	BindingKey   string
-	empty        []byte
+	conn         *amqp.Connection
+	channel      *amqp.Channel
+	lastCommitTag	 uint64
 }
 
 func (source *Source) OutType() reflect.Type {
 	return goc.ByteArrayType
 }
 
-func (source *Source) Run(output chan *goc.Element) {
+func (source *Source) Run(output goc.OutputChannel) {
 	var err error
 
 	log.Printf("dialing %q", source.Uri)
@@ -98,10 +98,20 @@ func (source *Source) Run(output chan *goc.Element) {
 }
 
 func (source *Source) Commit(checkpoint goc.Checkpoint) error {
-	return source.channel.Ack(checkpoint[0].(uint64), true)
+	if checkpoint != nil && checkpoint[0] != nil {
+		deliverTag := checkpoint[0].(uint64)
+		if err := source.channel.Ack(deliverTag, true); err != nil {
+			return err
+		}
+		log.Printf("AMQP09 Source Committed, %d\n", deliverTag - source.lastCommitTag)
+		source.lastCommitTag = deliverTag
+		delete(checkpoint, 0)
+	}
+	return nil
 }
 
 func (source *Source) Close() error {
+
 
 	if err := source.channel.Cancel(source.Group, true); err != nil {
 		return fmt.Errorf("source cancel failed: %source", err)

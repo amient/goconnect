@@ -4,7 +4,7 @@ import (
 	"flag"
 	"github.com/amient/goconnect/pkg/goc"
 	"github.com/amient/goconnect/pkg/goc/io/amqp09"
-	"github.com/amient/goconnect/pkg/goc/io/std"
+	"github.com/amient/goconnect/pkg/goc/io/kafka1"
 	"time"
 )
 
@@ -14,13 +14,13 @@ var (
 	//source arguments
 	uri          = flag.String("amqp-uri", "amqp://guest:guest@localhost:5672/", "AMQP URI")
 	exchange     = flag.String("amqp-exchange", "test-exchange", "Durable, non-auto-deleted AMQP exchange name")
-	exchangeType = flag.String("amqp-exchange-type", "direct", "Exchange type - direct|fanout|kafkaTopic|x-custom")
+	exchangeType = flag.String("amqp-exchange-type", "direct", "Exchange type - direct|fanout|kafkaSinkTopic|x-custom")
 	queue        = flag.String("amqp-queue", "test", "Ephemeral AMQP queue name")
 	bindingKey   = flag.String("amqp-key", "test-key", "AMQP binding key")
 	consumerTag  = flag.String("amqp-consumer-tag", "simple-consumer", "AMQP consumer tag (should not be blank)")
 	//sink arguments
-	kafkaBootstrap = flag.String("kafka.bootstrap", "localhost:9092", "Kafka Bootstrap servers")
-	kafkaTopic     = flag.String("kafka.kafkaTopic", "test", "Target Kafka Topic")
+	kafkaSinkBootstrap = flag.String("kafka.bootstrap", "localhost:9092", "Kafka Bootstrap servers")
+	kafkaSinkTopic     = flag.String("kafka.kafkaSinkTopic", "test", "Target Kafka Topic")
 )
 
 func main() {
@@ -38,7 +38,12 @@ func main() {
 		BindingKey:   *bindingKey,
 	})
 
-	messages.Apply(std.StdOutSink())
+	kvs := messages.Apply(kafka1.Encoder())
+
+	kvs.Apply(&kafka1.Sink{
+		Bootstrap: *kafkaSinkBootstrap,
+		Topic: *kafkaSinkTopic,
+	})
 
 	pipeline.Run(*commitInterval)
 

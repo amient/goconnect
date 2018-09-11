@@ -35,13 +35,38 @@ func (p *Pipeline) Root(source RootFn) *Stream {
 	})
 }
 
-func (p *Pipeline) ElementWise(that *Stream, fn ElementWiseFn) *Stream {
+func (p *Pipeline) FlatMap(that *Stream, fn FlatMapFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
 		//TODO this check will be removed and resolved during coder injection step
 		panic(fmt.Errorf("cannot Apply Fn with input type %q to consume stream of type %q",
 			fn.InType(), that.Type))
 	}
-	return p.apply(that, fn.OutType(), fn, fn.Process)
+	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output OutputChannel) {
+		for i, outputElement := range fn.Process(input) {
+			if outputElement.Timestamp == nil {
+				outputElement.Timestamp = input.Timestamp
+			}
+			if outputElement.Checkpoint == nil {
+				outputElement.Checkpoint = Checkpoint{0: i}
+			}
+			output <- outputElement
+		}
+	})
+}
+
+func (p *Pipeline) Map(that *Stream, fn MapFn) *Stream {
+	if !that.Type.AssignableTo(fn.InType()) {
+		//TODO this check will be removed and resolved during coder injection step
+		panic(fmt.Errorf("cannot Apply Fn with input type %q to consume stream of type %q",
+			fn.InType(), that.Type))
+	}
+	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output OutputChannel) {
+		outputElement := fn.Process(input)
+		if outputElement.Timestamp == nil {
+			outputElement.Timestamp = input.Timestamp
+		}
+		output <- outputElement
+	})
 }
 
 func (p *Pipeline) ForEach(that *Stream, fn ForEachFn) *Stream {
@@ -50,13 +75,13 @@ func (p *Pipeline) ForEach(that *Stream, fn ForEachFn) *Stream {
 		panic(fmt.Errorf("cannot Apply Fn with input type %q to consume stream of type %q",
 			fn.InType(), that.Type))
 	}
-	return p.apply(that, ErrorType, fn, func(input *Element, output OutputChannel) {
+	return p.elementWise(that, ErrorType, fn, func(input *Element, output OutputChannel) {
 		fn.Process(input)
 	})
 }
 
 
-func (p *Pipeline) apply(that *Stream, out reflect.Type, fn interface{}, run func(input *Element, output OutputChannel)) *Stream {
+func (p *Pipeline) elementWise(that *Stream, out reflect.Type, fn interface{}, run func(input *Element, output OutputChannel)) *Stream {
 	return p.register(&Stream{
 		Type: out,
 		fn: fn,

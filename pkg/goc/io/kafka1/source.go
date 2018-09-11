@@ -78,9 +78,9 @@ func (source *Source) Run(output goc.OutputChannel) {
 
 }
 
-func (source *Source) Commit(checkpoint *goc.Checkpoint) error {
+func (source *Source) Commit(checkpoint goc.Checkpoint) error {
 	var offsets []kafka.TopicPartition
-	for k, v := range *checkpoint {
+	for k, v := range checkpoint {
 		offsets = append(offsets, kafka.TopicPartition{
 			Topic:     &source.Topic,
 			Partition: int32(k),
@@ -92,8 +92,8 @@ func (source *Source) Commit(checkpoint *goc.Checkpoint) error {
 			return err
 		} else {
 			for _, tp := range committed {
-				//log.Printf("Kafka Source Committed, %q\n", tp)
-				delete(*checkpoint, int(tp.Partition))
+				log.Printf("Kafka Source Committed, %q\n", tp)
+				delete(checkpoint, int(tp.Partition))
 			}
 		}
 	}

@@ -9,10 +9,10 @@ type RootFn interface {
 	Run(output OutputChannel)
 }
 
-type ElementWiseFn interface {
+type MapFn interface {
 	InType() reflect.Type
 	OutType() reflect.Type
-	Process(input *Element, output OutputChannel)
+	Process(input *Element) *Element
 }
 
 type ForEachFn interface {
@@ -20,11 +20,17 @@ type ForEachFn interface {
 	Process(input *Element)
 }
 
-type TransformFn interface {
+type FlatMapFn interface {
 	InType() reflect.Type
 	OutType() reflect.Type
-	Run(input InputChannel, output OutputChannel)
+	Process(input *Element) []*Element
 }
+
+//type TransformFn interface {
+//	InType() reflect.Type
+//	OutType() reflect.Type
+//	Run(input InputChannel, output OutputChannel)
+//}
 
 type Closeable interface {
 	Close() error
@@ -35,7 +41,7 @@ type SideEffect interface {
 }
 
 type Commitable interface {
-	Commit(*Checkpoint) error
+	Commit(Checkpoint) error
 }
 
 

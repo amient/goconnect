@@ -22,33 +22,9 @@ func (stream *Stream) close() {
 	}
 }
 
-////FIXME forward has to be inverted and applied on the outputs not on inputs, otherwise sinks are missed and roots have to be treated specially
-//func (stream *Stream) forward(to chan *Element) chan *Element {
-//	interceptedOutput := make(chan *Element)
-//	go func(upstream *Stream) {
-//		defer close(interceptedOutput)
-//		var checkpoint = make(Checkpoint)
-//		for element := range upstream.output {
-//			checkpoint.merge(element.Checkpoint)
-//			switch element.signal {
-//			case NoSignal:
-//				interceptedOutput <- element
-//			case ControlDrain:
-//				to <- element
-//				stream.checkpoint.merge(checkpoint)
-//				checkpoint = make(Checkpoint)
-//				if fn, ok := stream.fn.(SideEffect); ok {
-//					fn.Flush(&stream.checkpoint)
-//				}
-//			}
-//		}
-//	}(stream)
-//	return interceptedOutput
-//}
-
 func (stream *Stream) commit() bool {
 	if fn, ok := stream.fn.(Commitable); ok {
-		if err := fn.Commit(&stream.checkpoint); err != nil {
+		if err := fn.Commit(stream.checkpoint); err != nil {
 			panic(err)
 		}
 		return true
@@ -59,8 +35,12 @@ func (stream *Stream) commit() bool {
 
 func (stream *Stream) Apply(f Fn) *Stream {
 	switch fn := f.(type) {
-	case ElementWiseFn:
-		return stream.pipeline.ElementWise(stream, fn)
+	//case ElementWiseFn:
+	//	return stream.pipeline.ElementWise(stream, fn)
+	case FlatMapFn:
+		return stream.pipeline.FlatMap(stream, fn)
+	case MapFn:
+		return stream.pipeline.Map(stream, fn)
 	case ForEachFn:
 		return stream.pipeline.ForEach(stream, fn)
 		//case TransformFn:
@@ -82,14 +62,14 @@ func (stream *Stream) Map(f interface{}) *Stream {
 
 	//TODO this check will deffered on after network and type coders injection
 	if !stream.Type.AssignableTo(fnType.In(0)) {
-		panic(fmt.Errorf("cannot us Map func with input type %q to consume stream of type %q", fnType.In(0), stream.Type))
+		panic(fmt.Errorf("cannot use Map func with input type %q to consume stream of type %q", fnType.In(0), stream.Type))
 	}
 
 	if fnType.NumOut() != 1 {
 		panic(fmt.Errorf("map func must have exactly 1 output"))
 	}
 
-	return stream.pipeline.apply(stream, fnType.Out(0), nil, func(input *Element, output OutputChannel) {
+	return stream.pipeline.elementWise(stream, fnType.Out(0), nil, func(input *Element, output OutputChannel) {
 		v := reflect.ValueOf(input.Value)
 		r := fnVal.Call([]reflect.Value{v})
 		output <- &Element{
@@ -117,7 +97,7 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 		panic(fmt.Errorf("FnVal must have exactly 1 output and it should be bool"))
 	}
 
-	return stream.pipeline.apply(stream, fnType.In(0), nil, func(input *Element, output OutputChannel) {
+	return stream.pipeline.elementWise(stream, fnType.In(0), nil, func(input *Element, output OutputChannel) {
 		v := reflect.ValueOf(input.Value)
 		if fnVal.Call([]reflect.Value{v})[0].Bool() {
 			output <- input
