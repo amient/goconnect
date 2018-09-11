@@ -5,7 +5,7 @@ import (
 	"reflect"
 )
 
-func NilKeyEncoder() *encoder {
+func NilKeyEncoder() goc.MapFn {
 	return &encoder{}
 }
 

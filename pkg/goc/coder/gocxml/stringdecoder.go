@@ -5,7 +5,7 @@ import (
 	"reflect"
 )
 
-func StringDecoder() *stringDecoder {
+func StringDecoder() goc.MapFn {
 	return &stringDecoder{}
 }
 
@@ -16,20 +16,14 @@ func (d *stringDecoder) InType() reflect.Type {
 }
 
 func (d *stringDecoder) OutType() reflect.Type {
-	return reflect.TypeOf([]Node{}).Elem()
+	return NodeType
 }
 
 func (d *stringDecoder) Process(input *goc.Element) *goc.Element {
-	return &goc.Element{Value: d.Fn(input.Value.(string))}
-}
-
-func (d *stringDecoder) Fn(input string) Node {
-	var node, err = ReadNodeFromString(input)
-	if err != nil {
+	if node, err := ReadNodeFromString(input.Value.(string)); err != nil {
 		panic(err)
 	} else {
-		return node
+		return &goc.Element{Value: node}
 	}
 
 }
-

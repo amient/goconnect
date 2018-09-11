@@ -2,7 +2,10 @@ package gocxml
 
 import (
 	"encoding/xml"
+	"reflect"
 )
+
+var NodeType = reflect.TypeOf([]Node{}).Elem()
 
 // DESIGN NOTE:
 // The idea behind the somewhat clumsy interface (rather than something like
