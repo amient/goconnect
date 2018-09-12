@@ -1,3 +1,22 @@
+/*
+ * Copyright 2018 Amient Ltd, London
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package goc
 
 import (
@@ -35,8 +54,6 @@ func (stream *Stream) commit() bool {
 
 func (stream *Stream) Apply(f Fn) *Stream {
 	switch fn := f.(type) {
-	//case ElementWiseFn:
-	//	return stream.pipeline.ElementWise(stream, fn)
 	case FlatMapFn:
 		return stream.pipeline.FlatMap(stream, fn)
 	case MapFn:
@@ -46,7 +63,35 @@ func (stream *Stream) Apply(f Fn) *Stream {
 		//case TransformFn:
 		//	return stream.pipeline.Transform(stream, fn)
 	default:
-		panic(fmt.Errorf("not implemented Apply of ", reflect.TypeOf(fn)))
+		panic(fmt.Errorf("reflective transforms need: a) stream.Transform to have guaranteees and b) perf-tested"))
+		//if method, exists := reflect.TypeOf(f).MethodByName("Fn"); !exists {
+		//	panic(fmt.Errorf("transform must provide Fn method"))
+		//} else {
+		//	v := reflect.ValueOf(f)
+		//	args := make([]reflect.Type, method.Type.NumIn()-1)
+		//	for i := 1; i < method.Type.NumIn(); i++ {
+		//		args[i-1] = method.Type.In(i)
+		//	}
+		//	ret := make([]reflect.Type, method.Type.NumOut())
+		//	for i := 0; i < method.Type.NumOut(); i++ {
+		//		ret[i] = method.Type.Out(i)
+		//	}
+		//	fn := reflect.MakeFunc(reflect.FuncOf(args, ret, false), func(args []reflect.Value) (results []reflect.Value) {
+		//		methodArgs := append([]reflect.Value{v}, args...)
+		//		return method.Func.Call(methodArgs)
+		//	})
+		//
+		//	var output *Stream
+		//	if len(ret) > 1 {
+		//		panic(fmt.Errorf("transform must have 0 or 1 return value"))
+		//	} else if len(ret) == 0 {
+		//		output = stream.Transform(fn)
+		//	} else {
+		//		output = stream.Map(fn.Interface())
+		//	}
+		//	output.fn = f
+		//	return output
+		//}
 
 	}
 }
@@ -73,7 +118,7 @@ func (stream *Stream) Map(f interface{}) *Stream {
 		v := reflect.ValueOf(input.Value)
 		r := fnVal.Call([]reflect.Value{v})
 		output <- &Element{
-			Value: r[0].Interface(),
+			Value:     r[0].Interface(),
 			Timestamp: input.Timestamp,
 		}
 	})

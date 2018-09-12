@@ -17,32 +17,27 @@
  * limitations under the License.
  */
 
-package gocxml
+package gocstring
 
 import (
 	"github.com/amient/goconnect/pkg/goc"
 	"reflect"
 )
 
-func StringDecoder() goc.MapFn {
-	return &stringDecoder{}
+func Decoder() goc.MapFn {
+	return &decoder{}
 }
 
-type stringDecoder struct{}
+type decoder struct{}
 
-func (d *stringDecoder) InType() reflect.Type {
+func (d *decoder) InType() reflect.Type {
+	return goc.ByteArrayType
+}
+
+func (d *decoder) OutType() reflect.Type {
 	return goc.StringType
 }
 
-func (d *stringDecoder) OutType() reflect.Type {
-	return NodeType
-}
-
-func (d *stringDecoder) Process(input *goc.Element) *goc.Element {
-	if node, err := ReadNodeFromString(input.Value.(string)); err != nil {
-		panic(err)
-	} else {
-		return &goc.Element{Value: node}
-	}
-
+func (d *decoder) Process(input *goc.Element) *goc.Element {
+	return &goc.Element{Value: string(input.Value.([]byte))}
 }

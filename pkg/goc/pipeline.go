@@ -1,3 +1,22 @@
+/*
+ * Copyright 2018 Amient Ltd, London
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package goc
 
 import (
@@ -30,7 +49,7 @@ func (p *Pipeline) register(stream *Stream) *Stream {
 func (p *Pipeline) Root(source RootFn) *Stream {
 	return p.register(&Stream{
 		Type:   source.OutType(),
-		fn: source,
+		fn:     source,
 		runner: source.Run,
 	})
 }
@@ -63,7 +82,12 @@ func (p *Pipeline) Map(that *Stream, fn MapFn) *Stream {
 	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output OutputChannel) {
 		outputElement := fn.Process(input)
 		if outputElement.Timestamp == nil {
-			outputElement.Timestamp = input.Timestamp
+			if input.Timestamp == nil {
+				t := time.Now()
+				outputElement.Timestamp = &t //FIXME apply this logic everywhere
+			} else {
+				outputElement.Timestamp = input.Timestamp
+			}
 		}
 		output <- outputElement
 	})
@@ -80,11 +104,10 @@ func (p *Pipeline) ForEach(that *Stream, fn ForEachFn) *Stream {
 	})
 }
 
-
 func (p *Pipeline) elementWise(that *Stream, out reflect.Type, fn interface{}, run func(input *Element, output OutputChannel)) *Stream {
 	return p.register(&Stream{
 		Type: out,
-		fn: fn,
+		fn:   fn,
 		runner: func(output OutputChannel) {
 			var checkpoint = make(Checkpoint)
 			for element := range that.output {
@@ -92,7 +115,7 @@ func (p *Pipeline) elementWise(that *Stream, out reflect.Type, fn interface{}, r
 				switch element.signal {
 				case NoSignal:
 					run(element, output)
-				case ControlDrain:
+				case ControlCheckpoint:
 					output <- element
 					that.checkpoint.merge(checkpoint)
 					checkpoint = make(Checkpoint)
@@ -104,7 +127,6 @@ func (p *Pipeline) elementWise(that *Stream, out reflect.Type, fn interface{}, r
 		},
 	})
 }
-
 
 func (p *Pipeline) Run(commitInterval time.Duration) {
 
@@ -124,7 +146,7 @@ func (p *Pipeline) Run(commitInterval time.Duration) {
 			stream.runner(stream.output)
 			if !stream.closed {
 				//this is here to terminate bounded sources with a commit
-				stream.output <- &Element{signal: ControlDrain}
+				stream.output <- &Element{signal: ControlCheckpoint}
 			}
 		}(s, stream)
 
@@ -151,7 +173,7 @@ func (p *Pipeline) Run(commitInterval time.Duration) {
 			if timestamp.Sub(p.lastCommit) > commitInterval {
 				//log.Println("Start Commit")
 				if !source.closed {
-					source.output <- &Element{signal: ControlDrain}
+					source.output <- &Element{signal: ControlCheckpoint}
 				}
 				p.lastCommit = timestamp
 			}
@@ -173,7 +195,7 @@ func (p *Pipeline) Run(commitInterval time.Duration) {
 			}
 			switch e.signal {
 			case NoSignal:
-			case ControlDrain:
+			case ControlCheckpoint:
 				//FIXME
 				if fn, ok := sink.fn.(SideEffect); ok {
 					fn.Flush()

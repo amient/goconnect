@@ -1,3 +1,22 @@
+/*
+ * Copyright 2018 Amient Ltd, London
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package kafka1
 
 import (
@@ -6,7 +25,6 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"log"
 	"reflect"
-	"time"
 )
 
 type Sink struct {
@@ -23,6 +41,7 @@ func (sink *Sink) InType() reflect.Type {
 
 func (sink *Sink) Process(input *goc.Element) {
 	var err error
+
 	if sink.producer == nil {
 		sink.producer, err = kafka.NewProducer(&kafka.ConfigMap{
 			"bootstrap.servers": sink.Bootstrap,
@@ -31,9 +50,30 @@ func (sink *Sink) Process(input *goc.Element) {
 		if err != nil {
 			panic(err)
 		}
+		go func() {
+			for e := range sink.deliveries {
+				switch ev := e.(type) {
+				case *kafka.Message:
+					if ev.TopicPartition.Error != nil {
+						panic(fmt.Errorf("Delivery failed: %v\n", ev.TopicPartition))
+					} else {
+						input.Ack()
+					}
+				}
+			}
+		}()
+
 	}
 	kv := input.Value.(goc.KVBytes)
-	err = sink.process(kv.Key, kv.Value, *input.Timestamp)
+
+	defer sink.updateCounter()
+	err = sink.producer.Produce(&kafka.Message{
+		TopicPartition: kafka.TopicPartition{Topic: &sink.Topic},
+		Key:            kv.Key,
+		Value:          kv.Value,
+		Timestamp:      *input.Timestamp,
+	}, sink.deliveries)
+
 	if err != nil {
 		panic(err)
 	}
@@ -60,31 +100,6 @@ func (sink *Sink) Close() error {
 		close(sink.deliveries)
 	}
 	return nil
-}
-
-func (sink *Sink) process(key []byte, value []byte, timestamp time.Time) error {
-
-	go func() {
-		for e := range sink.deliveries {
-			switch ev := e.(type) {
-			case *kafka.Message:
-				if ev.TopicPartition.Error != nil {
-					log.Printf("Delivery failed: %v\n", ev.TopicPartition)
-				} else {
-					//TODO use delivery reports for exactly-once processing guarantees
-				}
-			}
-		}
-	}()
-
-	defer sink.updateCounter()
-	return sink.producer.Produce(&kafka.Message{
-		TopicPartition: kafka.TopicPartition{Topic: &sink.Topic},
-		Key:            key,
-		Value:          value,
-		Timestamp:      timestamp,
-	}, sink.deliveries)
-
 }
 
 func (sink *Sink) updateCounter() {
