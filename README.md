@@ -5,12 +5,11 @@ a lot more efficient and has a low package and memory footprint - it can run hap
 
 - it builds linear pipelines for similar to Kafka Connect so it's goal is data connectivity not general data processing 
 - it is more general than Kafka Connect and can build file-for-a-file pipelines
-- but it is a bit less general compared to Beam it only builds linear chains of transforms, not graphs  
-- like Beam, it has internal concept of parallelism and coders however here everything is statically typed 
+- ~but it is a bit less general compared to Beam it only builds linear chains of transforms, not graphs~
+- like Beam, it has internal concept of parallelism and coders ~however here everything is statically typed~
 - it scales similarly to Kafka Connect by simply running mulitple instances of the same adapter
-- it guarantees at-least-once processing at minimum 
+- it guarantees at-least-once processing and is capable of exactly-once 
   with a choice of optimistic and pessimistic checkpointing depending whether the source supports some notion of offsets or not
-- exactly-once guarantees are optional and designed in general similarly to Beam   
 - it has a concept of EventTime built in to the basic concept
 - it is a unified data processing framework in terms of batch/stream semantics 
   if the input data is bounded the pipeline will terminate when all input elements are fully processed
@@ -21,12 +20,9 @@ a lot more efficient and has a low package and memory footprint - it can run hap
 (NOTE: THE PROTOTYPE IN THIS CODEBASE DOESN'T HAVE ALL THE FEATURES LISTED ABOVE BUT THOSE ARE THE AIM AND WILL APPEAR SOON)
 
 
-There are 2 apis: 
-
-1. /goconnect/pkg/api.go       - this is a static api which is used in all the examples so far
-
-2. /goconnect/pkg/goc/api.go   - this is a reflection-based api which is experimental but is the ultimate goal where 
-    the the aim is to be able to inject coders and network stages behind the scenes so it looks something like this:
+The API is partially based on reflection but this is only used in-stream for user defined functions - implementation of transform interfaces use type casting in the worst case, no reflection. 
+    
+The the aim is to be able to inject coders and network stages behind the scenes so it looks something like this:
 
     A. pipeline is declared statically with only those transforms that are required logically for the job
     
