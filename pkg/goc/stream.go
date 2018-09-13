@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"log"
 	"reflect"
-	"sync"
+	"time"
 )
 
 type Stream struct {
@@ -34,18 +34,58 @@ type Stream struct {
 	stage        int
 	output       OutputChannel
 	runner       func(output OutputChannel)
-	termination  chan bool
+	terminating  bool
+	completed    chan bool
 	closed       bool
 	_cap         int
-	_lock        sync.RWMutex
 	_pending     map[int][]Stamp
 	_checkpoints map[Stamp]interface{}
 	_acked       map[Stamp]bool
+	_acks        chan Stamp
 }
 
-func (stream *Stream) pending(element *Element) {
-	stream._lock.Lock()
-	defer stream._lock.Unlock()
+func (stream *Stream) initialize(stage int) {
+	if stream.output != nil {
+		panic(fmt.Errorf("stream already materialized"))
+	}
+	stream.stage = stage
+	//TODO configurable capacity for checkpoint buffers
+	stream._cap = 100
+	stream._acked = make(map[Stamp]bool, stream._cap)
+	stream._pending = make(map[int][]Stamp, 10)
+	stream._checkpoints = make(map[Stamp]interface{}, stream._cap)
+	stream._acks = make(chan Stamp, stream._cap)
+	stream.completed = make(chan bool, 1)
+	stream.output = make(chan *Element)
+
+	//start checkpoint accumulator
+	tickTime := 100 * time.Millisecond
+	if stream.stage == 1 {
+		tickTime = 3 * time.Second
+	}
+	ticker := time.NewTicker(tickTime).C
+	go func() {
+		for {
+			select {
+			case <-stream.completed:
+				stream.flushAcks()
+				return
+			case <-ticker:
+				if stream.terminating && stream.clean() {
+					stream.completed <- true
+				} else {
+					stream.flushAcks()
+				}
+			}
+		}
+	}()
+}
+
+
+func (stream *Stream) inProgress(element *Element) {
+
+	element.ack = stream.ackProxy
+
 	part := element.Checkpoint.Part
 	var ok bool
 	if _, ok = stream._pending[part]; !ok {
@@ -53,16 +93,19 @@ func (stream *Stream) pending(element *Element) {
 	}
 	stream._pending[part] = append(stream._pending[part], element.Stamp)
 	stream._checkpoints[element.Stamp] = element.Checkpoint.Data
-	//log.Printf("STAGE[%d] PENDING(%d) pending: %v acked:%d \n", stream.stage, element.Stamp, stream._pending, stream.acked())
+	//log.Printf("STAGE[%d] PENDING(%d) inProgress: %v\n", stream.stage, element.Stamp, stream._pending)
 }
 
-func (stream *Stream) acked() []Stamp {
-	acked := make([]Stamp, 0, len(stream._acked))
-	for k := range stream._acked {
-		acked = append(acked, k)
+func (stream *Stream) ackProxy(s Stamp) {
+	select {
+	case stream._acks <- s:
+	default:
+		stream.flushAcks()
 	}
-	return acked
 }
+
+
+
 func (stream *Stream) clean() bool {
 	clean := true
 	for _, p := range stream._pending {
@@ -71,56 +114,77 @@ func (stream *Stream) clean() bool {
 	return clean
 }
 
+func (stream *Stream) flushAcks() {
+	bundle := make([]Stamp, 0, stream._cap)
+	for {
+		select {
+		case stamp := <-stream._acks:
+			bundle = append(bundle, stamp)
+		default:
+			if err := stream.ack(bundle...); err != nil {
+				panic(err)
+			}
+			return
+		}
+	}
+}
 
 func (stream *Stream) ack(stamps ... Stamp) error {
-	stream._lock.Lock()
-	defer stream._lock.Unlock()
-	for _, stamp := range stamps {
-		stream._acked[stamp] = true
-	}
-	upStamps := make([]Stamp, 0, len(stamps))
-	chk := make(map[int]interface{}, len(stream._pending))
 
-	for part, pending := range stream._pending {
-		var upto Stamp
-		for ; len(pending) > 0 && stream._acked[pending[0]]; {
-			s := pending[0]
-			if s > upto {
-				upto = s
-				chk[part] = stream._checkpoints[upto]
+	if len(stamps) > 0 {
+		for _, s := range stamps {
+			stream._acked[s] = true
+		}
+
+		upStamps := make([]Stamp, 0, len(stamps))
+		chk := make(map[int]interface{}, len(stream._pending))
+
+		for part, pending := range stream._pending {
+			var upto Stamp
+			//log.Printf("STAGE[%d] PART: %d len: %d, acked %d \n", stream.stage, part, len(pending), stream._acked )
+			for ; len(pending) > 0 && stream._acked[pending[0]]; {
+				s := pending[0]
+				if s > upto {
+					upto = s
+					chk[part] = stream._checkpoints[upto]
+				}
+				delete(stream._acked, s)
+				delete(stream._checkpoints, s)
+				upStamps = append(upStamps, s)
+				pending = pending[1:]
 			}
-			delete(stream._acked, s)
-			delete(stream._checkpoints, s)
-			upStamps = append(upStamps, s)
-			pending = pending[1:]
+			stream._pending[part] = pending
 		}
-		stream._pending[part] = pending
-	}
 
-	//log.Printf("STAGE[%d] ACK(%d) pending: %v acked:%d \n", stream.stage, stamps, stream._pending, stream.acked())
-	if commitable, ok := stream.fn.(Commitable); ok {
-		if err := commitable.Commit(chk); err != nil {
-			return err
+		//log.Printf("STAGE[%d] ACK(%d) inProgress: %v \n", stream.stage, stamps, stream._pending)
+		if commitable, ok := stream.fn.(Commitable); ok {
+			if err := commitable.Commit(chk); err != nil {
+				return err
+			}
 		}
-	}
 
-	if stream.closed && stream.clean() {
-		//log.Printf("STAGE[%d] ACK(%d) clean: %v pending: %v\n", stream.stage, stamps, stream.clean(), stream._pending)
-		stream.termination <- true
-	}
-
-	if len(upStamps) > 0 {
-		if stream.up != nil {
-			return stream.up.ack(upStamps...)
+		if len(upStamps) > 0 {
+			if stream.up != nil {
+				for _, x := range upStamps {
+					stream.up.ackProxy(x)
+				}
+				//return stream.up.ack(upStamps...)
+			}
 		}
 	}
+
+	if stream.terminating {
+		if stream.clean() {
+			stream.completed <- true
+		}
+	}
+
 
 	return nil
 }
 
 func (stream *Stream) close() {
 	if ! stream.closed {
-		stream.closed = true
 		log.Println("Closing Stage", stream.stage, stream.Type)
 		close(stream.output)
 		if fn, ok := stream.fn.(Closeable); ok {
@@ -128,7 +192,7 @@ func (stream *Stream) close() {
 				panic(err)
 			}
 		}
-
+		stream.closed = true
 	}
 }
 

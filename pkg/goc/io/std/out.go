@@ -35,7 +35,7 @@ func StdOutSink() goc.ForEachFn {
 		closed: make(chan error, 1),
 		stdout: bufio.NewWriter(os.Stdout),
 	}
-	ticker := time.NewTicker(time.Second).C
+	ticker := time.NewTicker(500 * time.Millisecond).C
 	go func() {
 		for {
 			select {

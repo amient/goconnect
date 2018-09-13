@@ -31,13 +31,11 @@ type Element struct {
 	Value      interface{}
 	Stamp 	   Stamp
 	signal     ControlSignal
-	ack        func(stamp Stamp) error
+	ack        func(stamp Stamp)
 }
 
 func (e *Element) Ack() {
-	if err := e.ack(e.Stamp); err != nil {
-		panic(err)
-	}
+	e.ack(e.Stamp)
 }
 
 type ControlSignal uint8

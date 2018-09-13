@@ -25,7 +25,6 @@ import (
 	"os"
 	"os/signal"
 	"reflect"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -113,16 +112,14 @@ func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(inp
 			for element := range up.output {
 				switch element.signal {
 				case FinalCheckpoint:
+					up.terminating = true
 					output <- element
+					return
 				case NoSignal:
 					if element.Stamp == 0 {
 						element.Stamp = Stamp(atomic.AddUint32(&p.stamp, 1))
 					}
-					element.ack = func(x Stamp) error {
-						//TODO aggregate multiple acks per period of time and use channel
-						return up.ack(x)
-					}
-					up.pending(element)
+					up.inProgress(element)
 					if element.Timestamp == nil {
 						now := time.Now()
 						element.Timestamp = &now
@@ -143,19 +140,8 @@ func (p *Pipeline) Run( /*commitInterval time.Duration*/) {
 
 	for s, stream := range p.streams {
 		log.Printf("Materilaizing Stream of %q \n", stream.Type)
-		if stream.output != nil {
-			panic(fmt.Errorf("stream already materialized"))
-		}
-		stream._lock = sync.RWMutex{}
-		//TODO configurable capacity for checkpoint buffers
-		stream._cap = 100
-		stream._acked = make(map[Stamp]bool, stream._cap)
-		stream._pending = make(map[int][]Stamp, 10)
-		stream._checkpoints = make(map[Stamp]interface{}, stream._cap)
-		stream.termination = make(chan bool, 1)
-		stream.output = make(chan *Element)
+		stream.initialize(s + 1)
 		go func(s int, stream *Stream) {
-			stream.stage = s + 1
 			stream.runner(stream.output)
 			//assuming single source
 			if stream == source && !stream.closed {
@@ -184,14 +170,12 @@ func (p *Pipeline) Run( /*commitInterval time.Duration*/) {
 				switch e.signal {
 				case NoSignal:
 				case FinalCheckpoint:
-					for i := len(p.streams) - 1; i >= 0; i-- {
+					//assuming single source await until all inProgress acks have been completed
+					<-source.completed
+					for i := len(p.streams) - 1; i >=0; i-- {
 						p.streams[i].close()
 					}
-					//assuming single source, await until all pending acks have been completed
-					if !source.clean() {
-						log.Println("Waiting for source pending acks")
-						<- source.termination
-					}
+
 				}
 			} else {
 				//this is the only place that exits the for-select
@@ -199,8 +183,6 @@ func (p *Pipeline) Run( /*commitInterval time.Duration*/) {
 				//FinalCheckpoint is injected either by capture sigterm or at the end of bounded
 				return
 			}
-
-
 
 		}
 
