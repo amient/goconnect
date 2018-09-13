@@ -21,9 +21,10 @@ package main
 
 import (
 	"github.com/amient/goconnect/pkg/goc"
+	"github.com/amient/goconnect/pkg/goc/coder/gocstring"
 	"github.com/amient/goconnect/pkg/goc/coder/gocxml"
 	"github.com/amient/goconnect/pkg/goc/io"
-	"github.com/amient/goconnect/pkg/goc/io/std"
+	"github.com/amient/goconnect/pkg/goc/io/kafka1"
 	"strings"
 	"time"
 )
@@ -56,14 +57,14 @@ func main() {
 		return !strings.Contains(input, "B")
 	})
 
-	filtered.Apply(std.StdOutSink())
-	//filtered.
-	//	Apply(gocstring.Encoder()).
-	//	Apply(kafka1.NilKeyEncoder()).
-	//	Apply(&kafka1.Sink{
-	//		Bootstrap: "localhost:9092",
-	//		Topic:     "test",
-	//	})
+	//filtered.Apply(std.StdOutSink())
+	filtered.
+		Apply(gocstring.Encoder()).
+		Apply(kafka1.NilKeyEncoder()).
+		Apply(&kafka1.Sink{
+			Bootstrap: "localhost:9092",
+			Topic:     "test",
+		})
 
 	////do total aggregation using custom SideEffect fn
 	//total := filtered.Transform(func(input chan string, output chan int) {

@@ -81,7 +81,7 @@ func (source *Source) Run(output goc.OutputChannel) {
 			output <- &goc.Element{
 				Timestamp: &e.Timestamp,
 				Checkpoint: goc.Checkpoint{
-					int(e.TopicPartition.Partition): e.TopicPartition.Offset + 1,
+					int(e.TopicPartition.Partition): e.TopicPartition.Offset,
 				},
 				Value: goc.KVBytes{
 					Key:   e.Key,
@@ -103,7 +103,7 @@ func (source *Source) Commit(checkpoint goc.Checkpoint) error {
 		offsets = append(offsets, kafka.TopicPartition{
 			Topic:     &source.Topic,
 			Partition: int32(k),
-			Offset:    v.(kafka.Offset),
+			Offset:    v.(kafka.Offset) + 1,
 		})
 	}
 	if len(offsets) > 0 {

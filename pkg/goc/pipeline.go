@@ -32,6 +32,7 @@ import (
 type Pipeline struct {
 	streams    []*Stream
 	lastCommit time.Time
+	stamp      uint32
 }
 
 func NewPipeline() *Pipeline {
@@ -44,6 +45,13 @@ func (p *Pipeline) register(stream *Stream) *Stream {
 	stream.pipeline = p
 	p.streams = append(p.streams, stream)
 	return stream
+}
+
+func sanitise(out *Element, in *Element) {
+	out.Stamp = in.Stamp
+	if out.Timestamp == nil {
+		out.Timestamp = in.Timestamp
+	}
 }
 
 func (p *Pipeline) Root(source RootFn) *Stream {
@@ -62,9 +70,7 @@ func (p *Pipeline) FlatMap(that *Stream, fn FlatMapFn) *Stream {
 	}
 	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output OutputChannel) {
 		for i, outputElement := range fn.Process(input) {
-			if outputElement.Timestamp == nil {
-				outputElement.Timestamp = input.Timestamp
-			}
+			sanitise(outputElement, input)
 			if outputElement.Checkpoint == nil {
 				outputElement.Checkpoint = Checkpoint{0: i}
 			}
@@ -81,14 +87,7 @@ func (p *Pipeline) Map(that *Stream, fn MapFn) *Stream {
 	}
 	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output OutputChannel) {
 		outputElement := fn.Process(input)
-		if outputElement.Timestamp == nil {
-			if input.Timestamp == nil {
-				t := time.Now()
-				outputElement.Timestamp = &t //FIXME apply this logic everywhere
-			} else {
-				outputElement.Timestamp = input.Timestamp
-			}
-		}
+		sanitise(outputElement, input)
 		output <- outputElement
 	})
 }
@@ -111,9 +110,19 @@ func (p *Pipeline) elementWise(that *Stream, out reflect.Type, fn interface{}, r
 		runner: func(output OutputChannel) {
 			var checkpoint = make(Checkpoint)
 			for element := range that.output {
+				//TODO stamp the element
 				checkpoint.merge(element.Checkpoint)
 				switch element.signal {
 				case NoSignal:
+					if element.Stamp == 0 {
+						p.stamp++
+						println(p.stamp)
+						element.Stamp = uint32(p.stamp) //FIXME atomic increment must be here
+					}
+					if element.Timestamp == nil {
+						now := time.Now()
+						element.Timestamp = &now
+					}
 					run(element, output)
 				case ControlCheckpoint:
 					output <- element

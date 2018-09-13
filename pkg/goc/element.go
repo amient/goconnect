@@ -28,6 +28,7 @@ type Element struct {
 	Timestamp  *time.Time
 	Checkpoint Checkpoint
 	Value      interface{}
+	Stamp 	   uint32
 	signal     ControlSignal
 }
 
@@ -41,5 +42,5 @@ type InputChannel <-chan *Element
 type OutputChannel chan *Element
 
 func (e *Element) Ack() {
-	log.Println("ACK", e)
+	log.Println("ACK", e.Stamp)
 }
