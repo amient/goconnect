@@ -21,53 +21,97 @@ package goc
 
 import (
 	"fmt"
+	"log"
 	"reflect"
+	"sync"
 )
 
 type Stream struct {
 	Type         reflect.Type
-	output       OutputChannel
-	runner       func(output OutputChannel)
-	pipeline     *Pipeline
-	closed       bool
 	fn           Fn
 	up           *Stream
-	_pending     []Stamp
-	_checkpoints map[Stamp]Checkpoint
+	pipeline     *Pipeline
+	stage        int
+	output       OutputChannel
+	runner       func(output OutputChannel)
+	termination  chan bool
+	closed       bool
+	_cap         int
+	_lock        sync.RWMutex
+	_pending     map[int][]Stamp
+	_checkpoints map[Stamp]interface{}
 	_acked       map[Stamp]bool
-	id           int
 }
 
-func (stream *Stream) pending(stamp Stamp, checkpoint Checkpoint) {
-	stream._pending = append(stream._pending, stamp)
-	stream._checkpoints[stamp] = checkpoint
+func (stream *Stream) pending(element *Element) {
+	stream._lock.Lock()
+	defer stream._lock.Unlock()
+	part := element.Checkpoint.Part
+	var ok bool
+	if _, ok = stream._pending[part]; !ok {
+		stream._pending[part] = make([]Stamp, 0, stream._cap)
+	}
+	stream._pending[part] = append(stream._pending[part], element.Stamp)
+	stream._checkpoints[element.Stamp] = element.Checkpoint.Data
+	//log.Printf("STAGE[%d] PENDING(%d) pending: %v acked:%d \n", stream.stage, element.Stamp, stream._pending, stream.acked())
 }
+
+func (stream *Stream) acked() []Stamp {
+	acked := make([]Stamp, 0, len(stream._acked))
+	for k := range stream._acked {
+		acked = append(acked, k)
+	}
+	return acked
+}
+func (stream *Stream) clean() bool {
+	clean := true
+	for _, p := range stream._pending {
+		clean = clean && len(p) == 0
+	}
+	return clean
+}
+
 
 func (stream *Stream) ack(stamps ... Stamp) error {
-
+	stream._lock.Lock()
+	defer stream._lock.Unlock()
 	for _, stamp := range stamps {
 		stream._acked[stamp] = true
 	}
 	upStamps := make([]Stamp, 0, len(stamps))
-	var upto Stamp
-	for ; len(stream._pending) > 0 && stream._acked[stream._pending[0]]; {
-		s := stream._pending[0]
-		delete(stream._acked, s)
-		if s > upto {
-			upto = s
+	chk := make(map[int]interface{}, len(stream._pending))
+
+	for part, pending := range stream._pending {
+		var upto Stamp
+		for ; len(pending) > 0 && stream._acked[pending[0]]; {
+			s := pending[0]
+			if s > upto {
+				upto = s
+				chk[part] = stream._checkpoints[upto]
+			}
+			delete(stream._acked, s)
+			delete(stream._checkpoints, s)
+			upStamps = append(upStamps, s)
+			pending = pending[1:]
 		}
-		upStamps = append(upStamps, s)
-		stream._pending = stream._pending[1:]
+		stream._pending[part] = pending
+	}
+
+	//log.Printf("STAGE[%d] ACK(%d) pending: %v acked:%d \n", stream.stage, stamps, stream._pending, stream.acked())
+	if commitable, ok := stream.fn.(Commitable); ok {
+		if err := commitable.Commit(chk); err != nil {
+			return err
+		}
+	}
+
+	if stream.closed && stream.clean() {
+		//log.Printf("STAGE[%d] ACK(%d) clean: %v pending: %v\n", stream.stage, stamps, stream.clean(), stream._pending)
+		stream.termination <- true
 	}
 
 	if len(upStamps) > 0 {
 		if stream.up != nil {
 			return stream.up.ack(upStamps...)
-		}
-		if commitableFn, ok := stream.fn.(Commitable); ok {
-			if err := commitableFn.Commit(stream._checkpoints[upto]); err != nil {
-				return err
-			}
 		}
 	}
 
@@ -76,8 +120,15 @@ func (stream *Stream) ack(stamps ... Stamp) error {
 
 func (stream *Stream) close() {
 	if ! stream.closed {
-		close(stream.output)
 		stream.closed = true
+		log.Println("Closing Stage", stream.stage, stream.Type)
+		close(stream.output)
+		if fn, ok := stream.fn.(Closeable); ok {
+			if err := fn.Close(); err != nil {
+				panic(err)
+			}
+		}
+
 	}
 }
 
@@ -93,8 +144,8 @@ func (stream *Stream) Apply(f Fn) *Stream {
 		//	return stream.pipeline.Transform(stream, fn)
 	default:
 		panic(fmt.Errorf("reflective transforms need: a) stream.Transform to have guaranteees and b) perf-tested"))
-		//if method, exists := reflect.TypeOf(f).MethodByName("Fn"); !exists {
-		//	panic(fmt.Errorf("transform must provide Fn method"))
+		//if method, exists := reflect.TypeOf(f).MethodByName("process"); !exists {
+		//	panic(fmt.Errorf("transform must provide process method"))
 		//} else {
 		//	v := reflect.ValueOf(f)
 		//	args := make([]reflect.Type, method.Type.NumIn()-1)
@@ -105,8 +156,8 @@ func (stream *Stream) Apply(f Fn) *Stream {
 		//	for i := 0; i < method.Type.NumOut(); i++ {
 		//		ret[i] = method.Type.Out(i)
 		//	}
-		//	fn := reflect.MakeFunc(reflect.FuncOf(args, ret, false), func(args []reflect.Value) (results []reflect.Value) {
-		//		methodArgs := append([]reflect.Value{v}, args...)
+		//	fn := reflect.MakeFunc(reflect.FuncOf(args, ret, false), func(args []reflect.Data) (results []reflect.Data) {
+		//		methodArgs := append([]reflect.Data{v}, args...)
 		//		return method.Func.Call(methodArgs)
 		//	})
 		//
@@ -134,7 +185,7 @@ func (stream *Stream) Map(f interface{}) *Stream {
 		panic(fmt.Errorf("map func must have exactly 1 input argument"))
 	}
 
-	//TODO this check will deffered on after network and type coders injection
+	//TODO this check will deferred on after network and type coders injection
 	if !stream.Type.AssignableTo(fnType.In(0)) {
 		panic(fmt.Errorf("cannot use Map func with input type %q to consume stream of type %q", fnType.In(0), stream.Type))
 	}
@@ -212,14 +263,14 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 //		go func() {
 //			defer intermediateIn.Close()
 //			for d := range input {
-//				intermediateIn.Send(reflect.ValueOf(d.Value))
+//				intermediateIn.Send(reflect.ValueOf(d.Data))
 //			}
 //		}()
 //
 //		intermediateOut := reflect.MakeChan(outChannelType, 0)
 //		go func() {
 //			defer intermediateOut.Close()
-//			fnVal.Call([]reflect.Value{intermediateIn, intermediateOut})
+//			fnVal.Call([]reflect.Data{intermediateIn, intermediateOut})
 //		}()
 //
 //		for {
@@ -227,7 +278,7 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 //			if !ok {
 //				return
 //			} else {
-//				output <- &Element{Value: o.Interface()}
+//				output <- &Element{Data: o.Interface()}
 //			}
 //		}
 //	})

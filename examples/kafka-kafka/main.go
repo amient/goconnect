@@ -52,6 +52,6 @@ func main() {
 		Topic:     *kafkaSinkTopic,
 	})
 
-	pipeline.Run(*commitInterval)
+	pipeline.Run()
 
 }

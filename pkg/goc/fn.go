@@ -56,10 +56,6 @@ type Closeable interface {
 	Close() error
 }
 
-type SideEffect interface {
-	Flush() error
-}
-
 type Commitable interface {
-	Commit(Checkpoint) error
+	Commit(checkpoint map[int]interface{}) error
 }

@@ -25,15 +25,37 @@ import (
 	"github.com/amient/goconnect/pkg/goc"
 	"os"
 	"reflect"
+	"time"
 )
 
 func StdOutSink() goc.ForEachFn {
-	return &stdOutSink{
+	sink := stdOutSink{
+		buffer: make([]*goc.Element, 0, 100),
+		queue:  make(chan *goc.Element),
+		closed: make(chan error, 1),
 		stdout: bufio.NewWriter(os.Stdout),
 	}
+	ticker := time.NewTicker(time.Second).C
+	go func() {
+		for {
+			select {
+			case <-ticker:
+				sink.flush()
+			case e := <-sink.queue:
+				sink.buffer = append(sink.buffer, e)
+			case <-sink.closed:
+				sink.closed <- sink.flush()
+				return
+			}
+		}
+	}()
+	return &sink
 }
 
 type stdOutSink struct {
+	queue  chan *goc.Element
+	buffer []*goc.Element
+	closed chan error
 	stdout *bufio.Writer
 }
 
@@ -42,29 +64,39 @@ func (sink *stdOutSink) InType() reflect.Type {
 }
 
 func (sink *stdOutSink) Process(input *goc.Element) {
-	sink.Fn(input.Value)
+	sink.process(input.Value)
+	sink.queue <- input
 }
 
-func (sink *stdOutSink) Fn(element interface{}) {
+func (sink *stdOutSink) flush() error {
+	for _, e := range sink.buffer {
+		e.Ack()
+	}
+	sink.buffer = make([]*goc.Element, 0, 100)
+	return sink.stdout.Flush()
+}
+
+func (sink *stdOutSink) process(element interface{}) {
 	switch e := element.(type) {
 	case []byte:
 		sink.stdout.Write(e)
 	case string:
 		sink.stdout.WriteString(e)
 	case goc.KV:
-		sink.Fn(e.Key)
-		sink.Fn(" -> ")
-		sink.Fn(e.Value)
+		sink.process(e.Key)
+		sink.process(" -> ")
+		sink.process(e.Value)
 	case goc.KVBytes:
-		sink.Fn(e.Key)
-		sink.Fn(" -> ")
-		sink.Fn(e.Value)
+		sink.process(e.Key)
+		sink.process(" -> ")
+		sink.process(e.Value)
 	default:
 		fmt.Fprint(sink.stdout, element)
 	}
 	sink.stdout.WriteByte('\n')
 }
 
-func (sink *stdOutSink) Flush() error {
-	return sink.stdout.Flush()
+func (sink *stdOutSink) Close() error {
+	sink.closed <- nil
+	return <-sink.closed
 }

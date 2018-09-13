@@ -34,6 +34,12 @@ type Element struct {
 	ack        func(stamp Stamp) error
 }
 
+func (e *Element) Ack() {
+	if err := e.ack(e.Stamp); err != nil {
+		panic(err)
+	}
+}
+
 type ControlSignal uint8
 
 const NoSignal ControlSignal = 0
@@ -43,9 +49,3 @@ type InputChannel <-chan *Element
 
 type OutputChannel chan *Element
 
-func (e *Element) Ack() {
-	//TODO aggregate multiple acks per period of time
-	if err := e.ack(e.Stamp); err != nil {
-		panic(err)
-	}
-}
