@@ -25,13 +25,53 @@ import (
 )
 
 type Stream struct {
-	Type       reflect.Type
-	output     OutputChannel
-	runner     func(output OutputChannel)
-	pipeline   *Pipeline
-	closed     bool
-	checkpoint Checkpoint
-	fn         Fn
+	Type         reflect.Type
+	output       OutputChannel
+	runner       func(output OutputChannel)
+	pipeline     *Pipeline
+	closed       bool
+	fn           Fn
+	up           *Stream
+	_pending     []Stamp
+	_checkpoints map[Stamp]Checkpoint
+	_acked       map[Stamp]bool
+	id           int
+}
+
+func (stream *Stream) pending(stamp Stamp, checkpoint Checkpoint) {
+	stream._pending = append(stream._pending, stamp)
+	stream._checkpoints[stamp] = checkpoint
+}
+
+func (stream *Stream) ack(stamps ... Stamp) error {
+
+	for _, stamp := range stamps {
+		stream._acked[stamp] = true
+	}
+	upStamps := make([]Stamp, 0, len(stamps))
+	var upto Stamp
+	for ; len(stream._pending) > 0 && stream._acked[stream._pending[0]]; {
+		s := stream._pending[0]
+		delete(stream._acked, s)
+		if s > upto {
+			upto = s
+		}
+		upStamps = append(upStamps, s)
+		stream._pending = stream._pending[1:]
+	}
+
+	if len(upStamps) > 0 {
+		if stream.up != nil {
+			return stream.up.ack(upStamps...)
+		}
+		if commitableFn, ok := stream.fn.(Commitable); ok {
+			if err := commitableFn.Commit(stream._checkpoints[upto]); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func (stream *Stream) close() {
@@ -41,25 +81,14 @@ func (stream *Stream) close() {
 	}
 }
 
-func (stream *Stream) commit() bool {
-	if fn, ok := stream.fn.(Commitable); ok {
-		if err := fn.Commit(stream.checkpoint); err != nil {
-			panic(err)
-		}
-		return true
-	} else {
-		return false
-	}
-}
-
 func (stream *Stream) Apply(f Fn) *Stream {
 	switch fn := f.(type) {
-	case FlatMapFn:
-		return stream.pipeline.FlatMap(stream, fn)
-	case MapFn:
-		return stream.pipeline.Map(stream, fn)
 	case ForEachFn:
 		return stream.pipeline.ForEach(stream, fn)
+	case MapFn:
+		return stream.pipeline.Map(stream, fn)
+	case FlatMapFn:
+		return stream.pipeline.FlatMap(stream, fn)
 		//case TransformFn:
 		//	return stream.pipeline.Transform(stream, fn)
 	default:
@@ -120,6 +149,7 @@ func (stream *Stream) Map(f interface{}) *Stream {
 		output <- &Element{
 			Value:     r[0].Interface(),
 			Timestamp: input.Timestamp,
+			Stamp:     input.Stamp,
 		}
 	})
 
@@ -146,6 +176,8 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 		v := reflect.ValueOf(input.Value)
 		if fnVal.Call([]reflect.Value{v})[0].Bool() {
 			output <- input
+		} else {
+			input.Ack()
 		}
 	})
 

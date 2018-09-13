@@ -21,6 +21,7 @@ package io
 
 import (
 	"github.com/amient/goconnect/pkg/goc"
+	"log"
 	"reflect"
 )
 
@@ -50,4 +51,9 @@ func (it *iterable) Run(output goc.OutputChannel) {
 			Value: it.val.Index(i).Interface(),
 		}
 	}
+}
+
+func (it *iterable) Commit(upto goc.Checkpoint) error {
+	log.Println("ACK-UP-TO", upto[0])
+	return nil
 }

@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/signal"
 	"reflect"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -100,36 +101,44 @@ func (p *Pipeline) ForEach(that *Stream, fn ForEachFn) *Stream {
 	}
 	return p.elementWise(that, ErrorType, fn, func(input *Element, output OutputChannel) {
 		fn.Process(input)
+		input.Ack()
 	})
 }
 
-func (p *Pipeline) elementWise(that *Stream, out reflect.Type, fn interface{}, run func(input *Element, output OutputChannel)) *Stream {
+func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(input *Element, output OutputChannel)) *Stream {
 	return p.register(&Stream{
 		Type: out,
 		fn:   fn,
+		up: up,
 		runner: func(output OutputChannel) {
-			var checkpoint = make(Checkpoint)
-			for element := range that.output {
-				//TODO stamp the element
-				checkpoint.merge(element.Checkpoint)
+			//var checkpoint = make(Checkpoint)
+			for element := range up.output {
+				//FIXME merging of checkpoints has to happen in Stream.pending & Stream.ack
+				//checkpoint.merge(element.Checkpoint)
 				switch element.signal {
 				case NoSignal:
 					if element.Stamp == 0 {
-						p.stamp++
-						println(p.stamp)
-						element.Stamp = uint32(p.stamp) //FIXME atomic increment must be here
+						element.Stamp = Stamp(atomic.AddUint32(&p.stamp, 1))
 					}
+					element.ack = func(x Stamp) error {
+						return up.ack(x)
+					}
+					up.pending(element.Stamp, element.Checkpoint)
 					if element.Timestamp == nil {
 						now := time.Now()
 						element.Timestamp = &now
 					}
 					run(element, output)
-				case ControlCheckpoint:
+				case FinalCheckpoint:
 					output <- element
-					that.checkpoint.merge(checkpoint)
-					checkpoint = make(Checkpoint)
-					if fn, ok := that.fn.(SideEffect); ok {
+					//up.checkpoint.merge(checkpoint)
+					//checkpoint = make(Checkpoint)
+					if fn, ok := up.fn.(SideEffect); ok {
+						//flush intermediate stages
 						fn.Flush()
+					}
+					if fn, ok := up.fn.(Closeable); ok {
+						fn.Close()
 					}
 				}
 			}
@@ -137,7 +146,7 @@ func (p *Pipeline) elementWise(that *Stream, out reflect.Type, fn interface{}, r
 	})
 }
 
-func (p *Pipeline) Run(commitInterval time.Duration) {
+func (p *Pipeline) Run(/*commitInterval time.Duration*/) {
 
 	log.Printf("Running Pipeline of %d stages\n", len(p.streams))
 
@@ -147,15 +156,20 @@ func (p *Pipeline) Run(commitInterval time.Duration) {
 			panic(fmt.Errorf("stream already materialized"))
 		}
 
-		stream.checkpoint = make(Checkpoint)
+		//TODO configurable capacity for checkpoint buffers
+		stream._acked = make(map[Stamp]bool, 100)
+		stream._pending = make([]Stamp,0, 100)
+		stream._checkpoints= make(map[Stamp]Checkpoint, 100)
+
 		stream.output = make(chan *Element)
 		go func(s int, stream *Stream) {
 			defer log.Printf("Stage terminated[%d]: %q\n", s, stream.Type)
 			defer stream.close()
+			stream.id = s
 			stream.runner(stream.output)
 			if !stream.closed {
 				//this is here to terminate bounded sources with a commit
-				stream.output <- &Element{signal: ControlCheckpoint}
+				stream.output <- &Element{signal: FinalCheckpoint}
 			}
 		}(s, stream)
 
@@ -165,7 +179,7 @@ func (p *Pipeline) Run(commitInterval time.Duration) {
 	sink := p.streams[len(p.streams)-1]
 
 	//open committer tick underlying
-	committerTick := time.NewTicker(commitInterval).C
+	//committerTick := time.NewTicker(commitInterval).C
 
 	//open termination signal underlying
 	sigterm := make(chan os.Signal, 1)
@@ -175,22 +189,23 @@ func (p *Pipeline) Run(commitInterval time.Duration) {
 		select {
 		case sig := <-sigterm:
 			log.Printf("Caught signal %v: Cancelling\n", sig)
-			//TODO assuming a single root
-			source.close()
-
-		case timestamp := <-committerTick:
-			if timestamp.Sub(p.lastCommit) > commitInterval {
-				//log.Println("Start Commit")
-				if !source.closed {
-					source.output <- &Element{signal: ControlCheckpoint}
-				}
-				p.lastCommit = timestamp
+			if !source.closed {
+				source.output <- &Element{signal: FinalCheckpoint}
 			}
+
+		//case timestamp := <-committerTick:
+		//	if timestamp.Sub(p.lastCommit) > commitInterval {
+		//		//log.Println("Start Commit")
+		//		if !source.closed {
+		//			source.output <- &Element{signal: FinalCheckpoint}
+		//		}
+		//		p.lastCommit = timestamp
+		//	}
 
 		case e, more := <-sink.output:
 			if !more {
+				//FIXME pipeline cannot terminate until all flushed data is acked
 				log.Println("Pipeline Terminated")
-				p.commit() //TODO this commit is here for bounded pipelines but needs to be verified that it doesn't break guarantees of unbouded pipeliens
 				for i := len(p.streams) - 1; i >= 0; i-- {
 					stream := p.streams[i]
 					if fn, ok := stream.fn.(Closeable); ok {
@@ -199,17 +214,19 @@ func (p *Pipeline) Run(commitInterval time.Duration) {
 						}
 					}
 				}
-				//this is the only place that exits the for-select which in turn is only possible by ControlCancel signal below
+				//this is the only place that exits the for-select which in turn is only possible by FinalCheckpoint signal below
 				return
 			}
 			switch e.signal {
 			case NoSignal:
-			case ControlCheckpoint:
-				//FIXME
+			case FinalCheckpoint:
+				//flush and close the final stage
 				if fn, ok := sink.fn.(SideEffect); ok {
 					fn.Flush()
 				}
-				p.commit()
+				if fn, ok := sink.fn.(Closeable); ok {
+					fn.Close()
+				}
 
 			}
 
@@ -219,11 +236,3 @@ func (p *Pipeline) Run(commitInterval time.Duration) {
 	}
 }
 
-func (p *Pipeline) commit() {
-	for i := len(p.streams) - 1; i >= 0; i-- {
-		if p.streams[i].commit() {
-			//log.Printf("Committed stage %d\n", i)
-		}
-	}
-	//log.Printf("Committing completed\n")
-}
