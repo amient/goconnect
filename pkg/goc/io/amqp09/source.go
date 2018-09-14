@@ -107,24 +107,21 @@ func (source *Source) Run(output goc.OutputChannel) {
 
 	for delivery := range deliveries {
 		output <- &goc.Element{
-			Timestamp: &delivery.Timestamp,
-			Checkpoint: goc.Checkpoint{
-				0: delivery.DeliveryTag,
-			},
-			Value: delivery.Body,
+			Timestamp:  &delivery.Timestamp,
+			Checkpoint: goc.Checkpoint{Data: delivery.DeliveryTag},
+			Value:      delivery.Body,
 		}
 	}
 }
 
-func (source *Source) Commit(checkpoint goc.Checkpoint) error {
-	if checkpoint != nil && checkpoint[0] != nil {
+func (source *Source) Commit(checkpoint map[int]interface{}) error {
+	if checkpoint[0] != nil {
 		deliverTag := checkpoint[0].(uint64)
 		if err := source.channel.Ack(deliverTag, true); err != nil {
 			return err
 		}
 		log.Printf("AMQP09 Source Committed, %d\n", deliverTag-source.lastCommitTag)
 		source.lastCommitTag = deliverTag
-		delete(checkpoint, 0)
 	}
 	return nil
 }

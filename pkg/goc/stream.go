@@ -35,6 +35,7 @@ type Stream struct {
 	runner      func(output OutputChannel)
 	pending     chan *Element
 	acks        chan Stamp
+	terminate   chan bool
 	terminating bool
 	completed   chan bool
 	closed      bool
@@ -227,12 +228,14 @@ func (stream *Stream) initialize(stage int) {
 	if stream.output != nil {
 		panic(fmt.Errorf("stream already materialized"))
 	}
+	log.Printf("Initializing Stage %d %v \n", stage, stream.Type)
 	stream.stage = stage
 	//TODO configurable capacity for checkpoint buffers
-	stream.cap = 100
-	stream.output = make(chan *Element)
-	stream.pending = make(chan *Element)
+	stream.cap = 1000
+	stream.output = make(chan *Element, 1)
+	stream.pending = make(chan *Element, 1)
 	stream.acks = make(chan Stamp, stream.cap)
+	stream.terminate = make(chan bool, 1)
 	stream.completed = make(chan bool, 1)
 	commits := make(chan map[int]interface{})
 	commitRequests := make(chan bool)
@@ -316,7 +319,7 @@ func (stream *Stream) initialize(stage int) {
 				}
 			}
 			if terminated {
-				stream.log("Completed %d", stream.stage)
+				stream.log("Completed Stage %d", stream.stage)
 				close(commits)
 				close(commitRequests)
 				close(stream.acks)
@@ -328,6 +331,9 @@ func (stream *Stream) initialize(stage int) {
 
 		for !terminated {
 			select {
+			case <-stream.terminate:
+				stream.terminating = true
+				maybeTerminate()
 			case <-commitRequests:
 				pendingCommitReuqest = true
 				doCommit()

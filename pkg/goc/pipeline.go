@@ -99,8 +99,8 @@ func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(inp
 			for element := range up.output {
 				switch element.signal {
 				case FinalCheckpoint:
-					up.terminating = true
 					output <- element
+					up.terminate <- true
 					return
 				case NoSignal:
 					if element.Stamp == 0 {
@@ -118,20 +118,19 @@ func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(inp
 	})
 }
 
-func (p *Pipeline) Run( /*commitInterval time.Duration*/) {
+func (p *Pipeline) Run() {
 
-	log.Printf("Running Pipeline of %d stages\n", len(p.streams))
+	log.Printf("Materializing Pipeline of %d stages\n", len(p.streams))
 
 	source := p.streams[0]
 	sink := p.streams[len(p.streams)-1]
 
 	for s, stream := range p.streams {
-		log.Printf("Materilaizing Stream of %q \n", stream.Type)
 		stream.initialize(s + 1)
 		go func(s int, stream *Stream) {
 			stream.runner(stream.output)
 			//assuming single source
-			if stream == source && !stream.closed {
+			if stream == source && !stream.terminating {
 				//this is here to terminate bounded sources with a commit
 				stream.output <- &Element{signal: FinalCheckpoint}
 			}
@@ -146,9 +145,9 @@ func (p *Pipeline) Run( /*commitInterval time.Duration*/) {
 	for {
 		select {
 		case sig := <-sigterm:
-			log.Printf("Caught signal %v: Cancelling\n", sig)
 			//assuming single source
 			if !source.closed {
+				log.Printf("Caught signal %v: Cancelling\n", sig)
 				source.output <- &Element{signal: FinalCheckpoint}
 			}
 
@@ -162,7 +161,6 @@ func (p *Pipeline) Run( /*commitInterval time.Duration*/) {
 					for i := len(p.streams) - 1; i >=0; i-- {
 						p.streams[i].close()
 					}
-
 				}
 			} else {
 				//this is the only place that exits the for-select

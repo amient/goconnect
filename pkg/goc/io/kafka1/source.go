@@ -108,13 +108,8 @@ func (source *Source) Commit(checkpoint map[int]interface{}) error {
 		})
 	}
 	if len(offsets) > 0 {
-		if committed, err := source.consumer.CommitOffsets(offsets); err != nil {
+		if _, err := source.consumer.CommitOffsets(offsets); err != nil {
 			return err
-		} else {
-			for _, tp := range committed {
-				log.Printf("Kafka Source Committed, %q\n", tp)
-				delete(checkpoint, int(tp.Partition))
-			}
 		}
 	}
 	return nil

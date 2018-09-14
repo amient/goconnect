@@ -64,7 +64,7 @@ func main() {
 	//		Topic:     "test",
 	//	})
 
-	////do total aggregation using custom SideEffect fn
+	////TODO total aggregation using custom fn
 	//total := filtered.Transform(func(input chan string, output chan int) {
 	//	l := 0
 	//	for b := range input {
