@@ -21,51 +21,41 @@ package goc
 
 import (
 	"fmt"
+	"log"
 	"reflect"
 )
 
 type Stream struct {
-	Type       reflect.Type
-	output     OutputChannel
-	runner     func(output OutputChannel)
-	pipeline   *Pipeline
-	closed     bool
-	checkpoint Checkpoint
-	fn         Fn
-}
-
-func (stream *Stream) close() {
-	if ! stream.closed {
-		close(stream.output)
-		stream.closed = true
-	}
-}
-
-func (stream *Stream) commit() bool {
-	if fn, ok := stream.fn.(Commitable); ok {
-		if err := fn.Commit(stream.checkpoint); err != nil {
-			panic(err)
-		}
-		return true
-	} else {
-		return false
-	}
+	Type        reflect.Type
+	fn          Fn
+	up          *Stream
+	pipeline    *Pipeline
+	stage       int
+	output      OutputChannel
+	runner      func(output OutputChannel)
+	pending     chan *Element
+	acks        chan Stamp
+	terminate   chan bool
+	terminating bool
+	completed   chan bool
+	closed      bool
+	cap         int
 }
 
 func (stream *Stream) Apply(f Fn) *Stream {
 	switch fn := f.(type) {
-	case FlatMapFn:
-		return stream.pipeline.FlatMap(stream, fn)
-	case MapFn:
-		return stream.pipeline.Map(stream, fn)
 	case ForEachFn:
 		return stream.pipeline.ForEach(stream, fn)
+	case MapFn:
+		return stream.pipeline.Map(stream, fn)
+	case FlatMapFn:
+		return stream.pipeline.FlatMap(stream, fn)
 		//case TransformFn:
 		//	return stream.pipeline.Transform(stream, fn)
 	default:
 		panic(fmt.Errorf("reflective transforms need: a) stream.Transform to have guaranteees and b) perf-tested"))
-		//if method, exists := reflect.TypeOf(f).MethodByName("Fn"); !exists {
-		//	panic(fmt.Errorf("transform must provide Fn method"))
+		//if method, exists := reflect.TypeOf(f).MethodByName("process"); !exists {
+		//	panic(fmt.Errorf("transform must provide process method"))
 		//} else {
 		//	v := reflect.ValueOf(f)
 		//	args := make([]reflect.Type, method.Type.NumIn()-1)
@@ -76,8 +66,8 @@ func (stream *Stream) Apply(f Fn) *Stream {
 		//	for i := 0; i < method.Type.NumOut(); i++ {
 		//		ret[i] = method.Type.Out(i)
 		//	}
-		//	fn := reflect.MakeFunc(reflect.FuncOf(args, ret, false), func(args []reflect.Value) (results []reflect.Value) {
-		//		methodArgs := append([]reflect.Value{v}, args...)
+		//	fn := reflect.MakeFunc(reflect.FuncOf(args, ret, false), func(args []reflect.Data) (results []reflect.Data) {
+		//		methodArgs := append([]reflect.Data{v}, args...)
 		//		return method.Func.Call(methodArgs)
 		//	})
 		//
@@ -105,7 +95,7 @@ func (stream *Stream) Map(f interface{}) *Stream {
 		panic(fmt.Errorf("map func must have exactly 1 input argument"))
 	}
 
-	//TODO this check will deffered on after network and type coders injection
+	//TODO this check will deferred on after network and type coders injection
 	if !stream.Type.AssignableTo(fnType.In(0)) {
 		panic(fmt.Errorf("cannot use Map func with input type %q to consume stream of type %q", fnType.In(0), stream.Type))
 	}
@@ -120,6 +110,7 @@ func (stream *Stream) Map(f interface{}) *Stream {
 		output <- &Element{
 			Value:     r[0].Interface(),
 			Timestamp: input.Timestamp,
+			Stamp:     input.Stamp,
 		}
 	})
 
@@ -146,6 +137,8 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 		v := reflect.ValueOf(input.Value)
 		if fnVal.Call([]reflect.Value{v})[0].Bool() {
 			output <- input
+		} else {
+			input.Ack()
 		}
 	})
 
@@ -180,14 +173,14 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 //		go func() {
 //			defer intermediateIn.Close()
 //			for d := range input {
-//				intermediateIn.Send(reflect.ValueOf(d.Value))
+//				intermediateIn.Send(reflect.ValueOf(d.Data))
 //			}
 //		}()
 //
 //		intermediateOut := reflect.MakeChan(outChannelType, 0)
 //		go func() {
 //			defer intermediateOut.Close()
-//			fnVal.Call([]reflect.Value{intermediateIn, intermediateOut})
+//			fnVal.Call([]reflect.Data{intermediateIn, intermediateOut})
 //		}()
 //
 //		for {
@@ -195,9 +188,191 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 //			if !ok {
 //				return
 //			} else {
-//				output <- &Element{Value: o.Interface()}
+//				output <- &Element{Data: o.Interface()}
 //			}
 //		}
 //	})
 //
 //}
+
+func (stream *Stream) log(f string, args ... interface{}) {
+	//if stream.stage == 3 {
+		log.Printf(f, args...)
+	//}
+}
+
+func (stream *Stream) pendingAck(element *Element) {
+	element.ack = stream.ack
+	stream.pending <- element
+}
+
+func (stream *Stream) ack(s Stamp) {
+	stream.acks <- s
+}
+
+func (stream *Stream) close() {
+	if ! stream.closed {
+		stream.log("Closing Stage %d %v", stream.stage, stream.Type)
+		close(stream.output)
+		if fn, ok := stream.fn.(Closeable); ok {
+			if err := fn.Close(); err != nil {
+				panic(err)
+			}
+		}
+		stream.closed = true
+	}
+}
+
+
+func (stream *Stream) initialize(stage int) {
+	if stream.output != nil {
+		panic(fmt.Errorf("stream already materialized"))
+	}
+	log.Printf("Initializing Stage %d %v \n", stage, stream.Type)
+	stream.stage = stage
+	//TODO configurable capacity for checkpoint buffers
+	stream.cap = 1000
+	stream.output = make(chan *Element, 1)
+	stream.pending = make(chan *Element, 1)
+	stream.acks = make(chan Stamp, stream.cap)
+	stream.terminate = make(chan bool, 1)
+	stream.completed = make(chan bool, 1)
+	commits := make(chan map[int]interface{})
+	commitRequests := make(chan bool)
+	commitable, isCommitable := stream.fn.(Commitable)
+
+	//start start the ack-commit accumulator that applies:
+	//A. accumulation and aggregation of checkpoints when commits are expensive
+	//B. back-pressure on the upstream processing when the commits are too slow given the configured buffer size
+
+	if isCommitable {
+		go func() {
+			commitRequests <- true
+			for checkpoint := range commits {
+				commitable.Commit(checkpoint)
+				commitRequests <- true
+			}
+		}()
+	}
+
+	go func() {
+		suspendable := stream.pending
+		terminated := false
+		pendingAcks := make(map[int][]Stamp, 10)
+		acked := make(map[Stamp]bool, stream.cap)
+		pendingChks := make(map[Stamp]interface{}, stream.cap)
+		checkpoint := make(map[int]interface{})
+		pendingCommitReuqest := false
+		//ackedKeys := func() []Stamp {
+		//	keys := make([]Stamp, 0, len(acked))
+		//	for k := range acked {
+		//		keys  = append(keys , k)
+		//	}
+		//	return keys
+		//}
+
+		doCommit := func() {
+			if len(checkpoint) > 0 {
+				pendingCommitReuqest = false
+				if isCommitable {
+					//stream.log("Commit %d", stream.stage)
+					commits <- checkpoint
+				}
+				checkpoint = make(map[int]interface{})
+			}
+		}
+
+		accumulate := func() {
+			for part, pending := range pendingAcks {
+				var upto Stamp
+				for ; len(pending) > 0 && acked[pending[0]]; {
+					s := pending[0]
+					if s > upto {
+						upto = s
+						checkpoint[part] = pendingChks[upto]
+					}
+					//stream.log("STAGE[%d] PART: %d DLETING STAMP %d \n", stream.stage, part, s)
+					delete(acked, s)
+					delete(pendingChks, s)
+					pending = pending[1:]
+				}
+				pendingAcks[part] = pending
+			}
+			if len(pendingChks) < stream.cap && suspendable == nil {
+				//release the backpressure after capacity is freed
+				suspendable = stream.pending
+			} else if !isCommitable {
+				doCommit()
+			}
+		}
+
+		maybeTerminate := func() {
+			if stream.terminating {
+				if len(checkpoint) == 0 {
+					clean := pendingCommitReuqest || !isCommitable
+					for _, p := range pendingAcks {
+						clean = clean && len(p) == 0
+					}
+					if clean {
+						terminated = true
+					}
+				}
+			}
+			if terminated {
+				stream.log("Completed Stage %d", stream.stage)
+				close(commits)
+				close(commitRequests)
+				close(stream.acks)
+				close(stream.pending)
+			} else {
+				//stream.log("Terminating %d (pending commit %d) (pending acks %v)", stream.stage, checkpoint, pendingAcks)
+			}
+		}
+
+		for !terminated {
+			select {
+			case <-stream.terminate:
+				stream.terminating = true
+				maybeTerminate()
+			case <-commitRequests:
+				pendingCommitReuqest = true
+				doCommit()
+				maybeTerminate()
+			case stamp := <-stream.acks:
+				//this doesn't have to block because it doesn't create any memory build-up, if anything it frees memory
+				acked[stamp] = true
+				accumulate()
+				if pendingCommitReuqest {
+					doCommit()
+				}
+				if stream.up != nil {
+					stream.up.ack(stamp)
+				}
+				maybeTerminate()
+				//stream.log("STAGE[%d] ACK(%d) InProgress: %v Acked: %v\n", stream.stage, stamp, pendingAcks, ackedKeys())
+
+			case e := <-suspendable:
+				part := e.Checkpoint.Part
+				var ok bool
+				if _, ok = pendingAcks[part]; !ok {
+					pendingAcks[part] = make([]Stamp, 0, stream.cap)
+				}
+				pendingAcks[part] = append(pendingAcks[part], e.Stamp)
+				pendingChks[e.Stamp] = e.Checkpoint.Data
+				accumulate()
+				maybeTerminate()
+				//stream.log("STAGE[%d] PENDING(%d) pendingAcks: %v acked: %v\n", stream.stage, e.Stamp, pendingAcks, ackedKeys())
+				if len(pendingChks) == stream.cap {
+					//in order to apply backpressure this channel needs to be nilld but right now it hangs after second suspendable
+					suspendable = nil
+					//stream.log("STAGE[%d] Applying backpressure, pending acks: %d\n", stream.stage, len(pendingChks))
+				} else if len(pendingChks) > stream.cap {
+					panic(fmt.Errorf("illegal accumulator state, buffer size higher than %d", stream.cap))
+				}
+
+			}
+		}
+		stream.completed <- true
+	}()
+
+}

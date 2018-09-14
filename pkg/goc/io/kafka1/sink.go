@@ -33,6 +33,7 @@ type Sink struct {
 	producer    *kafka.Producer
 	numProduced uint64
 	deliveries  chan kafka.Event
+	pending     map[uint32]*goc.Element
 }
 
 func (sink *Sink) InType() reflect.Type {
@@ -50,6 +51,7 @@ func (sink *Sink) Process(input *goc.Element) {
 		if err != nil {
 			panic(err)
 		}
+		sink.pending = make(map[uint32]*goc.Element)
 		go func() {
 			for e := range sink.deliveries {
 				switch ev := e.(type) {
@@ -57,7 +59,7 @@ func (sink *Sink) Process(input *goc.Element) {
 					if ev.TopicPartition.Error != nil {
 						panic(fmt.Errorf("Delivery failed: %v\n", ev.TopicPartition))
 					} else {
-						input.Ack()
+						ev.Opaque.(*goc.Element).Ack()
 					}
 				}
 			}
@@ -72,6 +74,7 @@ func (sink *Sink) Process(input *goc.Element) {
 		Key:            kv.Key,
 		Value:          kv.Value,
 		Timestamp:      *input.Timestamp,
+		Opaque:         input,
 	}, sink.deliveries)
 
 	if err != nil {

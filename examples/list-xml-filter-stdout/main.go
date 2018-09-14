@@ -21,12 +21,10 @@ package main
 
 import (
 	"github.com/amient/goconnect/pkg/goc"
-	"github.com/amient/goconnect/pkg/goc/coder/gocstring"
 	"github.com/amient/goconnect/pkg/goc/coder/gocxml"
 	"github.com/amient/goconnect/pkg/goc/io"
-	"github.com/amient/goconnect/pkg/goc/io/kafka1"
+	"github.com/amient/goconnect/pkg/goc/io/std"
 	"strings"
-	"time"
 )
 
 var data = []string{
@@ -57,16 +55,16 @@ func main() {
 		return !strings.Contains(input, "B")
 	})
 
-	//filtered.Apply(std.StdOutSink())
-	filtered.
-		Apply(gocstring.Encoder()).
-		Apply(kafka1.NilKeyEncoder()).
-		Apply(&kafka1.Sink{
-			Bootstrap: "localhost:9092",
-			Topic:     "test",
-		})
+	filtered.Apply(std.StdOutSink())
+	//filtered.
+	//	Apply(gocstring.Encoder()).
+	//	Apply(kafka1.NilKeyEncoder()).
+	//	Apply(&kafka1.Sink{
+	//		Bootstrap: "localhost:9092",
+	//		Topic:     "test",
+	//	})
 
-	////do total aggregation using custom SideEffect fn
+	////TODO total aggregation using custom fn
 	//total := filtered.Transform(func(input chan string, output chan int) {
 	//	l := 0
 	//	for b := range input {
@@ -79,7 +77,7 @@ func main() {
 	////TODO StdOOut sink must be network-merged to the single instance which last joined the group
 	//total.Apply(std.StdOutSink())
 
-	pipeline.Run(100 * time.Millisecond)
+	pipeline.Run()
 
 }
 

@@ -44,10 +44,13 @@ func (it *iterable) OutType() reflect.Type {
 func (it *iterable) Run(output goc.OutputChannel) {
 	for i := 0; i < it.val.Len(); i++ {
 		output <- &goc.Element{
-			Checkpoint: goc.Checkpoint{
-				0: i,
-			},
-			Value: it.val.Index(i).Interface(),
+			Checkpoint: goc.Checkpoint{Data: i},
+			Value:      it.val.Index(i).Interface(),
 		}
 	}
+}
+
+func (it *iterable) Commit(checkpoint map[int]interface{}) error {
+	//log.Println("ACK-UP-TO", checkpoint[0])
+	return nil
 }

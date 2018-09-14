@@ -24,12 +24,9 @@ import (
 	"github.com/amient/goconnect/pkg/goc"
 	"github.com/amient/goconnect/pkg/goc/io/amqp09"
 	"github.com/amient/goconnect/pkg/goc/io/kafka1"
-	"time"
 )
 
 var (
-	//general pipleline arguments
-	commitInterval = flag.Duration("commit-interval", 1*time.Second, "Commit interval of the whole connector")
 	//source arguments
 	uri          = flag.String("amqp-uri", "amqp://guest:guest@localhost:5672/", "AMQP URI")
 	exchange     = flag.String("amqp-exchange", "test-exchange", "Durable, non-auto-deleted AMQP exchange name")
@@ -64,6 +61,6 @@ func main() {
 		Topic:     *kafkaSinkTopic,
 	})
 
-	pipeline.Run(*commitInterval)
+	pipeline.Run()
 
 }

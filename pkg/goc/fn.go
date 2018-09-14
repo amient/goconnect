@@ -21,7 +21,7 @@ package goc
 
 import "reflect"
 
-type Fn interface{}
+type Fn interface {}
 
 type RootFn interface {
 	OutType() reflect.Type
@@ -51,14 +51,11 @@ type FlatMapFn interface {
 //	Run(input InputChannel, output OutputChannel)
 //}
 
+
 type Closeable interface {
 	Close() error
 }
 
-type SideEffect interface {
-	Flush() error
-}
-
 type Commitable interface {
-	Commit(Checkpoint) error
+	Commit(checkpoint map[int]interface{}) error
 }

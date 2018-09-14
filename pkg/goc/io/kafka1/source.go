@@ -81,7 +81,8 @@ func (source *Source) Run(output goc.OutputChannel) {
 			output <- &goc.Element{
 				Timestamp: &e.Timestamp,
 				Checkpoint: goc.Checkpoint{
-					int(e.TopicPartition.Partition): e.TopicPartition.Offset,
+					Part: int(e.TopicPartition.Partition),
+					Data: e.TopicPartition.Offset,
 				},
 				Value: goc.KVBytes{
 					Key:   e.Key,
@@ -97,7 +98,7 @@ func (source *Source) Run(output goc.OutputChannel) {
 
 }
 
-func (source *Source) Commit(checkpoint goc.Checkpoint) error {
+func (source *Source) Commit(checkpoint map[int]interface{}) error {
 	var offsets []kafka.TopicPartition
 	for k, v := range checkpoint {
 		offsets = append(offsets, kafka.TopicPartition{
@@ -107,13 +108,8 @@ func (source *Source) Commit(checkpoint goc.Checkpoint) error {
 		})
 	}
 	if len(offsets) > 0 {
-		if committed, err := source.consumer.CommitOffsets(offsets); err != nil {
+		if _, err := source.consumer.CommitOffsets(offsets); err != nil {
 			return err
-		} else {
-			for _, tp := range committed {
-				log.Printf("Kafka Source Committed, %q\n", tp)
-				delete(checkpoint, int(tp.Partition))
-			}
 		}
 	}
 	return nil
