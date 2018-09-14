@@ -22,6 +22,7 @@ package main
 import (
 	"flag"
 	"github.com/amient/goconnect/pkg/goc"
+	"github.com/amient/goconnect/pkg/goc/coder"
 	"github.com/amient/goconnect/pkg/goc/io/kafka1"
 )
 
@@ -36,7 +37,7 @@ var (
 
 func main() {
 
-	pipeline := goc.NewPipeline()
+	pipeline := goc.NewPipeline(coder.Registry())
 
 	source := pipeline.Root(&kafka1.Source{
 		Bootstrap: *kafkaSourceBootstrap,

@@ -21,6 +21,7 @@ package main
 
 import (
 	"github.com/amient/goconnect/pkg/goc"
+	"github.com/amient/goconnect/pkg/goc/coder"
 	"github.com/amient/goconnect/pkg/goc/coder/gocxml"
 	"github.com/amient/goconnect/pkg/goc/io"
 	"github.com/amient/goconnect/pkg/goc/io/std"
@@ -35,18 +36,14 @@ var data = []string{
 
 func main() {
 
-	pipeline := goc.NewPipeline()
+	pipeline := goc.NewPipeline(coder.Registry())
 
 	//root source of text elements
 	// TODO generated lists are one of the examples which must be coordinated and run on any one instance
 	messages := pipeline.Root(io.Iterable(data))
 
-	//decode strings to xml by applying a coder
-	xmls := messages.Apply(gocxml.StringDecoder())
-	//TODO this stage should be injected by the coder analysis step
-
-	//extract names with custom Map fn
-	extracted := xmls.Map(func(input gocxml.Node) string {
+	//extract names with custom Map fn (coders satisfying []byte => xml are injected by the pipeline)
+	extracted := messages.Map(func(input gocxml.Node) string {
 		return input.Children()[0].Children()[0].Text()
 	})
 

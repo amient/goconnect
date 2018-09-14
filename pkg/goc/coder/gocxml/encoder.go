@@ -20,29 +20,34 @@
 package gocxml
 
 import (
+	"bufio"
+	"bytes"
 	"github.com/amient/goconnect/pkg/goc"
 	"reflect"
 )
 
-func StringEncoder() goc.MapFn {
-	return &stringEncoder{}
+func Encoder() goc.MapFn {
+	return &bytesEncoder{}
 }
 
-type stringEncoder struct{}
+type bytesEncoder struct{}
 
-func (d *stringEncoder) InType() reflect.Type {
+func (d *bytesEncoder) InType() reflect.Type {
 	return NodeType
 }
 
-func (d *stringEncoder) OutType() reflect.Type {
-	return goc.StringType
+func (d *bytesEncoder) OutType() reflect.Type {
+	return goc.ByteArrayType
 }
 
-func (d *stringEncoder) Process(input *goc.Element) *goc.Element {
-	str, err := WriteNodeAsString(input.Value.(Node))
+func (d *bytesEncoder) Process(input *goc.Element) *goc.Element {
+	var b bytes.Buffer
+	w := bufio.NewWriter(&b)
+	_, err := WriteNode(w, input.Value.(Node))
+	w.Flush()
 	if err != nil {
 		panic(err)
 	} else {
-		return &goc.Element{Value: str}
+		return &goc.Element{Value: b.Bytes()}
 	}
 }

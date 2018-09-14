@@ -20,26 +20,27 @@
 package gocxml
 
 import (
+	"bytes"
 	"github.com/amient/goconnect/pkg/goc"
 	"reflect"
 )
 
-func StringDecoder() goc.MapFn {
-	return &stringDecoder{}
+func Decoder() goc.MapFn {
+	return &bytesDecoder{}
 }
 
-type stringDecoder struct{}
+type bytesDecoder struct{}
 
-func (d *stringDecoder) InType() reflect.Type {
-	return goc.StringType
+func (d *bytesDecoder) InType() reflect.Type {
+	return goc.ByteArrayType
 }
 
-func (d *stringDecoder) OutType() reflect.Type {
+func (d *bytesDecoder) OutType() reflect.Type {
 	return NodeType
 }
 
-func (d *stringDecoder) Process(input *goc.Element) *goc.Element {
-	if node, err := ReadNodeFromString(input.Value.(string)); err != nil {
+func (d *bytesDecoder) Process(input *goc.Element) *goc.Element {
+	if node, err := ReadNode(bytes.NewReader(input.Value.([]byte))); err != nil {
 		panic(err)
 	} else {
 		return &goc.Element{Value: node}

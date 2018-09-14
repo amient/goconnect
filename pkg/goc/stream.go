@@ -53,7 +53,11 @@ func (stream *Stream) Apply(f Fn) *Stream {
 		//case TransformFn:
 		//	return stream.pipeline.Transform(stream, fn)
 	default:
-		panic(fmt.Errorf("reflective transforms need: a) stream.Transform to have guaranteees and b) perf-tested"))
+		if reflect.TypeOf(f).Kind() != reflect.Interface {
+			panic(fmt.Errorf("only on of the interfaces defined in god/fn.go  can be applied"))
+		}
+
+		panic(fmt.Errorf("reflective transforms need: a) stream.Transform to have guaranteees and b) perf-tested", reflect.TypeOf(f)))
 		//if method, exists := reflect.TypeOf(f).MethodByName("process"); !exists {
 		//	panic(fmt.Errorf("transform must provide process method"))
 		//} else {
@@ -95,9 +99,8 @@ func (stream *Stream) Map(f interface{}) *Stream {
 		panic(fmt.Errorf("map func must have exactly 1 input argument"))
 	}
 
-	//TODO this check will deferred on after network and type coders injection
 	if !stream.Type.AssignableTo(fnType.In(0)) {
-		panic(fmt.Errorf("cannot use Map func with input type %q to consume stream of type %q", fnType.In(0), stream.Type))
+		return stream.pipeline.injectCoder(stream, fnType.In(0)).Map(f)
 	}
 
 	if fnType.NumOut() != 1 {

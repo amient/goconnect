@@ -22,6 +22,7 @@ package main
 import (
 	"flag"
 	"github.com/amient/goconnect/pkg/goc"
+	"github.com/amient/goconnect/pkg/goc/coder"
 	"github.com/amient/goconnect/pkg/goc/io/amqp09"
 	"github.com/amient/goconnect/pkg/goc/io/kafka1"
 )
@@ -43,7 +44,7 @@ func main() {
 
 	flag.Parse()
 
-	pipeline := goc.NewPipeline()
+	pipeline := goc.NewPipeline(coder.Registry())
 
 	messages := pipeline.Root(&amqp09.Source{
 		Uri:          *uri,
@@ -54,9 +55,7 @@ func main() {
 		BindingKey:   *bindingKey,
 	})
 
-	kvs := messages.Apply(kafka1.NilKeyEncoder())
-
-	kvs.Apply(&kafka1.Sink{
+	messages.Apply(&kafka1.Sink{
 		Bootstrap: *kafkaSinkBootstrap,
 		Topic:     *kafkaSinkTopic,
 	})

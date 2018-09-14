@@ -33,11 +33,13 @@ import (
 type Pipeline struct {
 	streams []*Stream
 	stamp   uint32
+	coders  []MapFn
 }
 
-func NewPipeline() *Pipeline {
+func NewPipeline(coders []MapFn) *Pipeline {
 	return &Pipeline{
 		streams: []*Stream{},
+		coders: coders,
 	}
 }
 
@@ -51,9 +53,7 @@ func (p *Pipeline) Root(source RootFn) *Stream {
 
 func (p *Pipeline) FlatMap(that *Stream, fn FlatMapFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
-		//TODO this check will be removed and resolved during coder injection step
-		panic(fmt.Errorf("cannot Apply process with input type %q to consume stream of type %q",
-			fn.InType(), that.Type))
+		return p.FlatMap(p.injectCoder(that, fn.InType()), fn)
 	}
 	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output OutputChannel) {
 		for i, outputElement := range fn.Process(input) {
@@ -68,9 +68,7 @@ func (p *Pipeline) FlatMap(that *Stream, fn FlatMapFn) *Stream {
 
 func (p *Pipeline) Map(that *Stream, fn MapFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
-		//TODO this check will be removed and resolved during coder injection step
-		panic(fmt.Errorf("cannot Apply process with input type %q to consume stream of type %q",
-			fn.InType(), that.Type))
+		return p.Map(p.injectCoder(that, fn.InType()), fn)
 	}
 	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output OutputChannel) {
 		outputElement := fn.Process(input)
@@ -81,13 +79,43 @@ func (p *Pipeline) Map(that *Stream, fn MapFn) *Stream {
 
 func (p *Pipeline) ForEach(that *Stream, fn ForEachFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
-		//TODO this check will be removed and resolved during coder injection step
-		panic(fmt.Errorf("cannot Apply process with input type %q to consume stream of type %q",
-			fn.InType(), that.Type))
+		return p.ForEach(p.injectCoder(that, fn.InType()), fn)
+	} else {
+		return p.elementWise(that, ErrorType, fn, func(input *Element, output OutputChannel) {
+			fn.Process(input)
+		})
 	}
-	return p.elementWise(that, ErrorType, fn, func(input *Element, output OutputChannel) {
-		fn.Process(input)
-	})
+}
+
+func (p *Pipeline) injectCoder(that *Stream, to reflect.Type) *Stream {
+	var scan func(in reflect.Type, out reflect.Type, d int, chain []MapFn) []MapFn
+	scan = func(in reflect.Type, out reflect.Type, d int, chain []MapFn) []MapFn {
+		if d <= 5 {
+			for _, c := range p.coders {
+				if c.InType().AssignableTo(in) && c.OutType().AssignableTo(out) {
+					branch := make([]MapFn, len(chain), len(chain)+1)
+					copy(branch, chain)
+					branch = append(branch, c)
+					return branch
+				}
+			}
+			for _, c := range p.coders {
+				if c.InType().AssignableTo(in) {
+					branch := make([]MapFn, len(chain), len(chain)+1)
+					copy(branch, chain)
+					branch = append(branch, c)
+					return scan(c.OutType(), out, d+1, branch)
+				}
+			}
+		}
+		panic(fmt.Errorf("cannot find any coders to satisfy: %v => %v, depth %d", in, out, d))
+	}
+	log.Printf("Injecting coders to satisfy: %v => %v ", that.Type, to)
+	for _, mapper := range scan(that.Type, to, 1, []MapFn{}) {
+		log.Printf("Injecting coder: %v => %v ", that.Type, mapper.OutType())
+		that = that.Apply(mapper)
+	}
+	return that
 }
 
 func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(input *Element, output OutputChannel)) *Stream {
@@ -158,7 +186,7 @@ func (p *Pipeline) Run() {
 				case FinalCheckpoint:
 					//assuming single source await until all pendingAck acks have been completed
 					<-source.completed
-					for i := len(p.streams) - 1; i >=0; i-- {
+					for i := len(p.streams) - 1; i >= 0; i-- {
 						p.streams[i].close()
 					}
 				}
@@ -186,4 +214,3 @@ func sanitise(out *Element, in *Element) {
 		out.Timestamp = in.Timestamp
 	}
 }
-
