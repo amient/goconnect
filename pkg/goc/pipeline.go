@@ -41,19 +41,6 @@ func NewPipeline() *Pipeline {
 	}
 }
 
-func (p *Pipeline) register(stream *Stream) *Stream {
-	stream.pipeline = p
-	p.streams = append(p.streams, stream)
-	return stream
-}
-
-func sanitise(out *Element, in *Element) {
-	out.Stamp = in.Stamp
-	if out.Timestamp == nil {
-		out.Timestamp = in.Timestamp
-	}
-}
-
 func (p *Pipeline) Root(source RootFn) *Stream {
 	return p.register(&Stream{
 		Type:   source.OutType(),
@@ -188,3 +175,17 @@ func (p *Pipeline) Run( /*commitInterval time.Duration*/) {
 
 	}
 }
+
+func (p *Pipeline) register(stream *Stream) *Stream {
+	stream.pipeline = p
+	p.streams = append(p.streams, stream)
+	return stream
+}
+
+func sanitise(out *Element, in *Element) {
+	out.Stamp = in.Stamp
+	if out.Timestamp == nil {
+		out.Timestamp = in.Timestamp
+	}
+}
+
