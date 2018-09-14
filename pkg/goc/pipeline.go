@@ -119,7 +119,7 @@ func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(inp
 					if element.Stamp == 0 {
 						element.Stamp = Stamp(atomic.AddUint32(&p.stamp, 1))
 					}
-					up.inProgress(element)
+					up.pendingAck(element)
 					if element.Timestamp == nil {
 						now := time.Now()
 						element.Timestamp = &now
@@ -170,7 +170,7 @@ func (p *Pipeline) Run( /*commitInterval time.Duration*/) {
 				switch e.signal {
 				case NoSignal:
 				case FinalCheckpoint:
-					//assuming single source await until all inProgress acks have been completed
+					//assuming single source await until all pendingAck acks have been completed
 					<-source.completed
 					for i := len(p.streams) - 1; i >=0; i-- {
 						p.streams[i].close()

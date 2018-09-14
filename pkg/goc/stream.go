@@ -23,25 +23,22 @@ import (
 	"fmt"
 	"log"
 	"reflect"
-	"time"
 )
 
 type Stream struct {
-	Type         reflect.Type
-	fn           Fn
-	up           *Stream
-	pipeline     *Pipeline
-	stage        int
-	output       OutputChannel
-	runner       func(output OutputChannel)
-	terminating  bool
-	completed    chan bool
-	closed       bool
-	_cap         int
-	_pending     map[int][]Stamp
-	_checkpoints map[Stamp]interface{}
-	_acked       map[Stamp]bool
-	_acks        chan Stamp
+	Type        reflect.Type
+	fn          Fn
+	up          *Stream
+	pipeline    *Pipeline
+	stage       int
+	output      OutputChannel
+	runner      func(output OutputChannel)
+	pending     chan *Element
+	acks        chan Stamp
+	terminating bool
+	completed   chan bool
+	closed      bool
+	cap         int
 }
 
 func (stream *Stream) initialize(stage int) {
@@ -50,137 +47,133 @@ func (stream *Stream) initialize(stage int) {
 	}
 	stream.stage = stage
 	//TODO configurable capacity for checkpoint buffers
-	stream._cap = 100
-	stream._acked = make(map[Stamp]bool, stream._cap)
-	stream._pending = make(map[int][]Stamp, 10)
-	stream._checkpoints = make(map[Stamp]interface{}, stream._cap)
-	stream._acks = make(chan Stamp, stream._cap)
+	stream.cap = 1000
+	stream.output = make(chan *Element, stream.cap)
+	stream.pending = make(chan *Element, stream.cap)
+	stream.acks = make(chan Stamp, stream.cap)
 	stream.completed = make(chan bool, 1)
-	stream.output = make(chan *Element)
+	commits := make(chan map[int]interface{})
+	commitRequests := make(chan bool)
+	commitable, isCommitable := stream.fn.(Commitable)
 
-	//start checkpoint accumulator
-	tickTime := 100 * time.Millisecond
-	if stream.stage == 1 {
-		tickTime = 3 * time.Second
+	//start start committer and commit accumulator that interact with backpressure
+
+	if isCommitable {
+		go func() {
+			commitRequests <- true
+			for checkpoint := range commits {
+				commitable.Commit(checkpoint)
+				commitRequests <- true
+			}
+		}()
 	}
-	ticker := time.NewTicker(tickTime).C
+
 	go func() {
+		var swap chan *Element = stream.pending
+		pendingAcks := make(map[int][]Stamp, 10)
+		acked := make(map[Stamp]bool, stream.cap)
+		pendingChks := make(map[Stamp]interface{}, stream.cap)
+		checkpoint := make(map[int]interface{})
+		pendingCommitReuqest := false
+		maybeTerminate := func() bool {
+			if stream.terminating {
+				clean := len(checkpoint) == 0
+				for _, p := range pendingAcks {
+					clean = clean && len(p) == 0
+				}
+				if clean {
+					close(commits)
+					stream.completed <- true
+					return true
+				}
+			}
+			return false
+		}
+		doCommit := func() {
+			if len(checkpoint) > 0 {
+				pendingCommitReuqest = false
+				if isCommitable {
+					commits <- checkpoint
+				}
+				checkpoint = make(map[int]interface{})
+				if swap == nil {
+					log.Printf("STAGE[%d] Releasing backpressure\n", stream.stage)
+					swap = stream.pending
+				}
+			}
+		}
 		for {
 			select {
-			case <-stream.completed:
-				stream.flushAcks()
-				return
-			case <-ticker:
-				if stream.terminating && stream.clean() {
-					stream.completed <- true
-				} else {
-					stream.flushAcks()
+			case <-commitRequests:
+				pendingCommitReuqest = true
+				doCommit()
+				if maybeTerminate() {
+					return
 				}
+			case stamp := <-stream.acks:
+				//this doesn't have to block because it doesn't create any memory build-up, if anything it frees memory
+				acked[stamp] = true
+				for part, pending := range pendingAcks {
+					var upto Stamp
+					//log.Printf("STAGE[%d] PART: %d len: %d, acked %d \n", stream.stage, part, len(pendingAcks), acked )
+					for ; len(pending) > 0 && acked[pending[0]]; {
+						s := pending[0]
+						if s > upto {
+							upto = s
+							checkpoint[part] = pendingChks[upto]
+						}
+						delete(acked, s)
+						delete(pendingChks, s)
+						pending = pending[1:]
+					}
+					pendingAcks[part] = pending
+				}
+
+				ackedKeys := make([]Stamp, 0, len(acked))
+				for k := range acked {
+					ackedKeys = append(ackedKeys, k)
+				}
+				//log.Printf("STAGE[%d] ACK(%d) InProgress: %v Acked: %v\n", stream.stage, stamp, pendingAcks, ackedKeys)
+
+				if pendingCommitReuqest {
+					doCommit()
+				}
+				if stream.up != nil {
+					stream.up.ack(stamp)
+				}
+
+				if maybeTerminate() {
+					return
+				}
+			case e := <-swap:
+				part := e.Checkpoint.Part
+				var ok bool
+				if _, ok = pendingAcks[part]; !ok {
+					pendingAcks[part] = make([]Stamp, 0, stream.cap)
+				}
+				pendingAcks[part] = append(pendingAcks[part], e.Stamp)
+				pendingChks[e.Stamp] = e.Checkpoint.Data
+				if len(pendingChks) == stream.cap {
+					log.Printf("STAGE[%d] Applying backpressure, pending acks: %d\n", stream.stage, len(pendingChks))
+					//TODO in order to apply backpressure this channel needs to be nilld but right now it hangs after second swap
+					//swap = nil
+				} else if len(pendingChks) > stream.cap {
+					//panic(fmt.Errorf("illegal accumulator state, buffer size higher than %d", stream.cap))
+				}
+				//log.Printf("STAGE[%d] PENDING(%d) pendingAck: %v\n", stream.stage, e.Stamp, stream.pending)
 			}
 		}
 	}()
+
 }
 
-
-func (stream *Stream) inProgress(element *Element) {
-
-	element.ack = stream.ackProxy
-
-	part := element.Checkpoint.Part
-	var ok bool
-	if _, ok = stream._pending[part]; !ok {
-		stream._pending[part] = make([]Stamp, 0, stream._cap)
-	}
-	stream._pending[part] = append(stream._pending[part], element.Stamp)
-	stream._checkpoints[element.Stamp] = element.Checkpoint.Data
-	//log.Printf("STAGE[%d] PENDING(%d) inProgress: %v\n", stream.stage, element.Stamp, stream._pending)
+func (stream *Stream) pendingAck(element *Element) {
+	element.ack = stream.ack
+	stream.pending <- element
 }
 
-func (stream *Stream) ackProxy(s Stamp) {
-	select {
-	case stream._acks <- s:
-	default:
-		stream.flushAcks()
-	}
-}
-
-
-
-func (stream *Stream) clean() bool {
-	clean := true
-	for _, p := range stream._pending {
-		clean = clean && len(p) == 0
-	}
-	return clean
-}
-
-func (stream *Stream) flushAcks() {
-	bundle := make([]Stamp, 0, stream._cap)
-	for {
-		select {
-		case stamp := <-stream._acks:
-			bundle = append(bundle, stamp)
-		default:
-			if err := stream.ack(bundle...); err != nil {
-				panic(err)
-			}
-			return
-		}
-	}
-}
-
-func (stream *Stream) ack(stamps ... Stamp) error {
-
-	if len(stamps) > 0 {
-		for _, s := range stamps {
-			stream._acked[s] = true
-		}
-
-		upStamps := make([]Stamp, 0, len(stamps))
-		chk := make(map[int]interface{}, len(stream._pending))
-
-		for part, pending := range stream._pending {
-			var upto Stamp
-			//log.Printf("STAGE[%d] PART: %d len: %d, acked %d \n", stream.stage, part, len(pending), stream._acked )
-			for ; len(pending) > 0 && stream._acked[pending[0]]; {
-				s := pending[0]
-				if s > upto {
-					upto = s
-					chk[part] = stream._checkpoints[upto]
-				}
-				delete(stream._acked, s)
-				delete(stream._checkpoints, s)
-				upStamps = append(upStamps, s)
-				pending = pending[1:]
-			}
-			stream._pending[part] = pending
-		}
-
-		//log.Printf("STAGE[%d] ACK(%d) inProgress: %v \n", stream.stage, stamps, stream._pending)
-		if commitable, ok := stream.fn.(Commitable); ok {
-			if err := commitable.Commit(chk); err != nil {
-				return err
-			}
-		}
-
-		if len(upStamps) > 0 {
-			if stream.up != nil {
-				for _, x := range upStamps {
-					stream.up.ackProxy(x)
-				}
-				//return stream.up.ack(upStamps...)
-			}
-		}
-	}
-
-	if stream.terminating {
-		if stream.clean() {
-			stream.completed <- true
-		}
-	}
-
-
-	return nil
+func (stream *Stream) ack(s Stamp) {
+	stream.acks <- s
 }
 
 func (stream *Stream) close() {

@@ -23,6 +23,7 @@ import (
 	"github.com/amient/goconnect/pkg/goc"
 	"log"
 	"reflect"
+	"time"
 )
 
 func Iterable(list interface{}) goc.RootFn {
@@ -53,5 +54,6 @@ func (it *iterable) Run(output goc.OutputChannel) {
 
 func (it *iterable) Commit(checkpoint map[int]interface{}) error {
 	log.Println("ACK-UP-TO", checkpoint)
+	time.Sleep(1 * time.Second) // simulating slow commits
 	return nil
 }
