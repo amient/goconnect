@@ -70,7 +70,7 @@ func (sink *Sink) Process(input *goc.Element) {
 
 	defer sink.updateCounter()
 	err = sink.producer.Produce(&kafka.Message{
-		TopicPartition: kafka.TopicPartition{Topic: &sink.Topic},
+		TopicPartition: kafka.TopicPartition{Topic: &sink.Topic, Partition: kafka.PartitionAny},
 		Key:            kv.Key,
 		Value:          kv.Value,
 		Timestamp:      *input.Timestamp,

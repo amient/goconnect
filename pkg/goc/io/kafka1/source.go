@@ -110,6 +110,8 @@ func (source *Source) Commit(checkpoint map[int]interface{}) error {
 	if len(offsets) > 0 {
 		if _, err := source.consumer.CommitOffsets(offsets); err != nil {
 			return err
+		} else {
+			log.Printf("Kafka Commit Successful: %v", offsets)
 		}
 	}
 	return nil

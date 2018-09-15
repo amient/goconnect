@@ -159,6 +159,11 @@ func (p *Pipeline) Run() {
 
 	source := p.streams[0]
 	sink := p.streams[len(p.streams)-1]
+	var start = time.Now()
+	stopwatch := func() {
+		log.Printf("Executiong took %f ms", time.Now().Sub(start).Seconds()*1000)
+	}
+	defer stopwatch()
 
 	for s, stream := range p.streams {
 		stream.initialize(s + 1)
@@ -176,6 +181,8 @@ func (p *Pipeline) Run() {
 	//open termination signal underlying
 	sigterm := make(chan os.Signal, 1)
 	signal.Notify(sigterm, syscall.SIGINT, syscall.SIGTERM)
+
+
 
 	for {
 		select {

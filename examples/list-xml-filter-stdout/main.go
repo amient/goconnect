@@ -24,7 +24,7 @@ import (
 	"github.com/amient/goconnect/pkg/goc/coder"
 	"github.com/amient/goconnect/pkg/goc/coder/gocxml"
 	"github.com/amient/goconnect/pkg/goc/io"
-	"github.com/amient/goconnect/pkg/goc/io/std"
+	"github.com/amient/goconnect/pkg/goc/io/kafka1"
 	"reflect"
 	"strings"
 )
@@ -61,7 +61,7 @@ func main() {
 
 	//root source of text elements
 	// TODO generated lists are one of the examples which must be coordinated and run on any one instance
-	messages := pipeline.Root(io.From(data))
+	messages := pipeline.Root(io.RoundRobin(100000, data))
 
 	//extract names with custom Map fn (coders satisfying []byte => xml are injected by the pipeline)
 	extracted := messages.Map(func(input gocxml.Node) string {
@@ -72,20 +72,17 @@ func main() {
 	filtered := extracted.Filter(func(input string) bool {
 		return !strings.Contains(input, "B")
 	})
-	//
-	//filtered.
-	//	Apply(gocstring.Encoder()).
-	//	Apply(kafka1.NilKeyEncoder()).
-	//	Apply(&kafka1.Sink{
-	//		Bootstrap: "localhost:9092",
-	//		Topic:     "test",
-	//	})
+
+	filtered.Apply(&kafka1.Sink{
+		Bootstrap: "localhost:9092",
+		Topic:     "test",
+	})
 
 	//total := filtered.Apply(new(customAggregator))
 
 	//output the aggregation result by applying a general StdOutSink transform
 	//TODO StdOOut sink must be network-merged to the single instance which last joined the group
-	filtered.Apply(std.StdOutSink())
+	//filtered.Apply(std.StdOutSink())
 	//total.Apply(std.StdOutSink())
 
 	pipeline.Run()

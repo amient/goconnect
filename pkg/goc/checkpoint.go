@@ -19,6 +19,8 @@
 
 package goc
 
+import "fmt"
+
 /**
 	Checkpoint is a map of int identifiers and values. The identifiers are specific to each transform, some
 	may have only one identifier, e.g. AMQP Source, others may have multiple, e.g. Kafka Source
@@ -27,5 +29,37 @@ package goc
 type Checkpoint struct {
 	Part int
 	Data interface{}
+	acked bool
 }
 
+type Stamp struct {
+	lo uint32
+	hi uint32
+}
+
+func (s *Stamp) valid() bool {
+	return s.lo != 0 && s.hi != 0 && s.lo <= s.hi
+}
+
+func (s *Stamp) merge(other Stamp) Stamp {
+	if !s.valid() {
+		s.lo = other.lo
+		s.hi = other.lo
+	} else {
+		if other.lo < s.lo {
+			s.lo = other.lo
+		}
+		if other.hi > s.hi {
+			s.hi = other.hi
+		}
+	}
+	return *s
+}
+
+func (s *Stamp) String() string {
+	if s.valid() {
+		return fmt.Sprintf("{%d:%d}", s.lo, s.hi)
+	} else {
+		return "{-}"
+	}
+}

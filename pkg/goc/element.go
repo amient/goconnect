@@ -23,11 +23,6 @@ import (
 	"time"
 )
 
-type Stamp struct {
-	lo uint32
-	hi uint32
-}
-
 type Element struct {
 	Timestamp  *time.Time
 	Checkpoint Checkpoint
