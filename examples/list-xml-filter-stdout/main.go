@@ -40,7 +40,7 @@ func main() {
 
 	//root source of text elements
 	// TODO generated lists are one of the examples which must be coordinated and run on any one instance
-	messages := pipeline.Root(io.Iterable(data))
+	messages := pipeline.Root(io.From(data))
 
 	//extract names with custom Map fn (coders satisfying []byte => xml are injected by the pipeline)
 	extracted := messages.Map(func(input gocxml.Node) string {

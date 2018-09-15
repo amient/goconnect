@@ -26,20 +26,21 @@ import (
 )
 
 type Stream struct {
-	Type        reflect.Type
-	fn          Fn
-	up          *Stream
-	pipeline    *Pipeline
-	stage       int
-	output      OutputChannel
-	runner      func(output OutputChannel)
-	pending     chan *Element
-	acks        chan Stamp
-	terminate   chan bool
-	terminating bool
-	completed   chan bool
-	closed      bool
-	cap         int
+	Type          reflect.Type
+	fn            Fn
+	up            *Stream
+	pipeline      *Pipeline
+	stage         int
+	output        OutputChannel
+	runner        func(output OutputChannel)
+	isPassthrough bool
+	pending       chan *Element
+	acks          chan Stamp
+	terminate     chan bool
+	terminating   bool
+	completed     chan bool
+	closed        bool
+	cap           int
 }
 
 func (stream *Stream) Apply(f Fn) *Stream {
@@ -200,17 +201,24 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 
 func (stream *Stream) log(f string, args ... interface{}) {
 	//if stream.stage == 3 {
-		log.Printf(f, args...)
+	log.Printf(f, args...)
 	//}
 }
 
 func (stream *Stream) pendingAck(element *Element) {
+	//stream.log("Incoming %d", element.Stamp)
 	element.ack = stream.ack
-	stream.pending <- element
+	if !stream.isPassthrough {
+		stream.pending <- element
+	}
 }
 
 func (stream *Stream) ack(s Stamp) {
-	stream.acks <- s
+	if stream.isPassthrough {
+		stream.up.ack(s)
+	} else {
+		stream.acks <- s
+	}
 }
 
 func (stream *Stream) close() {
@@ -225,7 +233,6 @@ func (stream *Stream) close() {
 		stream.closed = true
 	}
 }
-
 
 func (stream *Stream) initialize(stage int) {
 	if stream.output != nil {
@@ -242,7 +249,14 @@ func (stream *Stream) initialize(stage int) {
 	stream.completed = make(chan bool, 1)
 	commits := make(chan map[int]interface{})
 	commitRequests := make(chan bool)
-	commitable, isCommitable := stream.fn.(Commitable)
+	var commitable Commitable
+	var isCommitable bool
+	if stream.fn == nil {
+		stream.isPassthrough = true
+	} else {
+		_, stream.isPassthrough = stream.fn.(MapFn)
+		commitable, isCommitable = stream.fn.(Commitable)
+	}
 
 	//start start the ack-commit accumulator that applies:
 	//A. accumulation and aggregation of checkpoints when commits are expensive
