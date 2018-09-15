@@ -25,6 +25,8 @@ import (
 	"github.com/amient/goconnect/pkg/goc/coder/gocxml"
 	"github.com/amient/goconnect/pkg/goc/io"
 	"github.com/amient/goconnect/pkg/goc/io/std"
+	"github.com/amient/goconnect/pkg/goc/network"
+	"reflect"
 	"strings"
 )
 
@@ -34,48 +36,51 @@ var data = []string{
 	"<name>Cecilia</name>", "<name>Chad</name>", "<name>Elliot</name>", "<name>Wojtek</name>",
 }
 
+type customAggregator struct {
+	total int
+}
+
+func (c *customAggregator) InType() reflect.Type {
+	return goc.StringType
+}
+
+func (c *customAggregator) OutType() reflect.Type {
+	return goc.IntType
+}
+
+func (c *customAggregator) Process(input *goc.Element) {
+	c.total += len(input.Value.(string))
+}
+
+func (c *customAggregator) Trigger() []*goc.Element {
+	return []*goc.Element{{Value: c.total}}
+}
+
 func main() {
 
 	pipeline := goc.NewPipeline(coder.Registry())
 
 	//root source of text elements
-	// TODO generated lists are one of the examples which must be coordinated and run on any one instance
-	messages := pipeline.Root(io.Iterable(data))
+	//FIXME setting n=20 sometimes hangs because the iteration ends on a filtered-out element
+	messages := pipeline.Root(io.From(data))//.Apply(new(network.NetRoundRobin))
 
 	//extract names with custom Map fn (coders satisfying []byte => xml are injected by the pipeline)
-	extracted := messages.Map(func(input gocxml.Node) string {
-		return input.Children()[0].Children()[0].Text()
-	})
+	extracted := messages.Map(func(in gocxml.Node) string { return in.Children()[0].Children()[0].Text() }).MaxVerticalParallelism(4)
 
 	//remove all names containing letter 'B' with custom Filter fn
 	filtered := extracted.Filter(func(input string) bool {
 		return !strings.Contains(input, "B")
 	})
 
-	filtered.Apply(std.StdOutSink())
-	//filtered.
-	//	Apply(gocstring.Encoder()).
-	//	Apply(kafka1.NilKeyEncoder()).
-	//	Apply(&kafka1.Sink{
-	//		Bootstrap: "localhost:9092",
-	//		Topic:     "test",
-	//	})
+	//output the aggregation result by applying a general StdOutSink transform
+	filtered.Apply(new(customAggregator)).Apply(new(std.Out))
+	/*
+	filtered.Accumulate(func(input string, accumulator int) int {
+		//TODO reflect.Zero(fnType.In(1)).Interface() and then if return value is different from accumulator emit it
+	})
+	*/
+	//filtered.Apply(&kafka1.Sink{Bootstrap: "localhost:9092", Topic: "test"})
 
-	////TODO total aggregation using custom fn
-	//total := filtered.Transform(func(input chan string, output chan int) {
-	//	l := 0
-	//	for b := range input {
-	//		l += len(b)
-	//	}
-	//	output <- l
-	//})
-	//
-	////output the aggregation result by applying a general StdOutSink transform
-	////TODO StdOOut sink must be network-merged to the single instance which last joined the group
-	//total.Apply(std.StdOutSink())
-
-	pipeline.Run()
+	network.Runner(pipeline, "127.0.0.1:19001")
 
 }
-
-//TODO next step is adding networking-friendly checkpointer with pipeline options of optimistic or pessimistic one

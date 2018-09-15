@@ -24,20 +24,16 @@ import (
 	"reflect"
 )
 
-func Encoder() goc.MapFn {
-	return &encoder{}
-}
+type Encoder struct{}
 
-type encoder struct{}
-
-func (d *encoder) InType() reflect.Type {
+func (d *Encoder) InType() reflect.Type {
 	return goc.StringType
 }
 
-func (d *encoder) OutType() reflect.Type {
+func (d *Encoder) OutType() reflect.Type {
 	return goc.ByteArrayType
 }
 
-func (d *encoder) Process(input *goc.Element) *goc.Element {
+func (d *Encoder) Process(input *goc.Element) *goc.Element {
 	return &goc.Element{Value: []byte(input.Value.(string))}
 }

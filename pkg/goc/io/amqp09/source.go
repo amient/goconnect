@@ -43,7 +43,7 @@ func (source *Source) OutType() reflect.Type {
 	return goc.ByteArrayType
 }
 
-func (source *Source) Run(output goc.OutputChannel) {
+func (source *Source) Do(context *goc.Context) {
 	var err error
 
 	log.Printf("dialing %q", source.Uri)
@@ -106,15 +106,16 @@ func (source *Source) Run(output goc.OutputChannel) {
 	}
 
 	for delivery := range deliveries {
-		output <- &goc.Element{
-			Timestamp:  &delivery.Timestamp,
+		context.Emit(&goc.Element{
+			Stamp:      goc.Stamp{Unix: delivery.Timestamp.Unix()},
 			Checkpoint: goc.Checkpoint{Data: delivery.DeliveryTag},
 			Value:      delivery.Body,
-		}
+		})
 	}
+
 }
 
-func (source *Source) Commit(checkpoint map[int]interface{}) error {
+func (source *Source) Commit(checkpoint goc.Watermark) error {
 	if checkpoint[0] != nil {
 		deliverTag := checkpoint[0].(uint64)
 		if err := source.channel.Ack(deliverTag, true); err != nil {

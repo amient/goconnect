@@ -19,6 +19,12 @@
 
 package goc
 
+import (
+	"fmt"
+)
+
+type Watermark map[int]interface{}
+
 /**
 	Checkpoint is a map of int identifiers and values. The identifiers are specific to each transform, some
 	may have only one identifier, e.g. AMQP Source, others may have multiple, e.g. Kafka Source
@@ -29,3 +35,29 @@ type Checkpoint struct {
 	Data interface{}
 }
 
+type Commitable interface {
+	Commit(watermark Watermark) error
+}
+
+type Stamp struct {
+	Unix int64
+	Uniq uint64
+}
+
+type Pending struct {
+	Uniq           uint64
+	UpstreamNodeId uint16
+	Checkpoint     *Checkpoint
+}
+
+func (s *Stamp) Valid() bool {
+	return s.Uniq != 0
+}
+
+func (s *Stamp) String() string {
+	if s.Valid() {
+		return fmt.Sprintf("{%d}", s.Uniq)
+	} else {
+		return "{-}"
+	}
+}

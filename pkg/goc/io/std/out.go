@@ -28,75 +28,56 @@ import (
 	"time"
 )
 
-func StdOutSink() goc.ForEachFn {
-	sink := stdOutSink{
-		buffer: make([]*goc.Element, 0, 100),
-		queue:  make(chan *goc.Element),
-		closed: make(chan error, 1),
-		stdout: bufio.NewWriter(os.Stdout),
-	}
-	ticker := time.NewTicker(300 * time.Millisecond).C
-	go func() {
-		for {
-			select {
-			case <-ticker:
-				sink.flush()
-			case e := <-sink.queue:
-				sink.buffer = append(sink.buffer, e)
-			case <-sink.closed:
-				sink.closed <- sink.flush()
-				return
-			}
-		}
-	}()
-	return &sink
-}
+type Out struct{}
 
-type stdOutSink struct {
-	queue  chan *goc.Element
-	buffer []*goc.Element
-	closed chan error
-	stdout *bufio.Writer
-}
-
-func (sink *stdOutSink) InType() reflect.Type {
+func (sink *Out) InType() reflect.Type {
 	return goc.AnyType
 }
 
-func (sink *stdOutSink) Process(input *goc.Element) {
-	sink.process(input.Value)
-	sink.queue <- input
+func (sink *Out) Run(input <-chan *goc.Element, context *goc.Context) {
+	buffer := make([]*goc.Element, 0, 100)
+	ticker := time.NewTicker(3000 * time.Millisecond).C
+	stdout := bufio.NewWriter(os.Stdout)
+	for {
+		select {
+		case element, ok := <-input:
+			if !ok {
+				buffer = sink.flush(stdout, buffer)
+				return
+			} else {
+				sink.process(stdout, element.Value)
+				buffer = append(buffer, element)
+			}
+		case <-ticker:
+			buffer = sink.flush(stdout, buffer)
+		}
+	}
 }
 
-func (sink *stdOutSink) flush() error {
-	for _, e := range sink.buffer {
+func (sink *Out) flush(stdout *bufio.Writer, buffer []*goc.Element) []*goc.Element {
+	stdout.Flush()
+	for _, e := range buffer {
 		e.Ack()
 	}
-	sink.buffer = make([]*goc.Element, 0, 100)
-	return sink.stdout.Flush()
+	return make([]*goc.Element, 0, 100)
 }
 
-func (sink *stdOutSink) process(element interface{}) {
+func (sink *Out) process(stdout *bufio.Writer, element interface{}) {
 	switch e := element.(type) {
 	case []byte:
-		sink.stdout.Write(e)
+		stdout.Write(e)
 	case string:
-		sink.stdout.WriteString(e)
+		stdout.WriteString(e)
 	case goc.KV:
-		sink.process(e.Key)
-		sink.process(" -> ")
-		sink.process(e.Value)
+		sink.process(stdout, e.Key)
+		sink.process(stdout, " -> ")
+		sink.process(stdout, e.Value)
 	case goc.KVBytes:
-		sink.process(e.Key)
-		sink.process(" -> ")
-		sink.process(e.Value)
+		sink.process(stdout, e.Key)
+		sink.process(stdout, " -> ")
+		sink.process(stdout, e.Value)
 	default:
-		fmt.Fprint(sink.stdout, element)
+		fmt.Fprint(stdout, element)
 	}
-	sink.stdout.WriteByte('\n')
-}
-
-func (sink *stdOutSink) Close() error {
-	sink.closed <- nil
-	return <-sink.closed
+	stdout.WriteByte('\n')
 }

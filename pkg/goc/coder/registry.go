@@ -9,10 +9,10 @@ import (
 
 func Registry() []goc.MapFn {
 	return []goc.MapFn {
-		gocxml.Decoder(),
-		gocxml.Encoder(),
-		gocstring.Decoder(),
-		gocstring.Encoder(),
-		kafka1.NilKeyEncoder(),
+		new(gocxml.Decoder),
+		new(gocxml.Encoder),
+		new(gocstring.Decoder),
+		new(gocstring.Encoder),
+		new(kafka1.NilKeyEncoder),
 	}
 }

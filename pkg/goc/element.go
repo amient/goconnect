@@ -19,31 +19,41 @@
 
 package goc
 
-import (
-	"time"
-)
-
-type Stamp uint32
-
 type Element struct {
-	Timestamp  *time.Time
-	Checkpoint Checkpoint
+	Checkpoint Checkpoint //TODO make private and make sure it never leaves the stage Fn
 	Value      interface{}
 	Stamp 	   Stamp
-	signal     ControlSignal
-	ack        func(stamp Stamp)
+	FromNodeId uint16
+	ack        func(uniq uint64)
 }
 
 func (e *Element) Ack() {
-	e.ack(e.Stamp)
+	e.ack(e.Stamp.Uniq)
 }
 
-type ControlSignal uint8
+func NewOrderedElementSet(cap int) *OrderedElementSet {
+	return &OrderedElementSet{
+		elements: make(map[uint64]*Element, cap),
+	}
+}
 
-const NoSignal ControlSignal = 0
-const FinalCheckpoint ControlSignal = 1
+type OrderedElementSet struct {
+	next     uint64
+	elements map[uint64]*Element
+}
 
-type InputChannel <-chan *Element
+func (set *OrderedElementSet) AddElement(elementToAdd *Element, context *Context) {
+	//FIXME ordered element set must have its own stamp
+	set.elements[elementToAdd.Stamp.Uniq] = elementToAdd
+	for ; set.elements[set.next + 1] != nil; {
+		set.next ++
+		context.Emit(set.elements[set.next])
+		delete(set.elements, set.next)
+	}
+}
 
-type OutputChannel chan *Element
+
+
+
+
 

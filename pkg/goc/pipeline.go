@@ -22,72 +22,85 @@ package goc
 import (
 	"fmt"
 	"log"
-	"os"
-	"os/signal"
 	"reflect"
-	"sync/atomic"
-	"syscall"
-	"time"
 )
 
 type Pipeline struct {
-	streams []*Stream
-	stamp   uint32
-	coders  []MapFn
+	Defs   []*Def
+	stamp  uint64
+	coders []MapFn
 }
 
 func NewPipeline(coders []MapFn) *Pipeline {
 	return &Pipeline{
-		streams: []*Stream{},
+		Defs:   []*Def{},
 		coders: coders,
 	}
 }
 
-func (p *Pipeline) Root(source RootFn) *Stream {
-	return p.register(&Stream{
-		Type:   source.OutType(),
-		fn:     source,
-		runner: source.Run,
-	})
+func (p *Pipeline) Root(source Root) *Def {
+	return p.register(&Def{Type: source.OutType(), Fn: source})
 }
 
-func (p *Pipeline) FlatMap(that *Stream, fn FlatMapFn) *Stream {
+func (p *Pipeline) Transform(that *Def, fn Transform) *Def {
+	if !that.Type.AssignableTo(fn.InType()) {
+		return p.Transform(p.injectCoder(that, fn.InType()), fn)
+	}
+	return p.register(&Def{Up: that, Type: fn.OutType(), Fn: fn})
+}
+
+func (p *Pipeline) ForEach(that *Def, fn ForEach) *Def {
+	if !that.Type.AssignableTo(fn.InType()) {
+		return p.ForEach(p.injectCoder(that, fn.InType()), fn)
+	}
+	return p.register(&Def{Up: that, Type: ErrorType, Fn: fn})
+}
+
+func (p *Pipeline) FlatMap(that *Def, fn FlatMapFn) *Def {
 	if !that.Type.AssignableTo(fn.InType()) {
 		return p.FlatMap(p.injectCoder(that, fn.InType()), fn)
 	}
-	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output OutputChannel) {
-		for i, outputElement := range fn.Process(input) {
-			sanitise(outputElement, input)
-			if outputElement.Checkpoint.Data == nil {
-				outputElement.Checkpoint = Checkpoint{Part: 0, Data: i}
-			}
-			output <- outputElement
-		}
-	})
+	return p.register(&Def{Type: fn.OutType(), Fn: fn, Up: that})
 }
 
-func (p *Pipeline) Map(that *Stream, fn MapFn) *Stream {
+func (p *Pipeline) Map(that *Def, fn MapFn) *Def {
 	if !that.Type.AssignableTo(fn.InType()) {
 		return p.Map(p.injectCoder(that, fn.InType()), fn)
 	}
-	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output OutputChannel) {
-		outputElement := fn.Process(input)
-		sanitise(outputElement, input)
-		output <- outputElement
-	})
+	return p.register(&Def{Type: fn.OutType(), Fn: fn, Up: that})
 }
 
-func (p *Pipeline) ForEach(that *Stream, fn ForEachFn) *Stream {
-	if !that.Type.AssignableTo(fn.InType()) {
-		return p.ForEach(p.injectCoder(that, fn.InType()), fn)
-	} else {
-		return p.elementWise(that, ErrorType, fn, func(input *Element, output OutputChannel) {
-			fn.Process(input)
-		})
+func (p *Pipeline) Filter(that *Def, fn FilterFn) *Def {
+	if !that.Type.AssignableTo(fn.Type()) {
+		return p.Filter(p.injectCoder(that, fn.Type()), fn)
 	}
+
+	return p.register(&Def{Type: that.Type, Fn: fn, Up: that})
 }
 
-func (p *Pipeline) injectCoder(that *Stream, to reflect.Type) *Stream {
+func (p *Pipeline) ForEachFn(that *Def, fn ForEachFn) *Def {
+	if !that.Type.AssignableTo(fn.InType()) {
+		return p.ForEachFn(p.injectCoder(that, fn.InType()), fn)
+	}
+	return p.register(&Def{Type: ErrorType, Fn: fn, Up: that})
+}
+
+func (p *Pipeline) Group(that *Def, fn GroupFn) *Def {
+	if !that.Type.AssignableTo(fn.InType()) {
+		return p.Group(p.injectCoder(that, fn.InType()), fn)
+	}
+	return p.register(&Def{Type: fn.OutType(), Fn: fn, Up: that})
+}
+
+func (p *Pipeline) register(def *Def) *Def {
+	def.pipeline = p
+	def.Id = len(p.Defs)
+	def.maxVerticalParallelism = 1
+	p.Defs = append(p.Defs, def)
+	return def
+}
+
+func (p *Pipeline) injectCoder(that *Def, to reflect.Type) *Def {
 	var scan func(in reflect.Type, out reflect.Type, d int, chain []MapFn) []MapFn
 	scan = func(in reflect.Type, out reflect.Type, d int, chain []MapFn) []MapFn {
 		if d <= 5 {
@@ -110,7 +123,7 @@ func (p *Pipeline) injectCoder(that *Stream, to reflect.Type) *Stream {
 		}
 		panic(fmt.Errorf("cannot find any coders to satisfy: %v => %v, depth %d", in, out, d))
 	}
-	log.Printf("Injecting coders to satisfy: %v => %v ", that.Type, to)
+	//log.Printf("Injecting coders to satisfy: %v => %v ", that.Type, to)
 	for _, mapper := range scan(that.Type, to, 1, []MapFn{}) {
 		log.Printf("Injecting coder: %v => %v ", that.Type, mapper.OutType())
 		that = that.Apply(mapper)
@@ -118,99 +131,54 @@ func (p *Pipeline) injectCoder(that *Stream, to reflect.Type) *Stream {
 	return that
 }
 
-func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(input *Element, output OutputChannel)) *Stream {
-	return p.register(&Stream{
-		Type: out,
-		fn:   fn,
-		up:   up,
-		runner: func(output OutputChannel) {
-			for element := range up.output {
-				switch element.signal {
-				case FinalCheckpoint:
-					output <- element
-					up.terminate <- true
-					return
-				case NoSignal:
-					if element.Stamp == 0 {
-						element.Stamp = Stamp(atomic.AddUint32(&p.stamp, 1))
-					}
-					up.pendingAck(element)
-					if element.Timestamp == nil {
-						now := time.Now()
-						element.Timestamp = &now
-					}
-					run(element, output)
-				}
-			}
-		},
-	})
-}
-
-func (p *Pipeline) Run() {
-
-	log.Printf("Materializing Pipeline of %d stages\n", len(p.streams))
-
-	source := p.streams[0]
-	sink := p.streams[len(p.streams)-1]
-
-	for s, stream := range p.streams {
-		stream.initialize(s + 1)
-		go func(s int, stream *Stream) {
-			stream.runner(stream.output)
-			//assuming single source
-			if stream == source && !stream.terminating {
-				//this is here to terminate bounded sources with a commit
-				stream.output <- &Element{signal: FinalCheckpoint}
-			}
-		}(s, stream)
-
-	}
-
-	//open termination signal underlying
-	sigterm := make(chan os.Signal, 1)
-	signal.Notify(sigterm, syscall.SIGINT, syscall.SIGTERM)
-
-	for {
-		select {
-		case sig := <-sigterm:
-			//assuming single source
-			if !source.closed {
-				log.Printf("Caught signal %v: Cancelling\n", sig)
-				source.output <- &Element{signal: FinalCheckpoint}
-			}
-
-		case e, more := <-sink.output:
-			if more {
-				switch e.signal {
-				case NoSignal:
-				case FinalCheckpoint:
-					//assuming single source await until all pendingAck acks have been completed
-					<-source.completed
-					for i := len(p.streams) - 1; i >= 0; i-- {
-						p.streams[i].close()
-					}
-				}
-			} else {
-				//this is the only place that exits the for-select
-				//it will be triggerred by closing of the streams in the above case FinalCheckpoint
-				//FinalCheckpoint is injected either by capture sigterm or at the end of bounded
-				return
-			}
-
-		}
+func (p *Pipeline) Apply(def *Def, f Fn) *Def {
+	switch fn := f.(type) {
+	case GroupFn:
+		return p.Group(def, fn)
+	case ForEachFn:
+		return p.ForEachFn(def, fn)
+	case MapFn:
+		return p.Map(def, fn)
+	case FilterFn:
+		return p.Filter(def, fn)
+	case FlatMapFn:
+		return p.FlatMap(def, fn)
+	case Transform:
+		return p.Transform(def, fn)
+	case ForEach:
+		return p.ForEach(def, fn)
+	default:
+		panic(fmt.Errorf("only on of the interfaces defined in goc/Fn.go can be applied"))
+		panic(fmt.Errorf("reflective transforms need: a) def.Group to have guaranteees and b) perf-tested, %v", reflect.TypeOf(f)))
+		//if method, exists := reflect.TypeOf(f).MethodByName("process"); !exists {
+		//	panic(fmt.Errorf("transform must provide process method"))
+		//} else {
+		//	v := reflect.ValueOf(f)
+		//	args := make([]reflect.Type, method.Type.NumIn()-1)
+		//	for i := 1; i < method.Type.NumIn(); i++ {
+		//		args[i-1] = method.Type.In(i)
+		//	}
+		//	ret := make([]reflect.Type, method.Type.NumOut())
+		//	for i := 0; i < method.Type.NumOut(); i++ {
+		//		ret[i] = method.Type.Out(i)
+		//	}
+		//	Fn := reflect.MakeFunc(reflect.FuncOf(args, ret, false), func(args []reflect.Data) (results []reflect.Data) {
+		//		methodArgs := append([]reflect.Data{v}, args...)
+		//		return method.Func.Call(methodArgs)
+		//	})
+		//
+		//	var output *Def
+		//	if len(ret) > 1 {
+		//		panic(fmt.Errorf("transform must have 0 or 1 return value"))
+		//	} else if len(ret) == 0 {
+		//		output = def.Group(Fn)
+		//	} else {
+		//		output = def.Map(Fn.Interface())
+		//	}
+		//	output.Fn = f
+		//	return output
+		//}
 
 	}
-}
 
-func (p *Pipeline) register(stream *Stream) *Stream {
-	stream.pipeline = p
-	p.streams = append(p.streams, stream)
-	return stream
-}
-
-func sanitise(out *Element, in *Element) {
-	out.Stamp = in.Stamp
-	if out.Timestamp == nil {
-		out.Timestamp = in.Timestamp
-	}
 }

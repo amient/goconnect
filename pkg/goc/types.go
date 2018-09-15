@@ -27,6 +27,7 @@ import (
 var AnyType = reflect.TypeOf([]interface{}{}).Elem()
 var ErrorType = reflect.TypeOf(fmt.Errorf("{}"))
 var StringType = reflect.TypeOf("")
+var IntType = reflect.TypeOf(0)
 var ByteArrayType = reflect.TypeOf([]byte{})
 
 type KV struct {

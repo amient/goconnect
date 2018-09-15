@@ -24,33 +24,46 @@ import (
 	"reflect"
 )
 
-func Iterable(list interface{}) goc.RootFn {
-	//TODO validate array or slice
+func From(list interface{}) *iterable {
+	return RoundRobin(reflect.ValueOf(list).Len(), list)
+}
+
+func RoundRobin(n int, list interface{}) *iterable {
+	//TODO if slice or array -> iterable
+	//TODO if file or url -> file
 	return &iterable{
+		n:   n,
 		val: reflect.ValueOf(list),
 		typ: reflect.TypeOf(list),
 	}
 }
 
 type iterable struct {
-	val reflect.Value
-	typ reflect.Type
+	n      int
+	offset int
+	val    reflect.Value
+	typ    reflect.Type
 }
 
 func (it *iterable) OutType() reflect.Type {
 	return it.typ.Elem()
 }
 
-func (it *iterable) Run(output goc.OutputChannel) {
-	for i := 0; i < it.val.Len(); i++ {
-		output <- &goc.Element{
-			Checkpoint: goc.Checkpoint{Data: i},
-			Value:      it.val.Index(i).Interface(),
+func (it *iterable) Do(context *goc.Context) {
+	if context.GetNodeID() == 1 {
+		limit := it.val.Len()
+		for l := 0; l < it.n; l++ {
+			i := l % limit
+			context.Emit(&goc.Element{
+				Value:      it.val.Index(i).Interface(),
+				Checkpoint: goc.Checkpoint{Data: l},
+			})
 		}
 	}
 }
 
-func (it *iterable) Commit(checkpoint map[int]interface{}) error {
-	//log.Println("ACK-UP-TO", checkpoint[0])
+func (it *iterable) Commit(watermark goc.Watermark) error {
+	it.offset = watermark[0].(int)
+	//log.Println("ITERABLE COMMIT: ", watermark[0])
 	return nil
 }
