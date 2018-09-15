@@ -45,17 +45,17 @@ type Stream struct {
 
 func (stream *Stream) Apply(f Fn) *Stream {
 	switch fn := f.(type) {
+	case TransformFn:
+		return stream.pipeline.Transform(stream, fn)
 	case ForEachFn:
 		return stream.pipeline.ForEach(stream, fn)
 	case MapFn:
 		return stream.pipeline.Map(stream, fn)
 	case FlatMapFn:
 		return stream.pipeline.FlatMap(stream, fn)
-		//case TransformFn:
-		//	return stream.pipeline.Transform(stream, fn)
 	default:
 		if reflect.TypeOf(f).Kind() != reflect.Interface {
-			panic(fmt.Errorf("only on of the interfaces defined in god/fn.go  can be applied"))
+			panic(fmt.Errorf("only on of the interfaces defined in goc/fn.go  can be applied"))
 		}
 
 		panic(fmt.Errorf("reflective transforms need: a) stream.Transform to have guaranteees and b) perf-tested", reflect.TypeOf(f)))
@@ -129,9 +129,8 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 		panic(fmt.Errorf("filter func must have exactly 1 input argument of type %q", stream.Type))
 	}
 
-	//TODO this check will deffered on after network and type coders injection
 	if !stream.Type.AssignableTo(fnType.In(0)) {
-		panic(fmt.Errorf("cannot us FnEW with input type %q to consume stream of type %q", fnType.In(0), stream.Type))
+		return stream.pipeline.injectCoder(stream, fnType.In(0)).Filter(f)
 	}
 	if fnType.NumOut() != 1 || fnType.Out(0).Kind() != reflect.Bool {
 		panic(fmt.Errorf("FnVal must have exactly 1 output and it should be bool"))
@@ -148,61 +147,56 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 
 }
 
-//func (stream *Stream) Transform(f interface{}) *Stream {
+//func (stream *Stream) Transform(f func(element *Element, output OutputChannel)) *Stream {
 //
-//	fnType := reflect.TypeOf(f)
-//	fnVal := reflect.ValueOf(f)
-//
-//	if fnType.NumIn() != 2 || fnType.NumOut() != 0 {
-//		panic(fmt.Errorf("sideEffect func must have zero return values and exatly 2 arguments: input underlying and an output underlying"))
-//	}
-//
-//	inChannelType := fnType.In(0)
-//	outChannelType := fnType.In(1)
-//	if inChannelType.Kind() != reflect.Chan {
-//		panic(fmt.Errorf("sideEffect func type input argument must be a chnnel"))
-//	}
-//
-//	if outChannelType.Kind() != reflect.Chan {
-//		panic(fmt.Errorf("sideEffect func type output argument must be a chnnel"))
-//	}
-//
+//	inField,_ := reflect.TypeOf(f).In(0).Elem().FieldByName("Value")
+//	inType := inField.Type
+//	//if inType != reflect.TypeOf(&Element{}) {
+//	//	panic(fmt.Errorf("custom transform function must have first argument of type *goc.Element"))
+//	//}
+//	//outChannelType := fnType.In(1)
+//	//if outChannelType.Kind() != reflect.Chan {
+//	//	panic(fmt.Errorf("sideEffect func type output argument must be a chnnel"))
+//	//}
+//	//
 //	//TODO this check will deffered on after network and type coders injection
-//	if !stream.Type.AssignableTo(inChannelType.Elem()) {
-//		panic(fmt.Errorf("sideEffect func input argument must be a underlying of %q, got underlying of %q", stream.Type, fnType.In(0).Elem()))
+//	if !stream.Type.AssignableTo(inType) {
+//		panic(fmt.Errorf("sideEffect func input argument must be a underlying of %q, got underlying of %q", stream.Type, inType))
 //	}
 //
-//	return stream.pipeline.group(stream, outChannelType.Elem(), nil, func(input InputChannel, output OutputChannel) {
-//		intermediateIn := reflect.MakeChan(inChannelType, 0)
-//		go func() {
-//			defer intermediateIn.Close()
-//			for d := range input {
-//				intermediateIn.Send(reflect.ValueOf(d.Data))
-//			}
-//		}()
+//	return stream.pipeline.elementWise(stream, inType, nil, f)
 //
-//		intermediateOut := reflect.MakeChan(outChannelType, 0)
-//		go func() {
-//			defer intermediateOut.Close()
-//			fnVal.Call([]reflect.Data{intermediateIn, intermediateOut})
-//		}()
-//
-//		for {
-//			o, ok := intermediateOut.Recv()
-//			if !ok {
-//				return
-//			} else {
-//				output <- &Element{Data: o.Interface()}
-//			}
-//		}
-//	})
+//	//return stream.pipeline.group(stream, outChannelType.Elem(), nil, func(input InputChannel, output OutputChannel) {
+//	//	intermediateIn := reflect.MakeChan(inType, 0)
+//	//	go func() {
+//	//		defer intermediateIn.Close()
+//	//		for d := range input {
+//	//			intermediateIn.Send(reflect.ValueOf(d.Data))
+//	//		}
+//	//	}()
+//	//
+//	//	intermediateOut := reflect.MakeChan(outChannelType, 0)
+//	//	go func() {
+//	//		defer intermediateOut.Close()
+//	//		fnVal.Call([]reflect.Data{intermediateIn, intermediateOut})
+//	//	}()
+//	//
+//	//	for {
+//	//		o, ok := intermediateOut.Recv()
+//	//		if !ok {
+//	//			return
+//	//		} else {
+//	//			output <- &Element{Data: o.Interface()}
+//	//		}
+//	//	}
+//	//})
 //
 //}
 
 func (stream *Stream) log(f string, args ... interface{}) {
-	//if stream.stage == 3 {
-	log.Printf(f, args...)
-	//}
+	if stream.stage > 0 {
+		log.Printf(f, args...)
+	}
 }
 
 func (stream *Stream) pendingAck(element *Element) {
@@ -223,7 +217,7 @@ func (stream *Stream) ack(s Stamp) {
 
 func (stream *Stream) close() {
 	if ! stream.closed {
-		stream.log("Closing Stage %d %v", stream.stage, stream.Type)
+		//stream.log("Closing Stage %d %v", stream.stage, stream.Type)
 		close(stream.output)
 		if fn, ok := stream.fn.(Closeable); ok {
 			if err := fn.Close(); err != nil {
@@ -240,9 +234,16 @@ func (stream *Stream) initialize(stage int) {
 	}
 	log.Printf("Initializing Stage %d %v \n", stage, stream.Type)
 	stream.stage = stage
-	//TODO configurable capacity for checkpoint buffers
-	stream.cap = 1000
 	stream.output = make(chan *Element, 1)
+
+	//start start the ack-commit accumulator that applies:
+	//A. accumulation and aggregation of checkpoints when commits are expensive
+	//B. back-pressure on the upstream processing when the commits are too slow given the configured buffer size
+	if stream.isPassthrough {
+		return
+	}
+	//TODO configurable capacity for checkpoint buffers
+	stream.cap = 10000
 	stream.pending = make(chan *Element, 1)
 	stream.acks = make(chan Stamp, stream.cap)
 	stream.terminate = make(chan bool, 1)
@@ -258,10 +259,6 @@ func (stream *Stream) initialize(stage int) {
 		commitable, isCommitable = stream.fn.(Commitable)
 	}
 
-	//start start the ack-commit accumulator that applies:
-	//A. accumulation and aggregation of checkpoints when commits are expensive
-	//B. back-pressure on the upstream processing when the commits are too slow given the configured buffer size
-
 	if isCommitable {
 		go func() {
 			commitRequests <- true
@@ -273,20 +270,13 @@ func (stream *Stream) initialize(stage int) {
 	}
 
 	go func() {
-		suspendable := stream.pending
+		pendingSuspendable := stream.pending
 		terminated := false
-		pendingAcks := make(map[int][]Stamp, 10)
-		acked := make(map[Stamp]bool, stream.cap)
-		pendingChks := make(map[Stamp]interface{}, stream.cap)
+		pendingAcks := make(map[int][]uint32, 10)
+		acked := make(map[uint32]bool, stream.cap)
+		pendingChks := make(map[uint32]interface{}, stream.cap)
 		checkpoint := make(map[int]interface{})
 		pendingCommitReuqest := false
-		//ackedKeys := func() []Stamp {
-		//	keys := make([]Stamp, 0, len(acked))
-		//	for k := range acked {
-		//		keys  = append(keys , k)
-		//	}
-		//	return keys
-		//}
 
 		doCommit := func() {
 			if len(checkpoint) > 0 {
@@ -301,7 +291,7 @@ func (stream *Stream) initialize(stage int) {
 
 		accumulate := func() {
 			for part, pending := range pendingAcks {
-				var upto Stamp
+				var upto uint32
 				for ; len(pending) > 0 && acked[pending[0]]; {
 					s := pending[0]
 					if s > upto {
@@ -315,9 +305,9 @@ func (stream *Stream) initialize(stage int) {
 				}
 				pendingAcks[part] = pending
 			}
-			if len(pendingChks) < stream.cap && suspendable == nil {
+			if len(pendingChks) < stream.cap && pendingSuspendable == nil {
 				//release the backpressure after capacity is freed
-				suspendable = stream.pending
+				pendingSuspendable = stream.pending
 			} else if !isCommitable {
 				doCommit()
 			}
@@ -336,7 +326,7 @@ func (stream *Stream) initialize(stage int) {
 				}
 			}
 			if terminated {
-				stream.log("Completed Stage %d", stream.stage)
+				//stream.log("Completed Stage %d", stream.stage)
 				close(commits)
 				close(commitRequests)
 				close(stream.acks)
@@ -344,6 +334,14 @@ func (stream *Stream) initialize(stage int) {
 			} else {
 				//stream.log("Terminating %d (pending commit %d) (pending acks %v)", stream.stage, checkpoint, pendingAcks)
 			}
+		}
+
+		ackedKeys := func() []uint32 {
+			keys := make([]uint32, 0, len(acked))
+			for k := range acked {
+				keys  = append(keys , k)
+			}
+			return keys
 		}
 
 		for !terminated {
@@ -357,7 +355,9 @@ func (stream *Stream) initialize(stage int) {
 				maybeTerminate()
 			case stamp := <-stream.acks:
 				//this doesn't have to block because it doesn't create any memory build-up, if anything it frees memory
-				acked[stamp] = true
+				for u := stamp.lo; u <= stamp.hi; u ++ {
+					acked[u] = true
+				}
 				accumulate()
 				if pendingCommitReuqest {
 					doCommit()
@@ -368,20 +368,22 @@ func (stream *Stream) initialize(stage int) {
 				maybeTerminate()
 				//stream.log("STAGE[%d] ACK(%d) InProgress: %v Acked: %v\n", stream.stage, stamp, pendingAcks, ackedKeys())
 
-			case e := <-suspendable:
+			case e := <-pendingSuspendable:
 				part := e.Checkpoint.Part
 				var ok bool
 				if _, ok = pendingAcks[part]; !ok {
-					pendingAcks[part] = make([]Stamp, 0, stream.cap)
+					pendingAcks[part] = make([]uint32, 0, stream.cap)
 				}
-				pendingAcks[part] = append(pendingAcks[part], e.Stamp)
-				pendingChks[e.Stamp] = e.Checkpoint.Data
+				for u := e.Stamp.lo; u <= e.Stamp.hi; u++ {
+					pendingAcks[part] = append(pendingAcks[part], u)
+				}
+				pendingChks[e.Stamp.hi] = e.Checkpoint.Data
 				accumulate()
 				maybeTerminate()
-				//stream.log("STAGE[%d] PENDING(%d) pendingAcks: %v acked: %v\n", stream.stage, e.Stamp, pendingAcks, ackedKeys())
+				stream.log("STAGE[%d] PENDING(%d) pendingAcks: %v acked: %v\n", stream.stage, e.Stamp, pendingAcks, ackedKeys())
 				if len(pendingChks) == stream.cap {
-					//in order to apply backpressure this channel needs to be nilld but right now it hangs after second suspendable
-					suspendable = nil
+					//in order to apply backpressure this channel needs to be nilld but right now it hangs after second pendingSuspendable
+					pendingSuspendable = nil
 					//stream.log("STAGE[%d] Applying backpressure, pending acks: %d\n", stream.stage, len(pendingChks))
 				} else if len(pendingChks) > stream.cap {
 					panic(fmt.Errorf("illegal accumulator state, buffer size higher than %d", stream.cap))

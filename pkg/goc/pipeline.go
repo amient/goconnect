@@ -51,6 +51,7 @@ func (p *Pipeline) Root(source RootFn) *Stream {
 	})
 }
 
+
 func (p *Pipeline) FlatMap(that *Stream, fn FlatMapFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
 		return p.FlatMap(p.injectCoder(that, fn.InType()), fn)
@@ -87,37 +88,6 @@ func (p *Pipeline) ForEach(that *Stream, fn ForEachFn) *Stream {
 	}
 }
 
-func (p *Pipeline) injectCoder(that *Stream, to reflect.Type) *Stream {
-	var scan func(in reflect.Type, out reflect.Type, d int, chain []MapFn) []MapFn
-	scan = func(in reflect.Type, out reflect.Type, d int, chain []MapFn) []MapFn {
-		if d <= 5 {
-			for _, c := range p.coders {
-				if c.InType().AssignableTo(in) && c.OutType().AssignableTo(out) {
-					branch := make([]MapFn, len(chain), len(chain)+1)
-					copy(branch, chain)
-					branch = append(branch, c)
-					return branch
-				}
-			}
-			for _, c := range p.coders {
-				if c.InType().AssignableTo(in) {
-					branch := make([]MapFn, len(chain), len(chain)+1)
-					copy(branch, chain)
-					branch = append(branch, c)
-					return scan(c.OutType(), out, d+1, branch)
-				}
-			}
-		}
-		panic(fmt.Errorf("cannot find any coders to satisfy: %v => %v, depth %d", in, out, d))
-	}
-	log.Printf("Injecting coders to satisfy: %v => %v ", that.Type, to)
-	for _, mapper := range scan(that.Type, to, 1, []MapFn{}) {
-		log.Printf("Injecting coder: %v => %v ", that.Type, mapper.OutType())
-		that = that.Apply(mapper)
-	}
-	return that
-}
-
 func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(input *Element, output OutputChannel)) *Stream {
 	return p.register(&Stream{
 		Type: out,
@@ -127,12 +97,17 @@ func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(inp
 			for element := range up.output {
 				switch element.signal {
 				case FinalCheckpoint:
+					if _, is := fn.(TransformFn); is {
+						//FIXME
+						run(nil, output)
+					}
 					output <- element
 					up.terminate <- true
 					return
 				case NoSignal:
-					if element.Stamp == 0 {
-						element.Stamp = Stamp(atomic.AddUint32(&p.stamp, 1))
+					if element.Stamp.hi == 0 {
+						s := atomic.AddUint32(&p.stamp, 1)
+						element.Stamp = Stamp{s, s}
 					}
 					up.pendingAck(element)
 					if element.Timestamp == nil {
@@ -143,6 +118,38 @@ func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(inp
 				}
 			}
 		},
+	})
+}
+
+func (p *Pipeline) Transform(that *Stream, fn TransformFn) *Stream {
+	if !that.Type.AssignableTo(fn.InType()) {
+		return p.Transform(p.injectCoder(that, fn.InType()), fn)
+	}
+	var stamp Stamp
+	var highestTimestamp *time.Time
+	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output OutputChannel) {
+		if input == nil {
+			//FIXME not the most clever trigger
+			for _, outputElement := range fn.Trigger() {
+				outputElement.Stamp = stamp
+				if outputElement.Timestamp == nil {
+					outputElement.Timestamp = highestTimestamp
+				}
+				output <- outputElement
+				stamp.lo = 0
+				highestTimestamp = nil
+			}
+		} else {
+			fn.Process(input)
+			if highestTimestamp == nil || input.Timestamp.After(*highestTimestamp) {
+				highestTimestamp = input.Timestamp
+			}
+			stamp.hi = input.Stamp.hi
+			if stamp.lo == 0 {
+				stamp.lo = input.Stamp.lo
+			}
+		}
+
 	})
 }
 
@@ -213,4 +220,35 @@ func sanitise(out *Element, in *Element) {
 	if out.Timestamp == nil {
 		out.Timestamp = in.Timestamp
 	}
+}
+
+func (p *Pipeline) injectCoder(that *Stream, to reflect.Type) *Stream {
+	var scan func(in reflect.Type, out reflect.Type, d int, chain []MapFn) []MapFn
+	scan = func(in reflect.Type, out reflect.Type, d int, chain []MapFn) []MapFn {
+		if d <= 5 {
+			for _, c := range p.coders {
+				if c.InType().AssignableTo(in) && c.OutType().AssignableTo(out) {
+					branch := make([]MapFn, len(chain), len(chain)+1)
+					copy(branch, chain)
+					branch = append(branch, c)
+					return branch
+				}
+			}
+			for _, c := range p.coders {
+				if c.InType().AssignableTo(in) {
+					branch := make([]MapFn, len(chain), len(chain)+1)
+					copy(branch, chain)
+					branch = append(branch, c)
+					return scan(c.OutType(), out, d+1, branch)
+				}
+			}
+		}
+		panic(fmt.Errorf("cannot find any coders to satisfy: %v => %v, depth %d", in, out, d))
+	}
+	log.Printf("Injecting coders to satisfy: %v => %v ", that.Type, to)
+	for _, mapper := range scan(that.Type, to, 1, []MapFn{}) {
+		log.Printf("Injecting coder: %v => %v ", that.Type, mapper.OutType())
+		that = that.Apply(mapper)
+	}
+	return that
 }

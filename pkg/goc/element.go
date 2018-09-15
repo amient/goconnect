@@ -23,7 +23,10 @@ import (
 	"time"
 )
 
-type Stamp uint32
+type Stamp struct {
+	lo uint32
+	hi uint32
+}
 
 type Element struct {
 	Timestamp  *time.Time

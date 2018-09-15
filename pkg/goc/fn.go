@@ -45,11 +45,12 @@ type FlatMapFn interface {
 	Process(input *Element) []*Element
 }
 
-//type TransformFn interface {
-//	InType() reflect.Type
-//	OutType() reflect.Type
-//	Run(input InputChannel, output OutputChannel)
-//}
+type TransformFn interface {
+	InType() reflect.Type
+	OutType() reflect.Type
+	Process(input *Element)
+	Trigger() []*Element
+}
 
 
 type Closeable interface {

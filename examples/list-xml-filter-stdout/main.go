@@ -25,6 +25,7 @@ import (
 	"github.com/amient/goconnect/pkg/goc/coder/gocxml"
 	"github.com/amient/goconnect/pkg/goc/io"
 	"github.com/amient/goconnect/pkg/goc/io/std"
+	"reflect"
 	"strings"
 )
 
@@ -32,6 +33,26 @@ var data = []string{
 	"<name>Adam</name>", "<name>Albert</name>", "<name>Alice</name>", "<name>Alex</name>",
 	"<name>Bart</name>", "<name>Bob</name>", "<name>Brittney</name>", "<name>Brenda</name>",
 	"<name>Cecilia</name>", "<name>Chad</name>", "<name>Elliot</name>", "<name>Wojtek</name>",
+}
+
+type customAggregator struct {
+	total int
+}
+
+func (c *customAggregator) InType() reflect.Type {
+	return goc.StringType
+}
+
+func (c *customAggregator) OutType() reflect.Type {
+	return goc.IntType
+}
+
+func (c *customAggregator) Process(input *goc.Element) {
+	c.total += len(input.Value.(string))
+}
+
+func (c *customAggregator) Trigger() []*goc.Element {
+	return []*goc.Element{{Value: c.total}}
 }
 
 func main() {
@@ -51,8 +72,7 @@ func main() {
 	filtered := extracted.Filter(func(input string) bool {
 		return !strings.Contains(input, "B")
 	})
-
-	filtered.Apply(std.StdOutSink())
+	//
 	//filtered.
 	//	Apply(gocstring.Encoder()).
 	//	Apply(kafka1.NilKeyEncoder()).
@@ -61,17 +81,11 @@ func main() {
 	//		Topic:     "test",
 	//	})
 
-	////TODO total aggregation using custom fn
-	//total := filtered.Transform(func(input chan string, output chan int) {
-	//	l := 0
-	//	for b := range input {
-	//		l += len(b)
-	//	}
-	//	output <- l
-	//})
-	//
-	////output the aggregation result by applying a general StdOutSink transform
-	////TODO StdOOut sink must be network-merged to the single instance which last joined the group
+	//total := filtered.Apply(new(customAggregator))
+
+	//output the aggregation result by applying a general StdOutSink transform
+	//TODO StdOOut sink must be network-merged to the single instance which last joined the group
+	filtered.Apply(std.StdOutSink())
 	//total.Apply(std.StdOutSink())
 
 	pipeline.Run()
