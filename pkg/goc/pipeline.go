@@ -144,10 +144,11 @@ func (p *Pipeline) Transform(that *Stream, fn TransformFn) *Stream {
 			if highestTimestamp == nil || input.Timestamp.After(*highestTimestamp) {
 				highestTimestamp = input.Timestamp
 			}
-			stamp.hi = input.Stamp.hi
-			if stamp.lo == 0 {
-				stamp.lo = input.Stamp.lo
-			}
+			stamp.merge(input.Stamp)
+			//stamp.hi = input.Stamp.hi
+			//if stamp.lo == 0 {
+			//	stamp.lo = input.Stamp.lo
+			//}
 		}
 
 	})
@@ -198,6 +199,7 @@ func (p *Pipeline) Run() {
 				switch e.signal {
 				case NoSignal:
 				case FinalCheckpoint:
+					log.Printf("Output completion took %f ms", time.Now().Sub(start).Seconds()*1000)
 					//assuming single source await until all pendingAck acks have been completed
 					<-source.completed
 					for i := len(p.streams) - 1; i >= 0; i-- {

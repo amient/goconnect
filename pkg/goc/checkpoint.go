@@ -44,7 +44,7 @@ func (s *Stamp) valid() bool {
 func (s *Stamp) merge(other Stamp) Stamp {
 	if !s.valid() {
 		s.lo = other.lo
-		s.hi = other.lo
+		s.hi = other.hi
 	} else {
 		if other.lo < s.lo {
 			s.lo = other.lo

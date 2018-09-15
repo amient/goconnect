@@ -139,6 +139,7 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 	var stamp Stamp
 	return stream.pipeline.elementWise(stream, fnType.In(0), nil, func(input *Element, output OutputChannel) {
 		v := reflect.ValueOf(input.Value)
+		stamp = stamp.merge(input.Stamp)
 		if fnVal.Call([]reflect.Value{v})[0].Bool() {
 			output <- &Element {
 				Stamp: stamp.merge(input.Stamp),
@@ -148,7 +149,7 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 			}
 			stamp = Stamp{}
 		} else {
-			stamp = stamp.merge(input.Stamp)
+			input.Ack()
 		}
 	})
 
@@ -207,7 +208,7 @@ func (stream *Stream) log(f string, args ... interface{}) {
 }
 
 func (stream *Stream) pendingAck(element *Element) {
-	//stream.log("Incoming %d", element.Stamp)
+	//stream.log("STAGE[%d] Incoming %d", stream.stage, element.Stamp)
 	element.ack = stream.ack
 	if !stream.isPassthrough {
 		stream.pending <- element
@@ -241,11 +242,11 @@ func (stream *Stream) initialize(stage int) {
 	}
 	log.Printf("Initializing Stage %d %v \n", stage, stream.Type)
 	stream.stage = stage
-	stream.output = make(chan *Element, 1)
+	stream.output = make(chan *Element, 100)
 	var commitable Commitable
 	var isCommitable bool
 	if stream.fn == nil {
-		//stream.isPassthrough = true
+		stream.isPassthrough = true
 	} else {
 		_, stream.isPassthrough = stream.fn.(MapFn)
 		commitable, isCommitable = stream.fn.(Commitable)
@@ -259,9 +260,9 @@ func (stream *Stream) initialize(stage int) {
 	//B. back-pressure on the upstream processing when the commits are too slow given the configured buffer size
 
 	//TODO configurable capacity for checkpoint buffers
-	stream.cap = 1000000
-	stream.pending = make(chan *Element, 10)
-	stream.acks = make(chan Stamp, 1000)
+	stream.cap = 10000000
+	stream.pending = make(chan *Element, 1000) //TODO this buffer is important so make it configurable but must be >= stream.cap
+	stream.acks = make(chan Stamp, 10000)
 	stream.terminate = make(chan bool, 1)
 	stream.completed = make(chan bool, 1)
 	commits := make(chan map[int]interface{})
@@ -334,19 +335,6 @@ func (stream *Stream) initialize(stage int) {
 			}
 		}
 
-		//checkpoints := func() []int64 {
-		//	keys := make([]int64, 0, len(pendingCheckpoints))
-		//	for k, chk := range pendingCheckpoints {
-		//		v := int64(k)
-		//		if chk.acked {
-		//			keys = append(keys, -v)
-		//		} else {
-		//			keys = append(keys, v)
-		//		}
-		//	}
-		//	return keys
-		//}
-
 		for !terminated {
 			select {
 			case <-stream.terminate:
@@ -356,21 +344,6 @@ func (stream *Stream) initialize(stage int) {
 				pendingCommitReuqest = true
 				doCommit()
 				maybeTerminate()
-			case stamp := <-stream.acks:
-				//this doesn't have to block because it doesn't create any memory build-up, if anything it frees memory
-				for u := stamp.lo; u <= stamp.hi; u ++ {
-					pendingCheckpoints[u].acked = true
-				}
-				accumulate()
-				if pendingCommitReuqest {
-					doCommit()
-				}
-				if stream.up != nil {
-					stream.up.ack(stamp)
-				}
-				maybeTerminate()
-				//stream.log("STAGE[%d] ACK(%d) Pending: %v Checkpoints: %v\n", stream.stage, stamp, pending.String(), checkpoints())
-
 			case e := <-pendingSuspendable:
 				pending.merge(e.Stamp)
 				for u := e.Stamp.lo; u <= e.Stamp.hi; u++ {
@@ -379,16 +352,33 @@ func (stream *Stream) initialize(stage int) {
 
 				accumulate()
 				maybeTerminate()
-				//stream.log("STAGE[%d] Pending: %v Checkpoints: %v\n", stream.stage, pending, checkpoints())
+				//stream.log("STAGE[%d] Pending: %v Checkpoints: %v\n", stream.stage, pending, len(pendingCheckpoints))
 				if len(pendingCheckpoints) == stream.cap {
 					//in order to apply backpressure this channel needs to be nilld but right now it hangs after second pendingSuspendable
 					pendingSuspendable = nil
-					//stream.log("STAGE[%d] Applying backpressure, pending acks: %d\n", stream.stage, len(pendingCheckpoints))
+					stream.log("STAGE[%d] Applying backpressure, pending acks: %d\n", stream.stage, len(pendingCheckpoints))
 				} else if len(pendingCheckpoints) > stream.cap {
 					panic(fmt.Errorf("illegal accumulator state, buffer size higher than %d", stream.cap))
 				}
+			case stamp := <-stream.acks:
+				//this doesn't have to block because it doesn't create any memory build-up, if anything it frees memory
+				for u := stamp.lo; u <= stamp.hi; u ++ {
+					if c, ok := pendingCheckpoints[u]; ok {
+						c.acked = true
+					}
+				}
+				accumulate()
+				if pendingCommitReuqest {
+					doCommit()
+				}
+				//stream.log("STAGE[%d] ACK(%d) Pending: %v Checkpoints: %v\n", stream.stage, stamp, pending.String(), len(pendingCheckpoints))
+				if stream.up != nil {
+					stream.up.ack(stamp)
+				}
+				maybeTerminate()
 
 			}
+
 		}
 		stream.completed <- true
 	}()

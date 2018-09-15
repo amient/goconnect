@@ -24,8 +24,8 @@ import (
 	"github.com/amient/goconnect/pkg/goc"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"log"
-	"os"
 	"reflect"
+	"time"
 )
 
 type ConsumerCheckpoint struct {
@@ -42,6 +42,9 @@ type Source struct {
 	Topic     string
 	Group     string
 	consumer  *kafka.Consumer
+	start     time.Time
+	counter   map[int32]uint64
+	total     uint64
 }
 
 func (source *Source) OutType() reflect.Type {
@@ -50,6 +53,7 @@ func (source *Source) OutType() reflect.Type {
 
 func (source *Source) Run(output goc.OutputChannel) {
 	var err error
+	source.counter = make(map[int32]uint64)
 	source.consumer, err = kafka.NewConsumer(&kafka.ConfigMap{
 		"bootstrap.servers": source.Bootstrap,
 		"group.id":          source.Group,
@@ -71,13 +75,16 @@ func (source *Source) Run(output goc.OutputChannel) {
 
 	for event := range source.consumer.Events() {
 		switch e := event.(type) {
-		case kafka.AssignedPartitions:
-			fmt.Fprintf(os.Stderr, "%% %v\n", e)
-			source.consumer.Assign(e.Partitions)
-		case kafka.RevokedPartitions:
-			fmt.Fprintf(os.Stderr, "%% %v\n", e)
-			source.consumer.Unassign()
+		case kafka.AssignedPartitions: //not used
+		case kafka.RevokedPartitions: //not used
 		case *kafka.Message:
+			if len(source.counter) == 0 {
+				source.start = time.Now()
+			}
+			if _, contains := source.counter[e.TopicPartition.Partition]; !contains {
+				source.counter[e.TopicPartition.Partition] = 0
+			}
+			source.counter[e.TopicPartition.Partition]++
 			output <- &goc.Element{
 				Timestamp: &e.Timestamp,
 				Checkpoint: goc.Checkpoint{
@@ -90,7 +97,13 @@ func (source *Source) Run(output goc.OutputChannel) {
 				},
 			}
 		case kafka.PartitionEOF:
-			//not used
+			source.total += source.counter[e.Partition]
+			delete(source.counter, e.Partition)
+			if len(source.counter) == 0 {
+				log.Printf("EOF: Consumed %d in %f ms\n", source.total, time.Now().Sub(source.start).Seconds())
+				source.total = 0
+			}
+
 		case kafka.Error:
 			panic(e)
 		}
@@ -111,7 +124,7 @@ func (source *Source) Commit(checkpoint map[int]interface{}) error {
 		if _, err := source.consumer.CommitOffsets(offsets); err != nil {
 			return err
 		} else {
-			log.Printf("Kafka Commit Successful: %v", offsets)
+			//log.Printf("Kafka Commit Successful: %v", offsets)
 		}
 	}
 	return nil

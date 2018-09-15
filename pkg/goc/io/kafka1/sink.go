@@ -31,9 +31,10 @@ type Sink struct {
 	Bootstrap   string
 	Topic       string
 	producer    *kafka.Producer
+	//deliveries  chan kafka.Event
 	numProduced uint64
-	deliveries  chan kafka.Event
-	pending     map[uint32]*goc.Element
+	numAcked 	uint64
+
 }
 
 func (sink *Sink) InType() reflect.Type {
@@ -46,65 +47,59 @@ func (sink *Sink) Process(input *goc.Element) {
 	if sink.producer == nil {
 		sink.producer, err = kafka.NewProducer(&kafka.ConfigMap{
 			"bootstrap.servers": sink.Bootstrap,
+			"go.delivery.reports": true,
 		})
-		sink.deliveries = make(chan kafka.Event)
+		//sink.deliveries = make(chan kafka.Event, 100)
 		if err != nil {
 			panic(err)
 		}
-		sink.pending = make(map[uint32]*goc.Element)
 		go func() {
-			for e := range sink.deliveries {
-				switch ev := e.(type) {
-				case *kafka.Message:
-					if ev.TopicPartition.Error != nil {
-						panic(fmt.Errorf("Delivery failed: %v\n", ev.TopicPartition))
-					} else {
-						ev.Opaque.(*goc.Element).Ack()
-					}
-				}
+			for e := range sink.producer.Events() {
+				sink.processKafkaEvent(e)
 			}
 		}()
 
 	}
 	kv := input.Value.(goc.KVBytes)
 
-	defer sink.updateCounter()
-	err = sink.producer.Produce(&kafka.Message{
-		TopicPartition: kafka.TopicPartition{Topic: &sink.Topic, Partition: kafka.PartitionAny},
-		Key:            kv.Key,
-		Value:          kv.Value,
-		Timestamp:      *input.Timestamp,
-		Opaque:         input,
-	}, sink.deliveries)
-
-	if err != nil {
-		panic(err)
-	}
-
-}
-
-func (sink *Sink) Flush() error {
-	if sink.numProduced > 0 {
-		log.Println("Kafka Sink Flush - Number of Produced Messages", sink.numProduced)
-		numNotFlushed := sink.producer.Flush(15 * 1000)
-		if numNotFlushed > 0 {
-			return fmt.Errorf("could not flush all messages in timeout, numNotFlushed: %d", numNotFlushed)
-		} else {
-			sink.numProduced = 0
+	for {
+		select {
+			case sink.producer.ProduceChannel() <- &kafka.Message{
+				TopicPartition: kafka.TopicPartition{Topic: &sink.Topic, Partition: kafka.PartitionAny},
+				Key:            kv.Key,
+				Value:          kv.Value,
+				Timestamp:      *input.Timestamp,
+				Opaque:         input,
+			}:
+				sink.numProduced++
+				return
+			case e := <- sink.producer.Events():
+				sink.processKafkaEvent(e)
 		}
 	}
-	return nil
+}
+
+func (sink *Sink) processKafkaEvent(e kafka.Event) {
+	switch ev := e.(type) {
+	case *kafka.Message:
+		if ev.TopicPartition.Error != nil {
+			panic(fmt.Errorf("Delivery failed: %v\n", ev.TopicPartition))
+		} else {
+			ev.Opaque.(*goc.Element).Ack()
+			sink.numAcked++
+			if sink.numAcked == sink.numProduced {
+				log.Println("Kafka Producer in a clean state")
+			}
+		}
+	}
 }
 
 func (sink *Sink) Close() error {
 	if sink.producer != nil {
-		defer log.Printf("Closed Kafka Producer")
+		defer log.Println("Closed Kafka Sink - Number of Produced Messages", sink.numProduced)
 		sink.producer.Close()
-		close(sink.deliveries)
+		//close(sink.deliveries)
 	}
 	return nil
 }
 
-func (sink *Sink) updateCounter() {
-	sink.numProduced++
-}
