@@ -32,14 +32,14 @@ import (
 
 type Pipeline struct {
 	streams []*Stream
-	stamp   uint32
+	stamp   uint64
 	coders  []MapFn
 }
 
 func NewPipeline(coders []MapFn) *Pipeline {
 	return &Pipeline{
 		streams: []*Stream{},
-		coders: coders,
+		coders:  coders,
 	}
 }
 
@@ -50,7 +50,6 @@ func (p *Pipeline) Root(source RootFn) *Stream {
 		runner: source.Run,
 	})
 }
-
 
 func (p *Pipeline) FlatMap(that *Stream, fn FlatMapFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
@@ -81,11 +80,19 @@ func (p *Pipeline) Map(that *Stream, fn MapFn) *Stream {
 func (p *Pipeline) ForEach(that *Stream, fn ForEachFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
 		return p.ForEach(p.injectCoder(that, fn.InType()), fn)
-	} else {
-		return p.elementWise(that, ErrorType, fn, func(input *Element, output OutputChannel) {
-			fn.Process(input)
-		})
 	}
+	return p.elementWise(that, ErrorType, fn, func(input *Element, output OutputChannel) {
+		fn.Process(input)
+	})
+}
+
+func (p *Pipeline) Transform(that *Stream, fn TransformFn) *Stream {
+	if !that.Type.AssignableTo(fn.InType()) {
+		return p.Transform(p.injectCoder(that, fn.InType()), fn)
+	}
+	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output OutputChannel) {
+		fn.Process(input)
+	})
 }
 
 func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(input *Element, output OutputChannel)) *Stream {
@@ -94,19 +101,31 @@ func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(inp
 		fn:   fn,
 		up:   up,
 		runner: func(output OutputChannel) {
+			var stamp Stamp
+			var highestTimestamp *time.Time
 			for element := range up.output {
+
 				switch element.signal {
 				case FinalCheckpoint:
-					if _, is := fn.(TransformFn); is {
-						//FIXME
-						run(nil, output)
+					if t, is := fn.(TransformFn); is {
+						//FIXME triggering has to be possible in other ways
+						for _, outputElement := range t.Trigger() {
+							outputElement.Stamp = stamp
+							if outputElement.Timestamp == nil {
+								outputElement.Timestamp = highestTimestamp
+							}
+							output <- outputElement
+							stamp.lo = 0
+							highestTimestamp = nil
+						}
 					}
 					output <- element
 					up.terminate <- true
 					return
 				case NoSignal:
+					//initial stamping of elements
 					if element.Stamp.hi == 0 {
-						s := atomic.AddUint32(&p.stamp, 1)
+						s := atomic.AddUint64(&p.stamp, 1)
 						element.Stamp = Stamp{s, s}
 					}
 					up.pendingAck(element)
@@ -114,43 +133,17 @@ func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(inp
 						now := time.Now()
 						element.Timestamp = &now
 					}
+
+					//highest timestamp is used for Transform.Trigger()
+					if highestTimestamp == nil || element.Timestamp.After(*highestTimestamp) {
+						highestTimestamp = element.Timestamp
+					}
+					stamp.merge(element.Stamp)
+
 					run(element, output)
 				}
 			}
 		},
-	})
-}
-
-func (p *Pipeline) Transform(that *Stream, fn TransformFn) *Stream {
-	if !that.Type.AssignableTo(fn.InType()) {
-		return p.Transform(p.injectCoder(that, fn.InType()), fn)
-	}
-	var stamp Stamp
-	var highestTimestamp *time.Time
-	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output OutputChannel) {
-		if input == nil {
-			//FIXME not the most clever trigger
-			for _, outputElement := range fn.Trigger() {
-				outputElement.Stamp = stamp
-				if outputElement.Timestamp == nil {
-					outputElement.Timestamp = highestTimestamp
-				}
-				output <- outputElement
-				stamp.lo = 0
-				highestTimestamp = nil
-			}
-		} else {
-			fn.Process(input)
-			if highestTimestamp == nil || input.Timestamp.After(*highestTimestamp) {
-				highestTimestamp = input.Timestamp
-			}
-			stamp.merge(input.Stamp)
-			//stamp.hi = input.Stamp.hi
-			//if stamp.lo == 0 {
-			//	stamp.lo = input.Stamp.lo
-			//}
-		}
-
 	})
 }
 
@@ -182,8 +175,6 @@ func (p *Pipeline) Run() {
 	//open termination signal underlying
 	sigterm := make(chan os.Signal, 1)
 	signal.Notify(sigterm, syscall.SIGINT, syscall.SIGTERM)
-
-
 
 	for {
 		select {

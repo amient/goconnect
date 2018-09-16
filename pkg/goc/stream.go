@@ -26,21 +26,23 @@ import (
 )
 
 type Stream struct {
-	Type          reflect.Type
-	fn            Fn
-	up            *Stream
-	pipeline      *Pipeline
-	stage         int
-	output        OutputChannel
-	runner        func(output OutputChannel)
-	isPassthrough bool
-	pending       chan *Element
-	acks          chan Stamp
-	terminate     chan bool
-	terminating   bool
-	completed     chan bool
-	closed        bool
-	cap           int
+	Type           reflect.Type
+	fn             Fn
+	up             *Stream
+	pipeline       *Pipeline
+	stage          int
+	output         OutputChannel
+	runner         func(output OutputChannel)
+	isPassthrough  bool
+	pending        chan *Element
+	acks           chan Stamp
+	terminate      chan bool
+	terminating    bool
+	completed      chan bool
+	closed         bool
+	cap            int
+	highestPending uint64
+	highestAcked   uint64
 }
 
 func (stream *Stream) Apply(f Fn) *Stream {
@@ -141,10 +143,10 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 		v := reflect.ValueOf(input.Value)
 		stamp = stamp.merge(input.Stamp)
 		if fnVal.Call([]reflect.Value{v})[0].Bool() {
-			output <- &Element {
-				Stamp: stamp.merge(input.Stamp),
-				Value: input.Value,
-				Timestamp: input.Timestamp,
+			output <- &Element{
+				Stamp:      stamp.merge(input.Stamp),
+				Value:      input.Value,
+				Timestamp:  input.Timestamp,
 				Checkpoint: input.Checkpoint,
 			}
 			stamp = Stamp{}
@@ -208,9 +210,12 @@ func (stream *Stream) log(f string, args ... interface{}) {
 }
 
 func (stream *Stream) pendingAck(element *Element) {
-	//stream.log("STAGE[%d] Incoming %d", stream.stage, element.Stamp)
 	element.ack = stream.ack
+	if element.Stamp.hi > stream.highestPending {
+		stream.highestPending = element.Stamp.hi
+	}
 	if !stream.isPassthrough {
+		//stream.log("STAGE[%d] Incoming %d", stream.stage, element.Stamp)
 		stream.pending <- element
 	}
 }
@@ -225,7 +230,7 @@ func (stream *Stream) ack(s Stamp) {
 
 func (stream *Stream) close() {
 	if ! stream.closed {
-		stream.log("Closing Stage %d %v", stream.stage, stream.Type)
+		stream.log("STAGE[%d] Closed %v", stream.stage, stream.Type)
 		close(stream.output)
 		if fn, ok := stream.fn.(Closeable); ok {
 			if err := fn.Close(); err != nil {
@@ -240,7 +245,6 @@ func (stream *Stream) initialize(stage int) {
 	if stream.output != nil {
 		panic(fmt.Errorf("stream already materialized"))
 	}
-	log.Printf("Initializing Stage %d %v \n", stage, stream.Type)
 	stream.stage = stage
 	stream.output = make(chan *Element, 100)
 	var commitable Commitable
@@ -251,8 +255,12 @@ func (stream *Stream) initialize(stage int) {
 		_, stream.isPassthrough = stream.fn.(MapFn)
 		commitable, isCommitable = stream.fn.(Commitable)
 	}
+
 	if stream.isPassthrough {
+		log.Printf("Initializing Passthru Stage %d %v\n", stage, stream.Type)
 		return
+	} else {
+		log.Printf("Initializing Buffered Stage %d %v\n", stage, stream.Type)
 	}
 
 	//start start the ack-commit accumulator that applies:
@@ -284,8 +292,8 @@ func (stream *Stream) initialize(stage int) {
 	go func() {
 		pendingSuspendable := stream.pending
 		terminated := false
-		pending := Stamp {}
-		pendingCheckpoints := make(map[uint32]*Checkpoint, stream.cap)
+		pending := Stamp{}
+		pendingCheckpoints := make(map[uint64]*Checkpoint, stream.cap)
 		checkpoint := make(map[int]interface{})
 		pendingCommitReuqest := false
 
@@ -302,22 +310,43 @@ func (stream *Stream) initialize(stage int) {
 
 		maybeTerminate := func() {
 			if stream.terminating {
-				if len(checkpoint) == 0 {
+				if len(checkpoint) == 0 && stream.highestPending == stream.highestAcked {
 					clean := (pendingCommitReuqest || !isCommitable) && !pending.valid()
 					if clean {
 						terminated = true
+						stream.log("STAGE[%d] Completed", stream.stage)
+						close(commits)
+						close(commitRequests)
+						commitRequests = nil
+						close(stream.acks)
+						close(stream.pending)
+						stream.acks = nil
+						stream.pending = nil
 					}
 				}
 			}
-			if terminated {
-				//stream.log("Completed Stage %d", stream.stage)
-				close(commits)
-				close(commitRequests)
-				close(stream.acks)
-				close(stream.pending)
-			} else {
-				//stream.log("Awaiting completion %d (pending commit %d) (pending acks %v)", stream.stage, checkpoint, pending)
+		}
+
+		resolveAcks := func() {
+			//resolve acks <> pending
+			for ; pending.valid() && pendingCheckpoints[pending.lo] != nil && pendingCheckpoints[pending.lo].acked; {
+				lo := pending.lo
+				pending.lo += 1
+				chk := pendingCheckpoints[lo]
+				delete(pendingCheckpoints, lo)
+				checkpoint[chk.Part] = chk.Data
+				//stream.log("STAGE[%d] DELETING PART %d DATA %v \n", stream.stage, chk.Part, chk.Data)
 			}
+			if len(pendingCheckpoints) < stream.cap && pendingSuspendable == nil {
+				//release the backpressure after capacity is freed
+				pendingSuspendable = stream.pending
+			}
+
+			//commit if pending commit request or not commitable in which case commit requests are never fired
+			if pendingCommitReuqest || !isCommitable {
+				doCommit()
+			}
+			maybeTerminate()
 		}
 
 		for !terminated {
@@ -329,49 +358,43 @@ func (stream *Stream) initialize(stage int) {
 				pendingCommitReuqest = true
 				doCommit()
 				maybeTerminate()
-			case e := <-pendingSuspendable:
-				pending.merge(e.Stamp)
-				for u := e.Stamp.lo; u <= e.Stamp.hi; u++ {
-					pendingCheckpoints[u] = &e.Checkpoint
-				}
-				//stream.log("STAGE[%d] Pending: %v Checkpoints: %v\n", stream.stage, pending, len(pendingCheckpoints))
-				if len(pendingCheckpoints) == stream.cap {
-					//in order to apply backpressure this channel needs to be nilld but right now it hangs after second pendingSuspendable
-					pendingSuspendable = nil
-					stream.log("STAGE[%d] Applying backpressure, pending acks: %d\n", stream.stage, len(pendingCheckpoints))
-				} else if len(pendingCheckpoints) > stream.cap {
-					panic(fmt.Errorf("illegal accumulator state, buffer size higher than %d", stream.cap))
-				}
 			case stamp := <-stream.acks:
+				if stamp.hi > stream.highestAcked {
+					stream.highestAcked = stamp.hi
+				}
 				//this doesn't have to block because it doesn't create any memory build-up, if anything it frees memory
 				for u := stamp.lo; u <= stamp.hi; u ++ {
 					if c, ok := pendingCheckpoints[u]; ok {
 						c.acked = true
 					}
 				}
-				//resolve acks <> pending
-				for ; pending.valid() && pendingCheckpoints[pending.lo] != nil && pendingCheckpoints[pending.lo].acked; {
-					lo := pending.lo
-					pending.lo += 1
-					chk := pendingCheckpoints[lo]
-					delete(pendingCheckpoints, lo)
-					checkpoint[chk.Part] = chk.Data
-					//stream.log("STAGE[%d] DELETING PART %d DATA %v \n", stream.stage, chk.Part, chk.Data)
-				}
-				if len(pendingCheckpoints) < stream.cap && pendingSuspendable == nil {
-					//release the backpressure after capacity is freed
-					pendingSuspendable = stream.pending
-				}
 
-				//commit if pending commit request or not commitable in which case commit requests are never fired
-				if pendingCommitReuqest || !isCommitable {
-					doCommit()
-				}
-				//stream.log("STAGE[%d] ACK(%d) Pending: %v Checkpoints: %v\n", stream.stage, stamp, pending.String(), len(pendingCheckpoints))
+				resolveAcks()
+
+				//stream.log("STAGE[%d] ACK(%d) Pending: %v Checkpoints: %v\n", stream.stage, stamp, pending.String(), pendingCheckpoints)
 				if stream.up != nil {
 					stream.up.ack(stamp)
 				}
-				maybeTerminate()
+
+			case e := <-pendingSuspendable:
+				if terminated {
+					panic(fmt.Errorf("STAGE[%d] Illegal Pending %v", stream.stage, e))
+				}
+				pending.merge(e.Stamp)
+				for u := e.Stamp.lo; u <= e.Stamp.hi; u++ {
+					pendingCheckpoints[u] = &e.Checkpoint
+				}
+
+				resolveAcks()
+
+				//stream.log("STAGE[%d] Pending: %v Checkpoints: %v\n", stream.stage, pending, len(pendingCheckpoints))
+				if len(pendingCheckpoints) == stream.cap {
+					//in order to apply backpressure this channel needs to be nilld but right now it hangs after second pendingSuspendable
+					pendingSuspendable = nil
+					//stream.log("STAGE[%d] Applying backpressure, pending acks: %d\n", stream.stage, len(pendingCheckpoints))
+				} else if len(pendingCheckpoints) > stream.cap {
+					panic(fmt.Errorf("illegal accumulator state, buffer size higher than %d", stream.cap))
+				}
 
 			}
 

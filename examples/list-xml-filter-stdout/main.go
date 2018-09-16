@@ -61,6 +61,7 @@ func main() {
 
 	//root source of text elements
 	// TODO generated lists are one of the examples which must be coordinated and run on any one instance
+	//FIXME setting n=20 sometimes hangs because the iteration ends on a filtered-out element
 	messages := pipeline.Root(io.RoundRobin(100000, data))
 
 	//extract names with custom Map fn (coders satisfying []byte => xml are injected by the pipeline)

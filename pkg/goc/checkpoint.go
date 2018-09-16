@@ -33,8 +33,8 @@ type Checkpoint struct {
 }
 
 type Stamp struct {
-	lo uint32
-	hi uint32
+	lo uint64
+	hi uint64
 }
 
 func (s *Stamp) valid() bool {
