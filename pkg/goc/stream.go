@@ -260,7 +260,10 @@ func (stream *Stream) initialize(stage int) {
 	//B. back-pressure on the upstream processing when the commits are too slow given the configured buffer size
 
 	//TODO configurable capacity for checkpoint buffers
-	stream.cap = 10000000
+	stream.cap = 100000 //FIXME if this buffer is smaller then any aggregation stage limit the pipeline hangs:
+	// the question is whether this is ok and should be simply configured accordingly
+	// or should there be some kind of high-level back-pressure where the aggregations are "forced" to emit
+
 	stream.pending = make(chan *Element, 1000) //TODO this buffer is important so make it configurable but must be >= stream.cap
 	stream.acks = make(chan Stamp, 10000)
 	stream.terminate = make(chan bool, 1)
@@ -297,24 +300,6 @@ func (stream *Stream) initialize(stage int) {
 			}
 		}
 
-		accumulate := func() {
-			for ; pending.valid() && pendingCheckpoints[pending.lo] != nil && pendingCheckpoints[pending.lo].acked; {
-				lo := pending.lo
-				pending.lo += 1
-				chk := pendingCheckpoints[lo]
-				delete(pendingCheckpoints, lo)
-				checkpoint[chk.Part] = chk.Data
-				//stream.log("STAGE[%d] DELETING PART %d DATA %v \n", stream.stage, chk.Part, chk.Data)
-			}
-
-			if len(pendingCheckpoints) < stream.cap && pendingSuspendable == nil {
-				//release the backpressure after capacity is freed
-				pendingSuspendable = stream.pending
-			} else if !isCommitable {
-				doCommit()
-			}
-		}
-
 		maybeTerminate := func() {
 			if stream.terminating {
 				if len(checkpoint) == 0 {
@@ -331,7 +316,7 @@ func (stream *Stream) initialize(stage int) {
 				close(stream.acks)
 				close(stream.pending)
 			} else {
-				//stream.log("Terminating %d (pending commit %d) (pending acks %v)", stream.stage, checkpoint, pending)
+				//stream.log("Awaiting completion %d (pending commit %d) (pending acks %v)", stream.stage, checkpoint, pending)
 			}
 		}
 
@@ -349,9 +334,6 @@ func (stream *Stream) initialize(stage int) {
 				for u := e.Stamp.lo; u <= e.Stamp.hi; u++ {
 					pendingCheckpoints[u] = &e.Checkpoint
 				}
-
-				accumulate()
-				maybeTerminate()
 				//stream.log("STAGE[%d] Pending: %v Checkpoints: %v\n", stream.stage, pending, len(pendingCheckpoints))
 				if len(pendingCheckpoints) == stream.cap {
 					//in order to apply backpressure this channel needs to be nilld but right now it hangs after second pendingSuspendable
@@ -367,8 +349,22 @@ func (stream *Stream) initialize(stage int) {
 						c.acked = true
 					}
 				}
-				accumulate()
-				if pendingCommitReuqest {
+				//resolve acks <> pending
+				for ; pending.valid() && pendingCheckpoints[pending.lo] != nil && pendingCheckpoints[pending.lo].acked; {
+					lo := pending.lo
+					pending.lo += 1
+					chk := pendingCheckpoints[lo]
+					delete(pendingCheckpoints, lo)
+					checkpoint[chk.Part] = chk.Data
+					//stream.log("STAGE[%d] DELETING PART %d DATA %v \n", stream.stage, chk.Part, chk.Data)
+				}
+				if len(pendingCheckpoints) < stream.cap && pendingSuspendable == nil {
+					//release the backpressure after capacity is freed
+					pendingSuspendable = stream.pending
+				}
+
+				//commit if pending commit request or not commitable in which case commit requests are never fired
+				if pendingCommitReuqest || !isCommitable {
 					doCommit()
 				}
 				//stream.log("STAGE[%d] ACK(%d) Pending: %v Checkpoints: %v\n", stream.stage, stamp, pending.String(), len(pendingCheckpoints))

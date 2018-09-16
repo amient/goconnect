@@ -99,7 +99,7 @@ func (source *Source) Run(output goc.OutputChannel) {
 		case kafka.PartitionEOF:
 			source.total += source.counter[e.Partition]
 			delete(source.counter, e.Partition)
-			if len(source.counter) == 0 {
+			if len(source.counter) == 0 && source.total > 0 {
 				log.Printf("EOF: Consumed %d in %f ms\n", source.total, time.Now().Sub(source.start).Seconds())
 				source.total = 0
 			}

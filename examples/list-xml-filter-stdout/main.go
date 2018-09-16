@@ -77,11 +77,7 @@ func main() {
 	//TODO StdOOut sink must be network-merged to the single instance which last joined the group
 	filtered.Apply(new(customAggregator)).Apply(std.StdOutSink())
 
-	//filtered.Apply(&kafka1.Sink{
-	//	Bootstrap: "localhost:9092",
-	//	Topic:     "test",
-	//})
-
+	//filtered.Apply(&kafka1.Sink{Bootstrap: "localhost:9092", Topic: "test"})
 
 	pipeline.Run()
 

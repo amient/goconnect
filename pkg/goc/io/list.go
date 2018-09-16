@@ -21,6 +21,7 @@ package io
 
 import (
 	"github.com/amient/goconnect/pkg/goc"
+	"log"
 	"math/rand"
 	"reflect"
 )
@@ -33,7 +34,7 @@ func RoundRobin(n int, list interface{}) goc.RootFn {
 	//TODO if slice or array -> iterable
 	//TODO if file or url -> file
 	return &iterable{
-		n: n,
+		n:   n,
 		val: reflect.ValueOf(list),
 		typ: reflect.TypeOf(list),
 	}
@@ -42,17 +43,17 @@ func RoundRobin(n int, list interface{}) goc.RootFn {
 func RandomOf(n int, list interface{}) goc.RootFn {
 	//TODO validate array or slice
 	return &randomOf{
-		n: n,
+		n:   n,
 		val: reflect.ValueOf(list),
 		typ: reflect.TypeOf(list),
 	}
 }
 
-
 type iterable struct {
-	n int
-	val reflect.Value
-	typ reflect.Type
+	offset int
+	n      int
+	val    reflect.Value
+	typ    reflect.Type
 }
 
 func (it *iterable) OutType() reflect.Type {
@@ -60,7 +61,7 @@ func (it *iterable) OutType() reflect.Type {
 }
 
 func (it *iterable) Run(output goc.OutputChannel) {
-	limit :=  it.val.Len()
+	limit := it.val.Len()
 	for l := 0; l < it.n; l++ {
 		i := l % limit
 		output <- &goc.Element{
@@ -70,12 +71,11 @@ func (it *iterable) Run(output goc.OutputChannel) {
 	}
 }
 
-//func (it *iterable) Commit(checkpoint map[int]interface{}) error {
-//	//log.Println("DEBUG ITERABLE COMMIT UP TO", checkpoint[0])
-//	return nil
-//}
-
-
+func (it *iterable) Commit(checkpoint map[int]interface{}) error {
+	log.Println("DEBUG ITERABLE COMMIT UP TO", checkpoint[0])
+	it.offset = checkpoint[0].(int)
+	return nil
+}
 
 type randomOf struct {
 	n   int
