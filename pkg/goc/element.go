@@ -24,8 +24,8 @@ import (
 )
 
 type Element struct {
-	Timestamp  *time.Time
-	Checkpoint Checkpoint
+	Timestamp  *time.Time //TODO move to Stamp
+	Checkpoint Checkpoint //TODO make private and make sure it never leaves the stage fn
 	Value      interface{}
 	Stamp 	   Stamp
 	signal     ControlSignal
