@@ -31,8 +31,8 @@ type Stream struct {
 	up             *Stream
 	pipeline       *Pipeline
 	stage          int
-	output         OutputChannel
-	runner         func(output OutputChannel)
+	output         Channel
+	runner         func(output Channel)
 	isPassthrough  bool
 	pending        chan *Element
 	acks           chan Stamp
@@ -110,12 +110,11 @@ func (stream *Stream) Map(f interface{}) *Stream {
 		panic(fmt.Errorf("map func must have exactly 1 output"))
 	}
 
-	return stream.pipeline.elementWise(stream, fnType.Out(0), nil, func(input *Element, output OutputChannel) {
+	return stream.pipeline.elementWise(stream, fnType.Out(0), nil, func(input *Element, output Channel) {
 		v := reflect.ValueOf(input.Value)
 		r := fnVal.Call([]reflect.Value{v})
 		output <- &Element{
 			Value:     r[0].Interface(),
-			Timestamp: input.Timestamp,
 			Stamp:     input.Stamp,
 		}
 	})
@@ -139,14 +138,13 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 	}
 
 	var stamp Stamp
-	return stream.pipeline.elementWise(stream, fnType.In(0), nil, func(input *Element, output OutputChannel) {
+	return stream.pipeline.elementWise(stream, fnType.In(0), nil, func(input *Element, output Channel) {
 		v := reflect.ValueOf(input.Value)
 		stamp = stamp.merge(input.Stamp)
 		if fnVal.Call([]reflect.Value{v})[0].Bool() {
 			output <- &Element{
 				Stamp:      stamp.merge(input.Stamp),
 				Value:      input.Value,
-				Timestamp:  input.Timestamp,
 				Checkpoint: input.Checkpoint,
 			}
 			stamp = Stamp{}
@@ -157,7 +155,7 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 
 }
 
-//func (stream *Stream) Transform(f func(element *Element, output OutputChannel)) *Stream {
+//func (stream *Stream) Transform(f func(element *Element, output Channel)) *Stream {
 //
 //	inField,_ := reflect.TypeOf(f).In(0).Elem().FieldByName("Value")
 //	inType := inField.Type
@@ -176,7 +174,7 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 //
 //	return stream.pipeline.elementWise(stream, inType, nil, f)
 //
-//	//return stream.pipeline.group(stream, outChannelType.Elem(), nil, func(input InputChannel, output OutputChannel) {
+//	//return stream.pipeline.group(stream, outChannelType.Elem(), nil, func(input InputChannel, output Channel) {
 //	//	intermediateIn := reflect.MakeChan(inType, 0)
 //	//	go func() {
 //	//		defer intermediateIn.Close()
@@ -211,8 +209,8 @@ func (stream *Stream) log(f string, args ... interface{}) {
 
 func (stream *Stream) pendingAck(element *Element) {
 	element.ack = stream.ack
-	if element.Stamp.hi > stream.highestPending {
-		stream.highestPending = element.Stamp.hi
+	if element.Stamp.Hi > stream.highestPending {
+		stream.highestPending = element.Stamp.Hi
 	}
 	if !stream.isPassthrough {
 		//stream.log("STAGE[%d] Incoming %d", stream.stage, element.Stamp)
@@ -329,9 +327,9 @@ func (stream *Stream) initialize(stage int) {
 
 		resolveAcks := func() {
 			//resolve acks <> pending
-			for ; pending.valid() && pendingCheckpoints[pending.lo] != nil && pendingCheckpoints[pending.lo].acked; {
-				lo := pending.lo
-				pending.lo += 1
+			for ; pending.valid() && pendingCheckpoints[pending.Lo] != nil && pendingCheckpoints[pending.Lo].acked; {
+				lo := pending.Lo
+				pending.Lo += 1
 				chk := pendingCheckpoints[lo]
 				delete(pendingCheckpoints, lo)
 				checkpoint[chk.Part] = chk.Data
@@ -359,11 +357,11 @@ func (stream *Stream) initialize(stage int) {
 				doCommit()
 				maybeTerminate()
 			case stamp := <-stream.acks:
-				if stamp.hi > stream.highestAcked {
-					stream.highestAcked = stamp.hi
+				if stamp.Hi > stream.highestAcked {
+					stream.highestAcked = stamp.Hi
 				}
 				//this doesn't have to block because it doesn't create any memory build-up, if anything it frees memory
-				for u := stamp.lo; u <= stamp.hi; u ++ {
+				for u := stamp.Lo; u <= stamp.Hi; u ++ {
 					if c, ok := pendingCheckpoints[u]; ok {
 						c.acked = true
 					}
@@ -381,7 +379,7 @@ func (stream *Stream) initialize(stage int) {
 					panic(fmt.Errorf("STAGE[%d] Illegal Pending %v", stream.stage, e))
 				}
 				pending.merge(e.Stamp)
-				for u := e.Stamp.lo; u <= e.Stamp.hi; u++ {
+				for u := e.Stamp.Lo; u <= e.Stamp.Hi; u++ {
 					pendingCheckpoints[u] = &e.Checkpoint
 				}
 

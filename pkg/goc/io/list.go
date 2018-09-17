@@ -60,7 +60,7 @@ func (it *iterable) OutType() reflect.Type {
 	return it.typ.Elem()
 }
 
-func (it *iterable) Run(output goc.OutputChannel) {
+func (it *iterable) Run(output goc.Channel) {
 	limit := it.val.Len()
 	for l := 0; l < it.n; l++ {
 		i := l % limit
@@ -87,7 +87,7 @@ func (it *randomOf) OutType() reflect.Type {
 	return it.typ.Elem()
 }
 
-func (it *randomOf) Run(output goc.OutputChannel) {
+func (it *randomOf) Run(output goc.Channel) {
 	size := it.val.Len()
 	for l := 0; l < it.n; l++ {
 		i := rand.Int() % size

@@ -68,7 +68,7 @@ func (sink *Sink) Process(input *goc.Element) {
 				TopicPartition: kafka.TopicPartition{Topic: &sink.Topic, Partition: kafka.PartitionAny},
 				Key:            kv.Key,
 				Value:          kv.Value,
-				Timestamp:      *input.Timestamp,
+				Timestamp:      input.Stamp.Time,
 				Opaque:         input,
 			}:
 				sink.numProduced++

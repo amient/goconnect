@@ -19,7 +19,10 @@
 
 package goc
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 /**
 	Checkpoint is a map of int identifiers and values. The identifiers are specific to each transform, some
@@ -33,24 +36,29 @@ type Checkpoint struct {
 }
 
 type Stamp struct {
-	lo uint64
-	hi uint64
+	Time time.Time
+	Lo   uint64
+	Hi   uint64
 }
 
 func (s *Stamp) valid() bool {
-	return s.lo != 0 && s.hi != 0 && s.lo <= s.hi
+	return s.Lo != 0 && s.Hi != 0 && s.Lo <= s.Hi
 }
 
 func (s *Stamp) merge(other Stamp) Stamp {
 	if !s.valid() {
-		s.lo = other.lo
-		s.hi = other.hi
+		s.Lo = other.Lo
+		s.Hi = other.Hi
+		s.Time = other.Time
 	} else {
-		if other.lo < s.lo {
-			s.lo = other.lo
+		if other.Lo < s.Lo {
+			s.Lo = other.Lo
 		}
-		if other.hi > s.hi {
-			s.hi = other.hi
+		if other.Hi > s.Hi {
+			s.Hi = other.Hi
+		}
+		if other.Time.After(s.Time) {
+			s.Time = other.Time
 		}
 	}
 	return *s
@@ -58,7 +66,7 @@ func (s *Stamp) merge(other Stamp) Stamp {
 
 func (s *Stamp) String() string {
 	if s.valid() {
-		return fmt.Sprintf("{%d:%d}", s.lo, s.hi)
+		return fmt.Sprintf("{%d:%d}", s.Lo, s.Hi)
 	} else {
 		return "{-}"
 	}

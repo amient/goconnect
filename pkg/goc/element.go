@@ -19,12 +19,7 @@
 
 package goc
 
-import (
-	"time"
-)
-
 type Element struct {
-	Timestamp  *time.Time //TODO move to Stamp
 	Checkpoint Checkpoint //TODO make private and make sure it never leaves the stage fn
 	Value      interface{}
 	Stamp 	   Stamp
@@ -41,7 +36,5 @@ type ControlSignal uint8
 const NoSignal ControlSignal = 0
 const FinalCheckpoint ControlSignal = 1
 
-type InputChannel <-chan *Element
-
-type OutputChannel chan *Element
+type Channel chan *Element
 

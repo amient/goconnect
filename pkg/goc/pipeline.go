@@ -55,9 +55,9 @@ func (p *Pipeline) FlatMap(that *Stream, fn FlatMapFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
 		return p.FlatMap(p.injectCoder(that, fn.InType()), fn)
 	}
-	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output OutputChannel) {
+	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output Channel) {
 		for i, outputElement := range fn.Process(input) {
-			sanitise(outputElement, input)
+			outputElement.Stamp = input.Stamp
 			if outputElement.Checkpoint.Data == nil {
 				outputElement.Checkpoint = Checkpoint{Part: 0, Data: i}
 			}
@@ -70,9 +70,9 @@ func (p *Pipeline) Map(that *Stream, fn MapFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
 		return p.Map(p.injectCoder(that, fn.InType()), fn)
 	}
-	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output OutputChannel) {
+	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output Channel) {
 		outputElement := fn.Process(input)
-		sanitise(outputElement, input)
+		outputElement.Stamp = input.Stamp
 		output <- outputElement
 	})
 }
@@ -81,7 +81,7 @@ func (p *Pipeline) ForEach(that *Stream, fn ForEachFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
 		return p.ForEach(p.injectCoder(that, fn.InType()), fn)
 	}
-	return p.elementWise(that, ErrorType, fn, func(input *Element, output OutputChannel) {
+	return p.elementWise(that, ErrorType, fn, func(input *Element, output Channel) {
 		fn.Process(input)
 	})
 }
@@ -90,19 +90,18 @@ func (p *Pipeline) Transform(that *Stream, fn TransformFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
 		return p.Transform(p.injectCoder(that, fn.InType()), fn)
 	}
-	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output OutputChannel) {
+	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output Channel) {
 		fn.Process(input)
 	})
 }
 
-func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(input *Element, output OutputChannel)) *Stream {
+func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(input *Element, output Channel)) *Stream {
 	return p.register(&Stream{
 		Type: out,
 		fn:   fn,
 		up:   up,
-		runner: func(output OutputChannel) {
+		runner: func(output Channel) {
 			var stamp Stamp
-			var highestTimestamp *time.Time
 			for element := range up.output {
 
 				switch element.signal {
@@ -111,12 +110,8 @@ func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(inp
 						//FIXME triggering has to be possible in other ways
 						for _, outputElement := range t.Trigger() {
 							outputElement.Stamp = stamp
-							if outputElement.Timestamp == nil {
-								outputElement.Timestamp = highestTimestamp
-							}
 							output <- outputElement
-							stamp.lo = 0
-							highestTimestamp = nil
+							stamp.Lo = 0 //make it invalid
 						}
 					}
 					output <- element
@@ -124,22 +119,20 @@ func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(inp
 					return
 				case NoSignal:
 					//initial stamping of elements
-					if element.Stamp.hi == 0 {
+					if element.Stamp.Hi == 0 {
 						s := atomic.AddUint64(&p.stamp, 1)
-						element.Stamp = Stamp{s, s}
+						element.Stamp.Hi = s
+						element.Stamp.Lo = s
+					}
+					if element.Stamp.Time == (time.Time{}) {
+						element.Stamp.Time = time.Now()
 					}
 					up.pendingAck(element)
-					if element.Timestamp == nil {
-						now := time.Now()
-						element.Timestamp = &now
-					}
 
-					//highest timestamp is used for Transform.Trigger()
-					if highestTimestamp == nil || element.Timestamp.After(*highestTimestamp) {
-						highestTimestamp = element.Timestamp
-					}
+					//merged stamp is used forTransform.Trigger()
 					stamp.merge(element.Stamp)
 
+					//pass the element after it has been intercepted to the fn
 					run(element, output)
 				}
 			}
@@ -213,13 +206,6 @@ func (p *Pipeline) register(stream *Stream) *Stream {
 	stream.pipeline = p
 	p.streams = append(p.streams, stream)
 	return stream
-}
-
-func sanitise(out *Element, in *Element) {
-	out.Stamp = in.Stamp
-	if out.Timestamp == nil {
-		out.Timestamp = in.Timestamp
-	}
 }
 
 func (p *Pipeline) injectCoder(that *Stream, to reflect.Type) *Stream {

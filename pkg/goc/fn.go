@@ -25,7 +25,7 @@ type Fn interface {}
 
 type RootFn interface {
 	OutType() reflect.Type
-	Run(output OutputChannel)
+	Run(output Channel)
 }
 
 type MapFn interface {

@@ -51,7 +51,7 @@ func (source *Source) OutType() reflect.Type {
 	return reflect.TypeOf(goc.KVBytes{})
 }
 
-func (source *Source) Run(output goc.OutputChannel) {
+func (source *Source) Run(output goc.Channel) {
 	var err error
 	source.counter = make(map[int32]uint64)
 	source.consumer, err = kafka.NewConsumer(&kafka.ConfigMap{
@@ -86,7 +86,7 @@ func (source *Source) Run(output goc.OutputChannel) {
 			}
 			source.counter[e.TopicPartition.Partition]++
 			output <- &goc.Element{
-				Timestamp: &e.Timestamp,
+				Stamp: goc.Stamp{Time: e.Timestamp},
 				Checkpoint: goc.Checkpoint{
 					Part: int(e.TopicPartition.Partition),
 					Data: e.TopicPartition.Offset,

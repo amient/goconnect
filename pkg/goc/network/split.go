@@ -8,7 +8,7 @@ import (
 
 func NetSplit() goc.MapFn {
 	n := netSplit{
-		server:
+		//server:
 	}
 	return &n
 }
