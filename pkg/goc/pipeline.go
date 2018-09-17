@@ -124,8 +124,8 @@ func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(inp
 						element.Stamp.Hi = s
 						element.Stamp.Lo = s
 					}
-					if element.Stamp.Time == (time.Time{}) {
-						element.Stamp.Time = time.Now()
+					if element.Stamp.Unix == 0 {
+						element.Stamp.Unix = time.Now().Unix()
 					}
 					up.pendingAck(element)
 

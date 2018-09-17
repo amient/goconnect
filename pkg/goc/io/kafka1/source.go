@@ -86,7 +86,7 @@ func (source *Source) Run(output goc.Channel) {
 			}
 			source.counter[e.TopicPartition.Partition]++
 			output <- &goc.Element{
-				Stamp: goc.Stamp{Time: e.Timestamp},
+				Stamp: goc.Stamp{Unix: e.Timestamp.Unix()},
 				Checkpoint: goc.Checkpoint{
 					Part: int(e.TopicPartition.Partition),
 					Data: e.TopicPartition.Offset,

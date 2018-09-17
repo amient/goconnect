@@ -5,25 +5,30 @@ import (
 	"reflect"
 )
 
-
 func NetSplit() goc.MapFn {
-	n := netSplit{
-		//server:
+	return &netSplit{
+
 	}
-	return &n
 }
 
-type netSplit struct {}
+type netSplit struct {
+	send goc.Channel
+	recv Receiver
+}
 
-func (d *netSplit) InType() reflect.Type {
+func (n *netSplit) InType() reflect.Type {
 	return goc.ByteArrayType
 }
 
-func (d *netSplit) OutType() reflect.Type {
+func (n *netSplit) OutType() reflect.Type {
 	return goc.ByteArrayType
 }
 
-func (d *netSplit) Process(input *goc.Element) *goc.Element {
+func (n *netSplit) Process(input *goc.Element) *goc.Element {
 	return &goc.Element{Value: string(input.Value.([]byte))}
 }
 
+func (n *netSplit) Close() {
+	close(n.send)
+	n.recv.Close()
+}

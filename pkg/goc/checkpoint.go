@@ -21,7 +21,6 @@ package goc
 
 import (
 	"fmt"
-	"time"
 )
 
 /**
@@ -30,13 +29,13 @@ import (
  */
 
 type Checkpoint struct {
-	Part int
-	Data interface{}
+	Part  int
+	Data  interface{}
 	acked bool
 }
 
 type Stamp struct {
-	Time time.Time
+	Unix int64
 	Lo   uint64
 	Hi   uint64
 }
@@ -49,7 +48,7 @@ func (s *Stamp) merge(other Stamp) Stamp {
 	if !s.valid() {
 		s.Lo = other.Lo
 		s.Hi = other.Hi
-		s.Time = other.Time
+		s.Unix = other.Unix
 	} else {
 		if other.Lo < s.Lo {
 			s.Lo = other.Lo
@@ -57,8 +56,8 @@ func (s *Stamp) merge(other Stamp) Stamp {
 		if other.Hi > s.Hi {
 			s.Hi = other.Hi
 		}
-		if other.Time.After(s.Time) {
-			s.Time = other.Time
+		if other.Unix > s.Unix {
+			s.Unix = other.Unix
 		}
 	}
 	return *s

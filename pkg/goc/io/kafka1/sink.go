@@ -25,6 +25,7 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"log"
 	"reflect"
+	"time"
 )
 
 type Sink struct {
@@ -68,7 +69,7 @@ func (sink *Sink) Process(input *goc.Element) {
 				TopicPartition: kafka.TopicPartition{Topic: &sink.Topic, Partition: kafka.PartitionAny},
 				Key:            kv.Key,
 				Value:          kv.Value,
-				Timestamp:      input.Stamp.Time,
+				Timestamp:      time.Unix(input.Stamp.Unix, 0),
 				Opaque:         input,
 			}:
 				sink.numProduced++
