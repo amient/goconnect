@@ -86,9 +86,9 @@ func (p *Pipeline) ForEach(that *Stream, fn ForEachFn) *Stream {
 	})
 }
 
-func (p *Pipeline) Transform(that *Stream, fn TransformFn) *Stream {
+func (p *Pipeline) Group(that *Stream, fn GroupFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
-		return p.Transform(p.injectCoder(that, fn.InType()), fn)
+		return p.Group(p.injectCoder(that, fn.InType()), fn)
 	}
 	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output Channel) {
 		fn.Process(input)
@@ -106,7 +106,7 @@ func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(inp
 
 				switch element.signal {
 				case FinalCheckpoint:
-					if t, is := fn.(TransformFn); is {
+					if t, is := fn.(GroupFn); is {
 						//FIXME triggering has to be possible in other ways
 						for _, outputElement := range t.Trigger() {
 							outputElement.Stamp = stamp

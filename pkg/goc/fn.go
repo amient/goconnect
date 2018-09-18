@@ -45,7 +45,7 @@ type FlatMapFn interface {
 	Process(input *Element) []*Element
 }
 
-type TransformFn interface {
+type GroupFn interface {
 	InType() reflect.Type
 	OutType() reflect.Type
 	Process(input *Element)

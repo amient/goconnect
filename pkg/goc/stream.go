@@ -47,8 +47,8 @@ type Stream struct {
 
 func (stream *Stream) Apply(f Fn) *Stream {
 	switch fn := f.(type) {
-	case TransformFn:
-		return stream.pipeline.Transform(stream, fn)
+	case GroupFn:
+		return stream.pipeline.Group(stream, fn)
 	case ForEachFn:
 		return stream.pipeline.ForEach(stream, fn)
 	case MapFn:
@@ -60,7 +60,7 @@ func (stream *Stream) Apply(f Fn) *Stream {
 			panic(fmt.Errorf("only on of the interfaces defined in goc/fn.go  can be applied"))
 		}
 
-		panic(fmt.Errorf("reflective transforms need: a) stream.Transform to have guaranteees and b) perf-tested", reflect.TypeOf(f)))
+		panic(fmt.Errorf("reflective transforms need: a) stream.Group to have guaranteees and b) perf-tested", reflect.TypeOf(f)))
 		//if method, exists := reflect.TypeOf(f).MethodByName("process"); !exists {
 		//	panic(fmt.Errorf("transform must provide process method"))
 		//} else {
@@ -82,7 +82,7 @@ func (stream *Stream) Apply(f Fn) *Stream {
 		//	if len(ret) > 1 {
 		//		panic(fmt.Errorf("transform must have 0 or 1 return value"))
 		//	} else if len(ret) == 0 {
-		//		output = stream.Transform(fn)
+		//		output = stream.Group(fn)
 		//	} else {
 		//		output = stream.Map(fn.Interface())
 		//	}
@@ -155,7 +155,7 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 
 }
 
-//func (stream *Stream) Transform(f func(element *Element, output Channel)) *Stream {
+//func (stream *Stream) Group(f func(element *Element, output Channel)) *Stream {
 //
 //	inField,_ := reflect.TypeOf(f).In(0).Elem().FieldByName("Value")
 //	inType := inField.Type
