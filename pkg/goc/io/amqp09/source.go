@@ -107,7 +107,7 @@ func (source *Source) Run(output goc.Channel) {
 
 	for delivery := range deliveries {
 		output <- &goc.Element{
-			Timestamp:  &delivery.Timestamp,
+			Stamp:      goc.Stamp{Unix: delivery.Timestamp.Unix()},
 			Checkpoint: goc.Checkpoint{Data: delivery.DeliveryTag},
 			Value:      delivery.Body,
 		}
