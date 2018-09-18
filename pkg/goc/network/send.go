@@ -1,66 +1,61 @@
 package network
 
 import (
-	"bufio"
-	"encoding/binary"
 	"github.com/amient/goconnect/pkg/goc"
+	"log"
 	"net"
 )
 
-func NetSend(node uint16, addr net.Addr) *Sender {
-	if conn, err := net.Dial("tcp", addr.String()); err != nil {
-		panic(err)
-	} else {
-		sender := Sender{
-			writer:  bufio.NewWriter(conn),
-			Channel: make(goc.Channel, 1),
-			buf:     make([]byte, 8),
-		}
-		go func() {
-			for e := range sender.Channel {
-				sender.writeUInt16(node)
-				sender.writeUInt64(uint64(e.Stamp.Unix))
-				sender.writeUInt64(e.Stamp.Lo)
-				sender.writeUInt64(e.Stamp.Hi)
-				sender.writeSlice(e.Value.([]byte))
-				sender.writer.Flush()
-			}
-		}()
-		return &sender
+func NetSend(addr net.Addr) *Sender {
+	return &Sender{
+		addr: addr,
+		//channel: make(goc.Channel, 1),
 	}
 }
 
 type Sender struct {
-	writer  *bufio.Writer
-	Channel goc.Channel
-	buf     []byte
+	addr   net.Addr
+	conn   net.Conn
+	duplex *Duplex
 }
 
-func (s *Sender) writeUInt16(i uint16) {
-	binary.BigEndian.PutUint16(s.buf, i)
-	s.writeFully(s.buf, 2)
-}
-
-func (s *Sender) writeUInt32(i uint32) {
-	binary.BigEndian.PutUint32(s.buf, i)
-	s.writeFully(s.buf, 4)
-}
-
-func (s *Sender) writeUInt64(i uint64) {
-	binary.BigEndian.PutUint64(s.buf, i)
-	s.writeFully(s.buf, 8)
-}
-
-func (s *Sender) writeSlice(bytes []byte) {
-	s.writeUInt32(uint32(len(bytes)))
-	s.writeFully(bytes, len(bytes))
-}
-func (s *Sender) writeFully(bytes []byte, len int) {
-	for written := 0; written < len; {
-		if w, err := s.writer.Write(bytes[written:]); err != nil {
-			panic(err)
-		} else if w > 0 {
-			written += w
-		}
+func (sender *Sender) Start(node uint16, stream *goc.Stream) {
+	var err error
+	if sender.conn, err = net.Dial("tcp", sender.addr.String()); err != nil {
+		panic(err)
 	}
+	sender.duplex = NewDuplex(sender.conn)
+	sender.duplex.writeUInt16(node) //node id
+	go func() {
+		d := sender.duplex
+		for {
+			switch d.readUInt16() {
+			case 0: //eos
+				return
+			case 1: //magic
+				stamp := goc.Stamp{
+					Unix: int64(d.readUInt64()),
+					Lo:   d.readUInt64(),
+					Hi:   d.readUInt64(),
+				}
+				log.Printf("Returning %v", stamp)
+				stream.Ack(stamp)
+			default:
+				panic("unknown magic byte")
+			}
+		}
+	}()
+}
+
+func (sender *Sender) Send(e *goc.Element) {
+	sender.duplex.writeUInt16(1) //magic
+	sender.duplex.writeUInt64(uint64(e.Stamp.Unix))
+	sender.duplex.writeUInt64(e.Stamp.Lo)
+	sender.duplex.writeUInt64(e.Stamp.Hi)
+	sender.duplex.writeSlice(e.Value.([]byte))
+	sender.duplex.writer.Flush()
+}
+
+func (sender *Sender) Close() error {
+	return sender.duplex.Close()
 }

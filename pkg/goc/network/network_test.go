@@ -9,9 +9,11 @@ import (
 )
 
 func TestNetworkTools(t *testing.T) {
+
+	receiver := NetRecv("127.0.0.1:0")
 	ch := make(goc.Channel, 1)
-	receiver := NetRecv("127.0.0.1:0", ch)
-	sender := NetSend(1, receiver.Start())
+	sender := NetSend(receiver.Start(ch))
+	sender.Start(1, nil)
 
 	fixture := goc.Element {
 		Stamp: goc.Stamp{
@@ -22,7 +24,7 @@ func TestNetworkTools(t *testing.T) {
 		Value: []byte("Hello World"),
 	}
 
-	sender.Channel <- &fixture
+	sender.Send(&fixture)
 
 	received := <-ch
 	if (*received).Stamp != fixture.Stamp {
@@ -42,4 +44,5 @@ func TestNetworkTools(t *testing.T) {
 	}
 
 	receiver.Close()
+	sender.Close()
 }

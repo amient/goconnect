@@ -1,30 +1,25 @@
 package network
 
 import (
-	"bufio"
-	"encoding/binary"
 	"github.com/amient/goconnect/pkg/goc"
+	"log"
 	"net"
-	"strings"
-	"time"
 )
 
-func NetRecv(addr string, ch goc.Channel) *Receiver {
+func NetRecv(addr string) *Receiver {
 	return &Receiver{
 		addr:     addr,
-		ch:       ch,
-		handlers: make([]handler, 0, 1)}
+		handlers: make(map[uint16]*Duplex)}
 }
 
 type Receiver struct {
 	Addr     net.Addr
 	ln       net.Listener
 	addr     string
-	ch       goc.Channel
-	handlers []handler
+	handlers map[uint16]*Duplex
 }
 
-func (recv *Receiver) Start() net.Addr {
+func (recv *Receiver) Start(output goc.Channel) net.Addr {
 	var err error
 	if recv.ln, err = net.Listen("tcp", recv.addr); err != nil {
 		panic(err)
@@ -37,17 +32,46 @@ func (recv *Receiver) Start() net.Addr {
 			if conn, err := recv.ln.Accept(); err != nil {
 				panic(err)
 			} else {
-				h := handler{
-					conn: conn,
-					reader: bufio.NewReader(conn),
-					buf:    make([]byte, 8),
+				d := NewDuplex(conn)
+				node := d.readUInt16()
+				recv.handlers[node] = d
+				for {
+					switch d.readUInt16() {
+					case 0: //eos
+						return
+					case 1: //magic
+						stamp := goc.Stamp{
+							Unix: int64(d.readUInt64()),
+							Lo:   d.readUInt64(),
+							Hi:   d.readUInt64(),
+						}
+						value := d.readSlice()
+						log.Printf("RECV %v element: %v", stamp, value)
+						output <- &goc.Element{
+							Checkpoint: goc.Checkpoint{
+								Part: int(node),
+								Data: stamp,
+							},
+							Stamp: stamp,
+							Value: value,
+						}
+					default:
+						panic("unknown magic byte")
+					}
 				}
-				recv.handlers = append(recv.handlers, h)
-				h.handle(recv.ch)
 			}
 		}()
 	}
 	return recv.Addr
+}
+
+func (recv *Receiver) Send(node uint16, stamp *goc.Stamp) error {
+	upstream := recv.handlers[node]
+	upstream.writeUInt16(1) //magic
+	upstream.writeUInt64(uint64(stamp.Unix))
+	upstream.writeUInt64(stamp.Lo)
+	upstream.writeUInt64(stamp.Hi)
+	return upstream.writer.Flush()
 }
 
 func (recv *Receiver) Close() error {
@@ -60,76 +84,8 @@ func (recv *Receiver) Close() error {
 }
 
 type handler struct {
-	conn net.Conn
-	reader *bufio.Reader
-	buf    []byte
-}
-
-func (h *handler) handle(ch goc.Channel) {
-	for {
-		if node := int(h.readUInt16()); node == 0 {
-			//eos
-			return
-		} else {
-			ts := time.Unix(int64(h.readUInt64()), 0)
-			lo := h.readUInt64()
-			hi := h.readUInt64()
-			value := h.readSlice()
-			//log.Printf("Incoming node: %v, ts: %v, lo: %v, hi: %v, data: %v", node, ts, lo, hi, len(value))
-			ch <- &goc.Element{
-				Checkpoint: goc.Checkpoint{
-					Part: node,
-					Data: hi,
-				},
-				Stamp: goc.Stamp{
-					Unix: ts.Unix(),
-					Lo:   lo,
-					Hi:   hi,
-				},
-				Value: value,
-			}
-		}
-	}
-}
-
-func (h *handler) readSlice() []byte {
-	l := int(h.readUInt32())
-	data := make([]byte, l)
-	h.readFully(data, l)
-	return data
-}
-
-func (h *handler) readUInt16() uint16 {
-	if h.readFully(h.buf, 2) {
-		return binary.BigEndian.Uint16(h.buf)
-	} else {
-		return 0 //eos
-	}
-}
-
-func (h *handler) readUInt32() uint32 {
-	h.readFully(h.buf, 4)
-	return binary.BigEndian.Uint32(h.buf)
-}
-
-func (h *handler) readUInt64() uint64 {
-	h.readFully(h.buf, 8)
-	return binary.BigEndian.Uint64(h.buf)
-}
-
-func (h *handler) readFully(into []byte, len int) bool {
-	for n := 0; n < len; {
-		if p, err := h.reader.Read(into[n:]); err != nil {
-			if strings.Contains(err.Error(), "closed") {
-				return false
-			} else {
-				panic(err)
-			}
-		} else if p > 0 {
-			n += p
-		}
-	}
-	return true
+	conn   net.Conn
+	duplex *Duplex
 }
 
 func (h *handler) Close() error {
