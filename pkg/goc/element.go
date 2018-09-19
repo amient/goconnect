@@ -23,7 +23,6 @@ type Element struct {
 	Checkpoint Checkpoint //TODO make private and make sure it never leaves the stage fn
 	Value      interface{}
 	Stamp 	   Stamp
-	signal     ControlSignal
 	ack        func(stamp Stamp)
 }
 
@@ -31,10 +30,16 @@ func (e *Element) Ack() {
 	e.ack(e.Stamp)
 }
 
-type ControlSignal uint8
+/**
+	Checkpoint is a map of int identifiers and values. The identifiers are specific to each transform, some
+	may have only one identifier, e.g. AMQP Source, others may have multiple, e.g. Kafka Source
+ */
 
-const NoSignal ControlSignal = 0
-const FinalCheckpoint ControlSignal = 1
+type Checkpoint struct {
+	Part  int
+	Data  interface{}
+	acked bool
+}
 
-type Channel chan *Element
+
 

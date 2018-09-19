@@ -23,17 +23,6 @@ import (
 	"fmt"
 )
 
-/**
-	Checkpoint is a map of int identifiers and values. The identifiers are specific to each transform, some
-	may have only one identifier, e.g. AMQP Source, others may have multiple, e.g. Kafka Source
- */
-
-type Checkpoint struct {
-	Part  int
-	Data  interface{}
-	acked bool
-}
-
 type Stamp struct {
 	Unix int64
 	Lo   uint64

@@ -21,6 +21,7 @@ package goc
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"reflect"
 )
@@ -31,8 +32,8 @@ type Stream struct {
 	up             *Stream
 	pipeline       *Pipeline
 	stage          int
-	output         Channel
-	runner         func(output Channel)
+	output         chan *Element
+	runner         func(output chan *Element)
 	isPassthrough  bool
 	pending        chan *Element
 	acks           chan Stamp
@@ -60,7 +61,7 @@ func (stream *Stream) Apply(f Fn) *Stream {
 			panic(fmt.Errorf("only on of the interfaces defined in goc/fn.go  can be applied"))
 		}
 
-		panic(fmt.Errorf("reflective transforms need: a) stream.Group to have guaranteees and b) perf-tested", reflect.TypeOf(f)))
+		panic(fmt.Errorf("reflective transforms need: a) stream.Group to have guaranteees and b) perf-tested, %v", reflect.TypeOf(f)))
 		//if method, exists := reflect.TypeOf(f).MethodByName("process"); !exists {
 		//	panic(fmt.Errorf("transform must provide process method"))
 		//} else {
@@ -110,12 +111,12 @@ func (stream *Stream) Map(f interface{}) *Stream {
 		panic(fmt.Errorf("map func must have exactly 1 output"))
 	}
 
-	return stream.pipeline.elementWise(stream, fnType.Out(0), nil, func(input *Element, output Channel) {
+	return stream.pipeline.elementWise(stream, fnType.Out(0), nil, func(input *Element, output chan *Element) {
 		v := reflect.ValueOf(input.Value)
 		r := fnVal.Call([]reflect.Value{v})
 		output <- &Element{
-			Value:     r[0].Interface(),
-			Stamp:     input.Stamp,
+			Value: r[0].Interface(),
+			Stamp: input.Stamp,
 		}
 	})
 
@@ -138,7 +139,7 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 	}
 
 	var stamp Stamp
-	return stream.pipeline.elementWise(stream, fnType.In(0), nil, func(input *Element, output Channel) {
+	return stream.pipeline.elementWise(stream, fnType.In(0), nil, func(input *Element, output chan *Element) {
 		v := reflect.ValueOf(input.Value)
 		stamp = stamp.merge(input.Stamp)
 		if fnVal.Call([]reflect.Value{v})[0].Bool() {
@@ -155,7 +156,7 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 
 }
 
-//func (stream *Stream) Group(f func(element *Element, output Channel)) *Stream {
+//func (stream *Stream) Group(f func(element *Element, output Elements)) *Stream {
 //
 //	inField,_ := reflect.TypeOf(f).In(0).Elem().FieldByName("Value")
 //	inType := inField.Type
@@ -174,7 +175,7 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 //
 //	return stream.pipeline.elementWise(stream, inType, nil, f)
 //
-//	//return stream.pipeline.group(stream, outChannelType.Elem(), nil, func(input InputChannel, output Channel) {
+//	//return stream.pipeline.group(stream, outChannelType.Elem(), nil, func(input InputChannel, output Elements) {
 //	//	intermediateIn := reflect.MakeChan(inType, 0)
 //	//	go func() {
 //	//		defer intermediateIn.Close()
@@ -229,8 +230,7 @@ func (stream *Stream) ack(s Stamp) {
 func (stream *Stream) close() {
 	if ! stream.closed {
 		stream.log("STAGE[%d] Closed %v", stream.stage, stream.Type)
-		close(stream.output)
-		if fn, ok := stream.fn.(Closeable); ok {
+		if fn, ok := stream.fn.(io.Closer); ok {
 			if err := fn.Close(); err != nil {
 				panic(err)
 			}
@@ -240,11 +240,7 @@ func (stream *Stream) close() {
 }
 
 func (stream *Stream) initialize(stage int) {
-	if stream.output != nil {
-		panic(fmt.Errorf("stream already materialized"))
-	}
 	stream.stage = stage
-	stream.output = make(chan *Element, 100)
 	var commitable Commitable
 	var isCommitable bool
 	if stream.fn == nil {
@@ -263,7 +259,7 @@ func (stream *Stream) initialize(stage int) {
 
 	//start start the ack-commit accumulator that applies:
 	//A. accumulation and aggregation of checkpoints when commits are expensive
-	//B. back-pressure on the upstream processing when the commits are too slow given the configured buffer size
+	//B. back-pressure on the input processing when the commits are too slow given the configured buffer size
 
 	//TODO configurable capacity for checkpoint buffers
 	stream.cap = 100000 //FIXME if this buffer is smaller then any aggregation stage limit the pipeline hangs:
@@ -272,7 +268,7 @@ func (stream *Stream) initialize(stage int) {
 
 	stream.pending = make(chan *Element, 1000) //TODO this buffer is important so make it configurable but must be >= stream.cap
 	stream.acks = make(chan Stamp, 10000)
-	stream.terminate = make(chan bool, 1)
+	stream.terminate = make(chan bool, 2)
 	stream.completed = make(chan bool, 1)
 	commits := make(chan map[int]interface{})
 	commitRequests := make(chan bool)
@@ -347,9 +343,11 @@ func (stream *Stream) initialize(stage int) {
 			maybeTerminate()
 		}
 
+
 		for !terminated {
 			select {
 			case <-stream.terminate:
+				stream.log("STAGE[%d] Terminating", stream.stage)
 				stream.terminating = true
 				maybeTerminate()
 			case <-commitRequests:

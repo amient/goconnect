@@ -25,7 +25,6 @@ import (
 	"github.com/amient/goconnect/pkg/goc/coder/gocxml"
 	"github.com/amient/goconnect/pkg/goc/io"
 	"github.com/amient/goconnect/pkg/goc/io/std"
-	"github.com/amient/goconnect/pkg/goc/network"
 	"reflect"
 	"strings"
 )
@@ -63,12 +62,10 @@ func main() {
 	//root source of text elements
 	// TODO generated lists are one of the examples which must be coordinated and run on any one instance
 	//FIXME setting n=20 sometimes hangs because the iteration ends on a filtered-out element
-	messages := pipeline.Root(io.RoundRobin(20, data))
-
-	network := messages.Apply(network.NetSplit())
+	messages := pipeline.Root(io.From(data))//.Apply(network.NetSplit())
 
 	//extract names with custom Map fn (coders satisfying []byte => xml are injected by the pipeline)
-	extracted := network.Map(func(input gocxml.Node) string {
+	extracted := messages.Map(func(input gocxml.Node) string {
 		return input.Children()[0].Children()[0].Text()
 	})
 

@@ -25,7 +25,7 @@ type Fn interface {}
 
 type RootFn interface {
 	OutType() reflect.Type
-	Run(output Channel)
+	Run(output chan *Element)
 }
 
 type MapFn interface {
@@ -53,10 +53,8 @@ type GroupFn interface {
 }
 
 
-type Closeable interface {
-	Close() error
-}
-
 type Commitable interface {
 	Commit(checkpoint map[int]interface{}) error
 }
+
+

@@ -43,7 +43,7 @@ func (source *Source) OutType() reflect.Type {
 	return goc.ByteArrayType
 }
 
-func (source *Source) Run(output goc.Channel) {
+func (source *Source) Run(output chan *goc.Element) {
 	var err error
 
 	log.Printf("dialing %q", source.Uri)

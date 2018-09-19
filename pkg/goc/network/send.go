@@ -2,30 +2,45 @@ package network
 
 import (
 	"github.com/amient/goconnect/pkg/goc"
-	"log"
 	"net"
 )
 
-func NetSend(addr net.Addr) *Sender {
+func NetSend() *Sender {
 	return &Sender{
-		addr: addr,
-		//channel: make(goc.Channel, 1),
+		stamps: make(chan *goc.Stamp, 1),
 	}
 }
 
 type Sender struct {
-	addr   net.Addr
 	conn   net.Conn
 	duplex *Duplex
+	stamps chan *goc.Stamp
 }
 
-func (sender *Sender) Start(node uint16, stream *goc.Stream) {
+func (sender *Sender) Up() <-chan *goc.Stamp {
+	return sender.stamps
+}
+
+func (sender *Sender) SendDown(e *goc.Element) {
+	sender.duplex.writeUInt16(1) //magic
+	sender.duplex.writeUInt64(uint64(e.Stamp.Unix))
+	sender.duplex.writeUInt64(e.Stamp.Lo)
+	sender.duplex.writeUInt64(e.Stamp.Hi)
+	sender.duplex.writeSlice(e.Value.([]byte))
+	sender.duplex.writer.Flush()
+}
+
+func (sender *Sender) Close() error {
+	close(sender.stamps)
+	return sender.duplex.Close()
+}
+
+func (sender *Sender) Start(node uint16, addr net.Addr) {
 	var err error
-	if sender.conn, err = net.Dial("tcp", sender.addr.String()); err != nil {
+	if sender.conn, err = net.Dial("tcp", addr.String()); err != nil {
 		panic(err)
 	}
 	sender.duplex = NewDuplex(sender.conn)
-	sender.duplex.writeUInt16(node) //node id
 	go func() {
 		d := sender.duplex
 		for {
@@ -38,24 +53,10 @@ func (sender *Sender) Start(node uint16, stream *goc.Stream) {
 					Lo:   d.readUInt64(),
 					Hi:   d.readUInt64(),
 				}
-				log.Printf("Returning %v", stamp)
-				stream.Ack(stamp)
+				sender.stamps <- &stamp
 			default:
 				panic("unknown magic byte")
 			}
 		}
 	}()
-}
-
-func (sender *Sender) Send(e *goc.Element) {
-	sender.duplex.writeUInt16(1) //magic
-	sender.duplex.writeUInt64(uint64(e.Stamp.Unix))
-	sender.duplex.writeUInt64(e.Stamp.Lo)
-	sender.duplex.writeUInt64(e.Stamp.Hi)
-	sender.duplex.writeSlice(e.Value.([]byte))
-	sender.duplex.writer.Flush()
-}
-
-func (sender *Sender) Close() error {
-	return sender.duplex.Close()
 }

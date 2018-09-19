@@ -55,7 +55,7 @@ func (p *Pipeline) FlatMap(that *Stream, fn FlatMapFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
 		return p.FlatMap(p.injectCoder(that, fn.InType()), fn)
 	}
-	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output Channel) {
+	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output chan *Element) {
 		for i, outputElement := range fn.Process(input) {
 			outputElement.Stamp = input.Stamp
 			if outputElement.Checkpoint.Data == nil {
@@ -70,7 +70,7 @@ func (p *Pipeline) Map(that *Stream, fn MapFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
 		return p.Map(p.injectCoder(that, fn.InType()), fn)
 	}
-	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output Channel) {
+	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output chan *Element) {
 		outputElement := fn.Process(input)
 		outputElement.Stamp = input.Stamp
 		output <- outputElement
@@ -81,7 +81,7 @@ func (p *Pipeline) ForEach(that *Stream, fn ForEachFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
 		return p.ForEach(p.injectCoder(that, fn.InType()), fn)
 	}
-	return p.elementWise(that, ErrorType, fn, func(input *Element, output Channel) {
+	return p.elementWise(that, ErrorType, fn, func(input *Element, output chan *Element) {
 		fn.Process(input)
 	})
 }
@@ -90,52 +90,46 @@ func (p *Pipeline) Group(that *Stream, fn GroupFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
 		return p.Group(p.injectCoder(that, fn.InType()), fn)
 	}
-	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output Channel) {
+	return p.elementWise(that, fn.OutType(), fn, func(input *Element, output chan *Element) {
 		fn.Process(input)
 	})
 }
 
-func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(input *Element, output Channel)) *Stream {
+func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(input *Element, output chan *Element)) *Stream {
 	return p.register(&Stream{
 		Type: out,
 		fn:   fn,
 		up:   up,
-		runner: func(output Channel) {
-			var stamp Stamp
-			for element := range up.output {
-
-				switch element.signal {
-				case FinalCheckpoint:
-					if t, is := fn.(GroupFn); is {
-						//FIXME triggering has to be possible in other ways
-						for _, outputElement := range t.Trigger() {
-							outputElement.Stamp = stamp
-							output <- outputElement
-							stamp.Lo = 0 //make it invalid
+		runner: func(output chan *Element) {
+			defer close(output)
+			groupFn, isGroupFn := fn.(GroupFn)
+			var highStamp Stamp
+			trigger := make(chan bool, 10) //FIXME not sure why this has to be 10 but it seams that trigger <- doesn't guarantee to be selected next
+			for {
+				select {
+				//TODO trigger <- false based on the Fn's trigger channel
+				case terminated := <- trigger:
+					if isGroupFn {
+						for _, element := range groupFn.Trigger() {
+							element.Stamp = highStamp
+							output <- element
+							highStamp.Lo = 0 //make it invalid
 						}
 					}
-					output <- element
-					up.terminate <- true
-					return
-				case NoSignal:
-					//initial stamping of elements
-					if element.Stamp.Hi == 0 {
-						s := atomic.AddUint64(&p.stamp, 1)
-						element.Stamp.Hi = s
-						element.Stamp.Lo = s
+					if terminated {
+						return
 					}
-					if element.Stamp.Unix == 0 {
-						element.Stamp.Unix = time.Now().Unix()
+				case element, more := <-up.output:
+					if !more {
+						trigger <- true
+					} else {
+						run(element, output)
+						//merged high highStamp for triggers
+						highStamp.merge(element.Stamp)
 					}
-					up.pendingAck(element)
-
-					//merged stamp is used forTransform.Trigger()
-					stamp.merge(element.Stamp)
-
-					//pass the element after it has been intercepted to the fn
-					run(element, output)
 				}
 			}
+
 		},
 	})
 }
@@ -145,7 +139,7 @@ func (p *Pipeline) Run() {
 	log.Printf("Materializing Pipeline of %d stages\n", len(p.streams))
 
 	source := p.streams[0]
-	sink := p.streams[len(p.streams)-1]
+
 	var start = time.Now()
 	stopwatch := func() {
 		log.Printf("Executiong took %f ms", time.Now().Sub(start).Seconds()*1000)
@@ -154,15 +148,35 @@ func (p *Pipeline) Run() {
 
 	for s, stream := range p.streams {
 		stream.initialize(s + 1)
-		go func(s int, stream *Stream) {
-			stream.runner(stream.output)
-			//assuming single source
-			if stream == source && !stream.terminating {
-				//this is here to terminate bounded sources with a commit
-				stream.output <- &Element{signal: FinalCheckpoint}
-			}
-		}(s, stream)
 
+		intercept := make(chan *Element, 1)
+		go func(stream *Stream) {
+			stream.runner(intercept)
+		}(stream)
+
+		stream.output = make(chan *Element, 100)
+		go func(stream *Stream, triggers chan bool) {
+
+			for element := range intercept {
+				//initial stamping of elements
+				if element.Stamp.Hi == 0 {
+					s := atomic.AddUint64(&p.stamp, 1)
+					element.Stamp.Hi = s
+					element.Stamp.Lo = s
+				}
+				if element.Stamp.Unix == 0 {
+					element.Stamp.Unix = time.Now().Unix()
+				}
+				//checkpointing
+				stream.pendingAck(element)
+
+				//output
+				stream.output <- element
+			}
+
+			close(stream.output)
+			stream.terminate <- true
+		}(stream, make(chan bool, 1))
 	}
 
 	//open termination signal underlying
@@ -175,31 +189,16 @@ func (p *Pipeline) Run() {
 			//assuming single source
 			if !source.closed {
 				log.Printf("Caught signal %v: Cancelling\n", sig)
-				source.output <- &Element{signal: FinalCheckpoint}
+				source.terminate <- true
 			}
-
-		case e, more := <-sink.output:
-			if more {
-				switch e.signal {
-				case NoSignal:
-				case FinalCheckpoint:
-					log.Printf("Output completion took %f ms", time.Now().Sub(start).Seconds()*1000)
-					//assuming single source await until all pendingAck acks have been completed
-					<-source.completed
-					for i := len(p.streams) - 1; i >= 0; i-- {
-						p.streams[i].close()
-					}
-				}
-			} else {
-				//this is the only place that exits the for-select
-				//it will be triggerred by closing of the streams in the above case FinalCheckpoint
-				//FinalCheckpoint is injected either by capture sigterm or at the end of bounded
-				return
+		case <-source.completed:
+			for i := len(p.streams) - 1; i >= 0; i-- {
+				p.streams[i].close()
 			}
-
+			return
 		}
-
 	}
+
 }
 
 func (p *Pipeline) register(stream *Stream) *Stream {

@@ -51,7 +51,7 @@ func (source *Source) OutType() reflect.Type {
 	return reflect.TypeOf(goc.KVBytes{})
 }
 
-func (source *Source) Run(output goc.Channel) {
+func (source *Source) Run(output chan *goc.Element) {
 	var err error
 	source.counter = make(map[int32]uint64)
 	source.consumer, err = kafka.NewConsumer(&kafka.ConfigMap{

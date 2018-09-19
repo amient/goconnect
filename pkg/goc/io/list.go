@@ -60,7 +60,7 @@ func (it *iterable) OutType() reflect.Type {
 	return it.typ.Elem()
 }
 
-func (it *iterable) Run(output goc.Channel) {
+func (it *iterable) Run(output chan *goc.Element) {
 	limit := it.val.Len()
 	for l := 0; l < it.n; l++ {
 		i := l % limit
@@ -69,6 +69,7 @@ func (it *iterable) Run(output goc.Channel) {
 			Value:      it.val.Index(i).Interface(),
 		}
 	}
+	close(output)
 }
 
 func (it *iterable) Commit(checkpoint map[int]interface{}) error {
@@ -87,7 +88,7 @@ func (it *randomOf) OutType() reflect.Type {
 	return it.typ.Elem()
 }
 
-func (it *randomOf) Run(output goc.Channel) {
+func (it *randomOf) Run(output chan *goc.Element) {
 	size := it.val.Len()
 	for l := 0; l < it.n; l++ {
 		i := rand.Int() % size
@@ -96,4 +97,5 @@ func (it *randomOf) Run(output goc.Channel) {
 			Value:      it.val.Index(i).Interface(),
 		}
 	}
+	close(output)
 }
