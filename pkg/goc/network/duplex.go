@@ -91,7 +91,7 @@ func (duplex *Duplex) readFully(into []byte, len int) bool {
 			if err == io.EOF {
 				return false
 			} else if strings.Contains(err.Error(), "closed") {
-				//FIXME the io.EOF above should be enough but for some reason on the Receiver this is also required
+				//FIXME the io.EOF above should be enough but for some reason on the Server this is also required
 				return false
 			} else {
 				panic(err)

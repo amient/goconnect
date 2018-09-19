@@ -10,11 +10,14 @@ import (
 
 func TestNetworkTools(t *testing.T) {
 
-	receiver := NetRecv("127.0.0.1:0")
-	sender := NetSend()
-	sender.Start(1, receiver.Start())
+	server := NewServer("127.0.0.1:10000")
+	handler := server.NewReceiver(1, "test")
+	sender := NewSender("127.0.0.1:10000", handler.ID)
 
-	fixture := goc.Element {
+	server.Start()
+	sender.Start()
+
+	fixture := goc.Element{
 		Stamp: goc.Stamp{
 			Unix: time.Now().Unix(),
 			Lo:   1,
@@ -25,7 +28,8 @@ func TestNetworkTools(t *testing.T) {
 
 	sender.SendDown(&fixture)
 
-	received := <- receiver.Down()
+
+	received := <-handler.Down()
 	if (*received).Stamp != fixture.Stamp {
 		log.Println(fixture.Stamp)
 		log.Println((*received).Stamp)
@@ -38,6 +42,6 @@ func TestNetworkTools(t *testing.T) {
 		panic("Are not equal")
 	}
 
-	receiver.Close()
+	server.Close()
 	sender.Close()
 }
