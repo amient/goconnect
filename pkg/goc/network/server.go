@@ -15,7 +15,7 @@ func NewServer(addr string) *Server {
 	recv := Server{
 		Rand:      rand.Int63(),
 		addr:      addr,
-		assigned:  make(chan bool, 1),
+		Assigned:  make(chan bool, 1),
 		quit:      make(chan bool, 1),
 		receivers: make(map[uint16]*Receiver),
 	}
@@ -27,9 +27,9 @@ type Server struct {
 	Rand      int64
 	NodeId    int
 	Addr      net.Addr
+	Assigned  chan bool
 	ln        *net.TCPListener
 	addr      string
-	assigned  chan bool
 	quit      chan bool
 	receivers map[uint16]*Receiver
 	lock      sync.Mutex
@@ -138,7 +138,7 @@ func (h *Receiver) handle(duplex *Duplex, conn net.Conn) {
 				//log.Printf("Assigning NodeId %d to node %v", id, conn.LocalAddr().String())
 				if h.server.NodeId != int(id) {
 					h.server.NodeId = int(id)
-					h.server.assigned <- true
+					h.server.Assigned <- true
 				}
 			}
 			return

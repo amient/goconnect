@@ -40,10 +40,10 @@ func (sender *Sender) Close() error {
 	return sender.duplex.Close()
 }
 
-func (sender *Sender) Start() *Sender {
+func (sender *Sender) Start() (*Sender, error) {
 	var err error
 	if sender.conn, err = net.Dial("tcp", sender.addr); err != nil {
-		panic(err)
+		return nil, err
 	}
 	//println("Open", sender.addr, sender.handlerId)
 	sender.duplex = NewDuplex(sender.conn)
@@ -71,11 +71,11 @@ func (sender *Sender) Start() *Sender {
 			}
 		}
 	}()
-	return sender
+	return sender, nil
 }
-func (sender *Sender) SendId(i int, receiver *Server) {
+func (sender *Sender) SendNodeIdentify(nodeId int, receiver *Server) {
 	sender.duplex.writeUInt16(1) //magic
-	sender.duplex.writeUInt16(uint16(i))
+	sender.duplex.writeUInt16(uint16(nodeId))
 	sender.duplex.writeUInt64(uint64(receiver.Rand))
 	sender.duplex.writer.Flush()
 	sender.duplex.readUInt16()
