@@ -37,30 +37,81 @@ type Edge struct {
 	collector *Collector
 }
 
-func (node *Node) NewReceiverID() uint16 {
+func (node *Node) GetNodeID() uint16 {
+	return node.server.NodeId
+}
+
+func (node *Node) NumPeers() uint16 {
+	return uint16(len(node.nodes))
+}
+
+func (node *Node) GetPeers() []string {
+	return node.nodes
+}
+
+func (node *Node) GetPeer(nodeId uint16) string {
+	return node.nodes[nodeId -1]
+}
+
+func (node *Node) allocateNewReceiverID() uint16 {
 	return uint16(atomic.AddInt32(&node.receiverId,1))
 }
+
+func (node *Node) GetReceiver(info string) *network.Receiver {
+	return node.server.NewReceiver(uint16(node.receiverId), info)
+}
+
+func (node *Node) GetAllocatedReceiverID() uint16 {
+	return uint16(node.receiverId)
+}
+
 
 func (node *Node) Join(nodes []string) {
 	for nodeId := 0; nodeId < len(nodes); {
 		addr := nodes[nodeId]
-		if s, err := network.NewSender(addr, 0).Start(); err != nil {
+		s := network.NewSender(addr, 0)
+		if err := s.Start(); err != nil {
 			time.Sleep(time.Second)
 			log.Printf("Waiting for node at %v to join the cluster..", addr)
 		} else {
 			s.SendNodeIdentify(nodeId, node.server)
 			nodeId ++
 		}
-
 	}
 	<-node.server.Assigned
 }
 
-func (node *Node) Apply(up chan *goc.Element, f StageConstructor) chan *goc.Element {
+func (node *Node) Apply(up chan *goc.Element, stage Stage) chan *goc.Element {
 	collector := NewCollector()
-	stage := f(node)
 	node.graph = append(node.graph, &Edge{up, &stage, collector})
-	return collector.down
+	node.allocateNewReceiverID()
+	stage.Initialize(node)
+
+	//stamp on entry
+	autoi := uint64(0)
+	stampedOutput := make(chan *goc.Element)
+	go func(traceId uint16) {
+		defer close(stampedOutput)
+		for element := range collector.emits {
+			element.Stamp.AddTrace(traceId)
+			//initial stamping of elements
+			if element.Stamp.Hi == 0 {
+				s := atomic.AddUint64(&autoi, 1)
+				element.Stamp.Hi = s
+				element.Stamp.Lo = s
+			}
+			if element.Stamp.Unix == 0 {
+				element.Stamp.Unix = time.Now().Unix()
+			}
+			//checkpointing
+			//TODO stream.pendingAck(element)
+
+			//stampedOutput
+			stampedOutput <- element
+		}
+	}(node.GetNodeID())
+
+	return stampedOutput
 }
 
 func (node *Node) Materialize() {

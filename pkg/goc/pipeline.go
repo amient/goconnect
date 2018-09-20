@@ -125,7 +125,7 @@ func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(inp
 					} else {
 						run(element, output)
 						//merged high highStamp for triggers
-						highStamp.merge(element.Stamp)
+						highStamp.Merge(element.Stamp)
 					}
 				}
 			}

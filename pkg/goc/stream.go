@@ -141,10 +141,10 @@ func (stream *Stream) Filter(f interface{}) *Stream {
 	var stamp Stamp
 	return stream.pipeline.elementWise(stream, fnType.In(0), nil, func(input *Element, output chan *Element) {
 		v := reflect.ValueOf(input.Value)
-		stamp = stamp.merge(input.Stamp)
+		stamp = stamp.Merge(input.Stamp)
 		if fnVal.Call([]reflect.Value{v})[0].Bool() {
 			output <- &Element{
-				Stamp:      stamp.merge(input.Stamp),
+				Stamp:      stamp.Merge(input.Stamp),
 				Value:      input.Value,
 				Checkpoint: input.Checkpoint,
 			}
@@ -305,7 +305,7 @@ func (stream *Stream) initialize(stage int) {
 		maybeTerminate := func() {
 			if stream.terminating {
 				if len(checkpoint) == 0 && stream.highestPending == stream.highestAcked {
-					clean := (pendingCommitReuqest || !isCommitable) && !pending.valid()
+					clean := (pendingCommitReuqest || !isCommitable) && !pending.Valid()
 					if clean {
 						terminated = true
 						stream.log("STAGE[%d] Completed", stream.stage)
@@ -323,7 +323,7 @@ func (stream *Stream) initialize(stage int) {
 
 		resolveAcks := func() {
 			//resolve acks <> pending
-			for ; pending.valid() && pendingCheckpoints[pending.Lo] != nil && pendingCheckpoints[pending.Lo].acked; {
+			for ; pending.Valid() && pendingCheckpoints[pending.Lo] != nil && pendingCheckpoints[pending.Lo].acked; {
 				lo := pending.Lo
 				pending.Lo += 1
 				chk := pendingCheckpoints[lo]
@@ -376,7 +376,7 @@ func (stream *Stream) initialize(stage int) {
 				if terminated {
 					panic(fmt.Errorf("STAGE[%d] Illegal Pending %v", stream.stage, e))
 				}
-				pending.merge(e.Stamp)
+				pending.Merge(e.Stamp)
 				for u := e.Stamp.Lo; u <= e.Stamp.Hi; u++ {
 					pendingCheckpoints[u] = &e.Checkpoint
 				}

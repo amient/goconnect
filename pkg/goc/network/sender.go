@@ -31,6 +31,10 @@ func (sender *Sender) SendDown(e *goc.Element) {
 	sender.duplex.writeUInt64(uint64(e.Stamp.Unix))
 	sender.duplex.writeUInt64(e.Stamp.Lo)
 	sender.duplex.writeUInt64(e.Stamp.Hi)
+	sender.duplex.writeUInt16(e.Stamp.TraceLen())
+	for _, nodeId := range e.Stamp.Trace {
+		sender.duplex.writeUInt16(nodeId)
+	}
 	sender.duplex.writeSlice(e.Value.([]byte))
 	sender.duplex.writer.Flush()
 }
@@ -40,10 +44,10 @@ func (sender *Sender) Close() error {
 	return sender.duplex.Close()
 }
 
-func (sender *Sender) Start() (*Sender, error) {
+func (sender *Sender) Start() error {
 	var err error
 	if sender.conn, err = net.Dial("tcp", sender.addr); err != nil {
-		return nil, err
+		return err
 	}
 	//println("Open", sender.addr, sender.handlerId)
 	sender.duplex = NewDuplex(sender.conn)
@@ -71,7 +75,7 @@ func (sender *Sender) Start() (*Sender, error) {
 			}
 		}
 	}()
-	return sender, nil
+	return nil
 }
 func (sender *Sender) SendNodeIdentify(nodeId int, receiver *Server) {
 	sender.duplex.writeUInt16(1) //magic

@@ -1,16 +1,12 @@
 package prototype
 
-import "github.com/amient/goconnect/pkg/goc"
+import (
+	"github.com/amient/goconnect/pkg/goc"
+)
 
 type Stage interface {
-	Run(input <-chan *goc.Element, collector *Collector)
+	Initialize(node *Node)
 	Materialize()
+	Run(input <-chan *goc.Element, collector *Collector)
 }
 
-type voidStage struct{}
-
-func NewVoid() Stage {
-	return &voidStage{}
-}
-func (v *voidStage) Run(input <-chan *goc.Element, collector *Collector) {}
-func (v *voidStage) Materialize()                                        {}

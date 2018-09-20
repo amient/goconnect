@@ -25,7 +25,7 @@ func NewServer(addr string) *Server {
 
 type Server struct {
 	Rand      int64
-	NodeId    int
+	NodeId    uint16
 	Addr      net.Addr
 	Assigned  chan bool
 	ln        *net.TCPListener
@@ -128,31 +128,37 @@ func (h *Receiver) handle(duplex *Duplex, conn net.Conn) {
 	for {
 		//log.Printf("NEXT[%v/%d]", h.server.addr, h.NodeId)
 		switch duplex.readUInt16() {
-		case 0: //eos
+		case 0: //eof
 			//log.Printf("EOF[%v/%d]", h.server.addr, h.NodeId)
 			return
-		case 1: //magic NodeId
+		case 1: //node identification
 			id := duplex.readUInt16() + 1
 			rand := int64(duplex.readUInt64())
 			if rand == h.server.Rand {
-				//log.Printf("Assigning NodeId %d to node %v", id, conn.LocalAddr().String())
-				if h.server.NodeId != int(id) {
-					h.server.NodeId = int(id)
+				log.Printf("Assignment: Node ID %d is listening on %v", id, conn.LocalAddr().String())
+				if h.server.NodeId != id {
+					h.server.NodeId = id
 					h.server.Assigned <- true
 				}
 			}
 			return
-		case 2: //magic
+		case 2: //downstream element
+			//read stamp first
 			unix := int64(duplex.readUInt64())
 			lo := duplex.readUInt64()
 			hi := duplex.readUInt64()
-			value := duplex.readSlice()
+			numTraceSteps := duplex.readUInt16()
 			stamp := goc.Stamp{
 				Unix: unix,
 				Lo:   lo,
 				Hi:   hi,
+				Trace: goc.NewTrace(numTraceSteps),
 			}
-
+			for i := uint16(0); i< numTraceSteps; i++ {
+				stamp.AddTrace(duplex.readUInt16())
+			}
+			//element value second
+			value := duplex.readSlice()
 			h.down <- &goc.Element{
 				Stamp: stamp,
 				Value: value,

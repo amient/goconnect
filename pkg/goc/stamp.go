@@ -24,17 +24,18 @@ import (
 )
 
 type Stamp struct {
-	Unix int64
-	Lo   uint64
-	Hi   uint64
+	Unix  int64
+	Lo    uint64
+	Hi    uint64
+	Trace []uint16
 }
 
-func (s *Stamp) valid() bool {
+func (s *Stamp) Valid() bool {
 	return s.Lo != 0 && s.Hi != 0 && s.Lo <= s.Hi
 }
 
-func (s *Stamp) merge(other Stamp) Stamp {
-	if !s.valid() {
+func (s *Stamp) Merge(other Stamp) Stamp {
+	if !s.Valid() {
 		s.Lo = other.Lo
 		s.Hi = other.Hi
 		s.Unix = other.Unix
@@ -53,9 +54,20 @@ func (s *Stamp) merge(other Stamp) Stamp {
 }
 
 func (s *Stamp) String() string {
-	if s.valid() {
-		return fmt.Sprintf("{%d:%d}", s.Lo, s.Hi)
+	if s.Valid() {
+		return fmt.Sprintf("{%d:%d %v}", s.Lo, s.Hi, s.Trace)
 	} else {
 		return "{-}"
 	}
+}
+
+func NewTrace(minNumTraceSteps uint16) []uint16 {
+	return make([]uint16, 0, (minNumTraceSteps/16+1)*16)
+}
+func (s *Stamp) AddTrace(id uint16) {
+	s.Trace = append(s.Trace, id)
+}
+
+func (s *Stamp) TraceLen() uint16 {
+	return uint16(len(s.Trace))
 }
