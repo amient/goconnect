@@ -37,7 +37,7 @@ type Node struct {
 type Edge struct {
 	src       <-chan *goc.Element
 	stage     *Stage
-	collector *Collector
+	collector *goc.Collector
 }
 
 func (node *Node) GetNodeID() uint16 {
@@ -83,41 +83,30 @@ func (node *Node) Join(nodes []string) {
 	<-node.server.Assigned
 }
 
-func (node *Node) Apply(up <-chan *goc.Element, stage Stage) chan *goc.Element {
+func (node *Node) Apply(up *Collection, stage Stage) *Collection {
 
-	collector := NewCollector()
-	node.graph = append(node.graph, &Edge{up, &stage, collector})
+	collector := goc.NewCollector(node.GetNodeID())
+	var upstream <- chan *goc.Element
+	if up != nil {
+		upstream = up.Elements()
+	}
+	node.graph = append(node.graph, &Edge{upstream, &stage, collector})
 	node.allocateNewReceiverID()
-	stage.Initialize(node)
-
-	//stamp on entry
-	stampedOutput := make(chan *goc.Element, 10)
-	go func(traceId uint16) {
-		defer close(stampedOutput)
-		for element := range collector.emits {
-			element.Stamp.AddTrace(traceId)
-			//initial stamping of elements
-			if element.Stamp.Hi == 0 {
-				s := atomic.AddUint64(&node.autoi, 1)
-				element.Stamp.Hi = s
-				element.Stamp.Lo = s
-			}
-			if element.Stamp.Unix == 0 {
-				element.Stamp.Unix = time.Now().Unix()
-			}
-			//checkpointing
-			//TODO stream.pendingAck(element)
-			stampedOutput <- element
-		}
-	}(node.GetNodeID())
-
-	return stampedOutput
+	if s, is := stage.(Initialize); is {
+		s.Initialize(node)
+	}
+	acks := make(chan *goc.Stamp)
+	return &Collection{
+		elements: collector.Wrap(acks),
+		acks: acks,
+	}
 }
-
 
 func (node *Node) Materialize() {
 	for _, edge := range node.graph {
-		(*edge.stage).Materialize()
+		if s, is := (*edge.stage).(Materialize); is {
+			s.Materialize()
+		}
 	}
 }
 
@@ -128,12 +117,14 @@ func (node *Node) Run() {
 		go func(edge *Edge) {
 			c := edge.collector
 			switch stage := (*edge.stage).(type) {
-				case RootStage: stage.Run(c)
-				case TransformStage: stage.Run(edge.src, c)
-				case ElementWiseStage:
-					for e := range edge.src {
-						stage.Process(e, c)
-					}
+			case RootStage:
+				stage.Run(c)
+			case TransformStage:
+				stage.Run(edge.src, c)
+			case ElementWiseStage:
+				for e := range edge.src {
+					stage.Process(e, c)
+				}
 			default:
 				panic(fmt.Errorf("Unsupported Stage Type %q", reflect.TypeOf(stage)))
 			}

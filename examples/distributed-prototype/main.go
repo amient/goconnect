@@ -48,7 +48,7 @@ func (r *rootStage) Initialize(instance *prototype.Node) {
 
 func (r *rootStage) Materialize() {}
 
-func (r *rootStage) Run(collector *prototype.Collector) {
+func (r *rootStage) Run(collector *goc.Collector) {
 	if r.assigned {
 		for i, d := range r.data {
 			collector.Emit2([]byte(d), goc.Checkpoint{Part:0, Data: i})
@@ -79,7 +79,7 @@ func (n *NetRoundRobin) Materialize() {
 	}
 }
 
-func (n *NetRoundRobin) Run(input <-chan *goc.Element, collector *prototype.Collector) {
+func (n *NetRoundRobin) Run(input <-chan *goc.Element, collector *goc.Collector) {
 	go func() {
 		i := 0
 		for e := range input {
@@ -102,7 +102,7 @@ type UpperCase struct{}
 
 func (t *UpperCase) Initialize(instance *prototype.Node) {}
 func (t *UpperCase) Materialize()                        {}
-func (t *UpperCase) Run(input <-chan *goc.Element, collector *prototype.Collector) {
+func (t *UpperCase) Run(input <-chan *goc.Element, collector *goc.Collector) {
 	for e := range input {
 		collector.Emit(&goc.Element{
 			Stamp: e.Stamp,
@@ -133,7 +133,7 @@ func (n *NetMergeOrdered) Materialize() {
 	n.send.Start()
 }
 
-func (n *NetMergeOrdered) Run(input <-chan *goc.Element, collector *prototype.Collector) {
+func (n *NetMergeOrdered) Run(input <-chan *goc.Element, collector *goc.Collector) {
 	go func() {
 		for e := range input {
 			n.send.SendDown(e)
@@ -154,7 +154,7 @@ type stdOutSink struct{}
 
 func (s *stdOutSink) Initialize(instance *prototype.Node) {}
 func (s *stdOutSink) Materialize()                        {}
-func (s *stdOutSink) Process(input *goc.Element, collector *prototype.Collector) {
+func (s *stdOutSink) Process(input *goc.Element, collector *goc.Collector) {
 	println(string(input.Value.([]byte)), input.Stamp.String())
 	//TODO input.Ack()
 }

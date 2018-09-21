@@ -2,7 +2,6 @@ package util
 
 import (
 	"github.com/amient/goconnect/pkg/goc"
-	"github.com/amient/goconnect/pkg/goc/network/prototype"
 )
 
 func NewOrderedElementSet(cap int) *OrderedElementSet {
@@ -16,7 +15,7 @@ type OrderedElementSet struct {
 	elements map[uint64]*goc.Element
 }
 
-func (set *OrderedElementSet) AddElement(elementToAdd *goc.Element, collector *prototype.Collector) {
+func (set *OrderedElementSet) AddElement(elementToAdd *goc.Element, collector *goc.Collector) {
 	set.elements[elementToAdd.Stamp.Hi] = elementToAdd
 	for ; set.elements[set.next + 1] != nil; {
 		set.next ++
