@@ -7,17 +7,17 @@ import (
 
 func NewCollector(nodeId uint16) *Collector {
 	return &Collector{
-		traceId: nodeId,
-		emits:   make(chan *Element, 1),
-		acks:    make(chan *Stamp, 1), //TODO configurable/adaptible
+		NodeID: nodeId,
+		emits:  make(chan *Element, 1),
+		acks:   make(chan *Stamp, 1), //TODO configurable/adaptible
 	}
 }
 
 type Collector struct {
-	traceId uint16
-	emits   chan *Element
-	acks    chan *Stamp
-	autoi   uint64
+	NodeID uint16
+	emits  chan *Element
+	acks   chan *Stamp
+	autoi  uint64
 }
 
 func (c *Collector) Emit(element *Element) {
@@ -46,7 +46,7 @@ func (c *Collector) Wrap(acks chan *Stamp) <-chan *Element {
 	go func() {
 		defer close(stampedOutput)
 		for element := range c.emits {
-			element.Stamp.AddTrace(c.traceId)
+			element.Stamp.AddTrace(c.NodeID)
 			//initial stamping of elements
 			if element.Stamp.Hi == 0 {
 				s := atomic.AddUint64(&c.autoi, 1)

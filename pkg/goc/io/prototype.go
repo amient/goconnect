@@ -4,26 +4,7 @@ import (
 	"github.com/amient/goconnect/pkg/goc"
 	"github.com/amient/goconnect/pkg/goc/network"
 	"github.com/amient/goconnect/pkg/goc/network/prototype"
-	"strings"
 )
-
-type SomeRootStage struct {
-	Data     []string
-	assigned bool
-}
-
-func (r *SomeRootStage) Initialize(node *prototype.Node) {
-	//runs on the first assigned node
-	r.assigned = node.GetNodeID() == 1
-}
-
-func (r *SomeRootStage) Run(collector *goc.Collector) {
-	if r.assigned {
-		for i, d := range r.Data {
-			collector.Emit2([]byte(d), goc.Checkpoint{Part: 0, Data: i})
-		}
-	}
-}
 
 type NetRoundRobin struct {
 	instance *prototype.Node
@@ -61,17 +42,6 @@ func (n *NetRoundRobin) Run(input <-chan *goc.Element, collector *goc.Collector)
 
 	for e := range n.recv.Down() {
 		collector.Emit(e)
-	}
-}
-
-type UpperCase struct{}
-
-func (t *UpperCase) Run(input <-chan *goc.Element, collector *goc.Collector) {
-	for e := range input {
-		collector.Emit(&goc.Element{
-			Stamp: e.Stamp,
-			Value: []byte(strings.ToUpper(string(e.Value.([]byte)))),
-		})
 	}
 }
 

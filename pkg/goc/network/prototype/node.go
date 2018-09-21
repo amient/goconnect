@@ -86,7 +86,7 @@ func (node *Node) Join(nodes []string) {
 func (node *Node) Apply(up *goc.Collection, stage Stage) *goc.Collection {
 
 	collector := goc.NewCollector(node.GetNodeID())
-	var upstream <- chan *goc.Element
+	var upstream <-chan *goc.Element
 	if up != nil {
 		upstream = up.Elements()
 	}
@@ -106,15 +106,35 @@ func (node *Node) Run() {
 			c := edge.collector
 			switch stage := (*edge.stage).(type) {
 			case RootStage:
-				stage.Run(c)
+				stage.Do(c)
 			case TransformStage:
 				stage.Run(edge.src, c)
 			case ElementWiseStage:
 				for e := range edge.src {
 					stage.Process(e, c)
 				}
+			case goc.MapFn:
+				for e := range edge.src {
+					out := stage.Process(e)
+					out.Stamp = e.Stamp
+					out.Checkpoint = e.Checkpoint
+					c.Emit(out)
+				}
 			default:
-				panic(fmt.Errorf("Unsupported Stage Type %q", reflect.TypeOf(stage)))
+				t := reflect.TypeOf(stage)
+				if t.Kind() == reflect.Func && t.NumIn() == 1 && t.NumOut() == 1 {
+					//simple mapper function
+					v := reflect.ValueOf(stage)
+					for e := range edge.src {
+						c.Emit(&goc.Element{
+							Stamp: e.Stamp,
+							Value:  v.Call([]reflect.Value{reflect.ValueOf(e.Value)})[0].Interface(),
+						})
+					}
+				} else {
+					panic(fmt.Errorf("Unsupported Stage Type %q", t))
+				}
+
 			}
 			c.Close()
 			stages.Done()

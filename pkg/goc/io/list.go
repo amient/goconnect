@@ -26,11 +26,11 @@ import (
 	"reflect"
 )
 
-func From(list interface{}) goc.RootFn {
+func From(list interface{}) *iterable {
 	return RoundRobin(reflect.ValueOf(list).Len(), list)
 }
 
-func RoundRobin(n int, list interface{}) goc.RootFn {
+func RoundRobin(n int, list interface{}) *iterable {
 	//TODO if slice or array -> iterable
 	//TODO if file or url -> file
 	return &iterable{
@@ -70,6 +70,16 @@ func (it *iterable) Run(output chan *goc.Element) {
 		}
 	}
 	close(output)
+}
+
+func (it *iterable) Do(collector *goc.Collector) {
+	if collector.NodeID == 1 {
+		limit := it.val.Len()
+		for l := 0; l < it.n; l++ {
+			i := l % limit
+			collector.Emit2(it.val.Index(i).Interface(), goc.Checkpoint{Data: l})
+		}
+	}
 }
 
 func (it *iterable) Commit(checkpoint map[int]interface{}) error {

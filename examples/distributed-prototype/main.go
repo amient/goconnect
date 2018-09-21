@@ -1,9 +1,11 @@
 package main
 
 import (
+	"github.com/amient/goconnect/pkg/goc/coder/gocstring"
 	"github.com/amient/goconnect/pkg/goc/io"
 	"github.com/amient/goconnect/pkg/goc/network/prototype"
 	"log"
+	"strings"
 	"sync"
 )
 
@@ -24,11 +26,14 @@ func main() {
 	for _, node := range nodes {
 		w.Add(1)
 		go func(node *prototype.Node) {
-			s1 := node.Apply(nil, &io.SomeRootStage{Data: []string{"aaa", "bbb", "ccc"}})
-			s2 := node.Apply(s1, new(io.NetRoundRobin))
-			s3 := node.Apply(s2, new(io.UpperCase))
-			s4 := node.Apply(s3, new(io.NetMergeOrdered))
-			node.Apply(s4, new(io.StdOutSink))
+			s1 := node.Apply(nil, io.From([]string{"aaa", "bbb", "ccc"}))
+			s2 := node.Apply(s1, gocstring.Encoder())
+			s3 := node.Apply(s2, new(io.NetRoundRobin))
+			s4 := node.Apply(s3, gocstring.Decoder())
+			s5 := node.Apply(s4, func(input string) string { return strings.ToUpper(input) })
+			s6 := node.Apply(s5, gocstring.Encoder())
+			s7 := node.Apply(s6, new(io.NetMergeOrdered))
+			node.Apply(s7, new(io.StdOutSink))
 			w.Done()
 		}(node)
 	}
@@ -37,4 +42,5 @@ func main() {
 	prototype.RunLocal(nodes)
 
 }
+
 

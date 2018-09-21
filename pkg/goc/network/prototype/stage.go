@@ -9,7 +9,7 @@ type Initialize interface {
 }
 
 type RootStage interface {
-	Run(collector *goc.Collector)
+	Do(collector *goc.Collector)
 }
 
 type TransformStage interface {

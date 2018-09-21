@@ -126,10 +126,10 @@ func (h *Receiver) handle(duplex *Duplex, conn net.Conn) {
 	defer duplex.Close()
 	defer conn.Close()
 	for {
-		//log.Printf("NEXT[%v/%d]", h.server.addr, h.NodeId)
+		//log.Printf("NEXT[%v/%d]", h.server.addr, h.NodeID)
 		switch duplex.readUInt16() {
 		case 0: //eof
-			//log.Printf("EOF[%v/%d]", h.server.addr, h.NodeId)
+			//log.Printf("EOF[%v/%d]", h.server.addr, h.NodeID)
 			return
 		case 1: //node identification
 			id := duplex.readUInt16() + 1
@@ -163,7 +163,7 @@ func (h *Receiver) handle(duplex *Duplex, conn net.Conn) {
 				Stamp: stamp,
 				Value: value,
 			}
-			//log.Printf("RECEIVED[%v/%d] %v element: %v", h.server.addr, h.NodeId, stamp, value)
+			//log.Printf("RECEIVED[%v/%d] %v element: %v", h.server.addr, h.NodeID, stamp, value)
 		default:
 			panic("unknown magic byte")
 		}
