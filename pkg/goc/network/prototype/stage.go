@@ -8,10 +8,6 @@ type Initialize interface {
 	Initialize(node *Node)
 }
 
-type Materialize interface {
-	Materialize()
-}
-
 type RootStage interface {
 	Run(collector *goc.Collector)
 }

@@ -31,11 +31,7 @@ func JoinCluster(nodes []string) []*Node {
 	return instances
 }
 
-func MaterializeAndRun(nodes []*Node) {
-	log.Println("Materializing")
-	for _, node := range nodes {
-		node.Materialize()
-	}
+func RunLocal(nodes []*Node) {
 	//run
 	log.Println("Running all instances")
 	group := new(sync.WaitGroup)

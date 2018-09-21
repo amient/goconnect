@@ -6,6 +6,7 @@ import (
 	"github.com/amient/goconnect/pkg/goc/network/prototype"
 	"log"
 	"strings"
+	"sync"
 )
 
 func main() {
@@ -21,15 +22,21 @@ func main() {
 
 	//apply pipeline definition
 	log.Println("Declaring")
+	w := sync.WaitGroup{}
 	for _, node := range nodes {
-		s1 := node.Apply(nil, &SomeRootStage{Data: []string{"aaa", "bbb", "ccc"}})
-		s2 := node.Apply(s1, new(NetRoundRobin))
-		s3 := node.Apply(s2, new(UpperCase))
-		s4 := node.Apply(s3, new(NetMergeOrdered))
-		node.Apply(s4, new(stdOutSink))
+		w.Add(1)
+		go func(node *prototype.Node) {
+			s1 := node.Apply(nil, &SomeRootStage{Data: []string{"aaa", "bbb", "ccc"}})
+			s2 := node.Apply(s1, new(NetRoundRobin))
+			s3 := node.Apply(s2, new(UpperCase))
+			s4 := node.Apply(s3, new(NetMergeOrdered))
+			node.Apply(s4, new(stdOutSink))
+			w.Done()
+		}(node)
 	}
+	w.Wait()
 
-	prototype.MaterializeAndRun(nodes)
+	prototype.RunLocal(nodes)
 
 }
 
@@ -64,9 +71,6 @@ func (n *NetRoundRobin) Initialize(node *prototype.Node) {
 	for i, addr := range node.GetPeers() {
 		n.send[i] = network.NewSender(addr, n.recv.ID)
 	}
-}
-
-func (n *NetRoundRobin) Materialize() {
 	for _, s := range n.send {
 		if err := s.Start(); err != nil {
 			panic(err)
@@ -119,10 +123,6 @@ func (n *NetMergeOrdered) Initialize(node *prototype.Node) {
 		//log.Printf("merge send --FROM-- %v --TO-- %v", node.server.targetNode, targetNode)
 		n.recv = node.GetReceiver("merge")
 	}
-
-}
-
-func (n *NetMergeOrdered) Materialize() {
 	n.send.Start()
 }
 

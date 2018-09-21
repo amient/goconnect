@@ -98,14 +98,6 @@ func (node *Node) Apply(up *goc.Collection, stage Stage) *goc.Collection {
 	return goc.NewCollection(collector)
 }
 
-func (node *Node) Materialize() {
-	for _, edge := range node.graph {
-		if s, is := (*edge.stage).(Materialize); is {
-			s.Materialize()
-		}
-	}
-}
-
 func (node *Node) Run() {
 	stages := sync.WaitGroup{}
 	for _, edge := range node.graph {
