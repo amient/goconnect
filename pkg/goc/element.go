@@ -53,11 +53,11 @@ type OrderedElementSet struct {
 	elements map[uint64]*Element
 }
 
-func (set *OrderedElementSet) AddElement(elementToAdd *Element, collector *Collector) {
+func (set *OrderedElementSet) AddElement(elementToAdd *Element, context *Context) {
 	set.elements[elementToAdd.Stamp.Hi] = elementToAdd
 	for ; set.elements[set.next + 1] != nil; {
 		set.next ++
-		collector.Emit(set.elements[set.next])
+		context.Emit(set.elements[set.next])
 		delete(set.elements, set.next)
 	}
 }

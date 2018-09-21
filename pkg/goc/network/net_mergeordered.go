@@ -23,7 +23,7 @@ func (n *NetMergeOrdered) Initialize(node *Node) {
 	n.send.Start()
 }
 
-func (n *NetMergeOrdered) Run(input <-chan *goc.Element, collector *goc.Collector) {
+func (n *NetMergeOrdered) Run(input <-chan *goc.Element, context *goc.Context) {
 	go func() {
 		for e := range input {
 			n.send.SendDown(e)
@@ -34,7 +34,7 @@ func (n *NetMergeOrdered) Run(input <-chan *goc.Element, collector *goc.Collecto
 	if n.mergeOnThisNode {
 		buf := goc.NewOrderedElementSet(10)
 		for e := range n.recv.Down() {
-			buf.AddElement(e, collector)
+			buf.AddElement(e, context)
 		}
 	}
 

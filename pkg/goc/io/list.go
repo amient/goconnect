@@ -72,12 +72,12 @@ func (it *iterable) Run(output chan *goc.Element) {
 	close(output)
 }
 
-func (it *iterable) Do(collector *goc.Collector) {
-	if collector.NodeID == 1 {
+func (it *iterable) Do(context *goc.Context) {
+	if context.NodeID == 1 {
 		limit := it.val.Len()
 		for l := 0; l < it.n; l++ {
 			i := l % limit
-			collector.Emit2(it.val.Index(i).Interface(), goc.Checkpoint{Data: l})
+			context.Emit2(it.val.Index(i).Interface(), goc.Checkpoint{Data: l})
 		}
 	}
 }

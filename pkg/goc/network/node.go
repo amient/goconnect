@@ -35,9 +35,9 @@ type Node struct {
 }
 
 type Edge struct {
-	src       <-chan *goc.Element
-	stage     *Stage
-	collector *goc.Collector
+	src     <-chan *goc.Element
+	stage   *Stage
+	context *goc.Context
 }
 
 func (node *Node) GetNodeID() uint16 {
@@ -85,17 +85,17 @@ func (node *Node) Join(nodes []string) {
 
 func (node *Node) Apply(up *goc.Collection, stage Stage) *goc.Collection {
 
-	collector := goc.NewCollector(node.GetNodeID())
+	context := goc.NewContext(node.GetNodeID())
 	var upstream <-chan *goc.Element
 	if up != nil {
 		upstream = up.Elements()
 	}
-	node.graph = append(node.graph, &Edge{upstream, &stage, collector})
+	node.graph = append(node.graph, &Edge{upstream, &stage, context})
 	node.allocateNewReceiverID()
 	if s, is := stage.(Initialize); is {
 		s.Initialize(node)
 	}
-	return goc.NewCollection(collector)
+	return goc.NewCollection(context)
 }
 
 func (node *Node) Run() {
@@ -103,8 +103,9 @@ func (node *Node) Run() {
 	for _, edge := range node.graph {
 		stages.Add(1)
 		go func(edge *Edge) {
-			c := edge.collector
-			switch stage := (*edge.stage).(type) {
+			c := edge.context
+			stage := *edge.stage
+			switch stage := stage.(type) {
 			case RootStage:
 				stage.Do(c)
 			case TransformStage:
@@ -140,7 +141,7 @@ func (node *Node) Run() {
 				}
 
 			}
-			if cl, is := (*edge.stage).(io.Closer); is {
+			if cl, is := stage.(io.Closer); is {
 				cl.Close()
 			}
 			c.Close()

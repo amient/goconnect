@@ -5,21 +5,21 @@ import "github.com/amient/goconnect/pkg/goc"
 type Stage interface {}
 
 type Initialize interface {
-	Initialize(node *Node)
+	Initialize(*Node)
 }
 
 type RootStage interface {
-	Do(collector *goc.Collector)
+	Do(*goc.Context)
 }
 
 type TransformStage interface {
-	Run(input <-chan *goc.Element, collector *goc.Collector)
+	Run(<-chan *goc.Element, *goc.Context)
 }
 
 type ElementWiseStage interface {
-	Process(input *goc.Element, collector *goc.Collector)
+	Process(*goc.Element, *goc.Context)
 }
 
 type ForEachStage interface {
-	Process(input *goc.Element)
+	Process(*goc.Element)
 }

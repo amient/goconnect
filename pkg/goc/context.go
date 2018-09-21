@@ -6,26 +6,26 @@ import (
 	"time"
 )
 
-func NewCollector(nodeId uint16) *Collector {
-	return &Collector{
+func NewContext(nodeId uint16) *Context {
+	return &Context{
 		NodeID: nodeId,
 		emits:  make(chan *Element, 1),
 		acks:   make(chan *Stamp, 1), //TODO configurable/adaptible
 	}
 }
 
-type Collector struct {
+type Context struct {
 	NodeID uint16
 	emits  chan *Element
 	acks   chan *Stamp
 	autoi  uint64
 }
 
-func (c *Collector) Emit(element *Element) {
+func (c *Context) Emit(element *Element) {
 	c.emits <- element
 }
 
-func (c *Collector) Emit2(value interface{}, checkpoint Checkpoint) {
+func (c *Context) Emit2(value interface{}, checkpoint Checkpoint) {
 	c.emits <- &Element{
 		Value:      value,
 		Checkpoint: checkpoint,
@@ -33,14 +33,14 @@ func (c *Collector) Emit2(value interface{}, checkpoint Checkpoint) {
 
 }
 
-func (c *Collector) Ack(stamp *Stamp) {
+func (c *Context) Ack(stamp *Stamp) {
 	c.acks <- stamp
 }
 
-func (c *Collector) Close() {
+func (c *Context) Close() {
 	close(c.emits)
 }
-func (c *Collector) Wrap(acks chan *Stamp) <-chan *Element {
+func (c *Context) Attach(acks chan *Stamp) <-chan *Element {
 
 	//handling elements
 	stampedOutput := make(chan *Element, 10)

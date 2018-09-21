@@ -97,6 +97,7 @@ func (sink *stdOutSink) process(element interface{}) {
 }
 
 func (sink *stdOutSink) Close() error {
+	sink.flush()
 	sink.closed <- nil
 	return <-sink.closed
 }

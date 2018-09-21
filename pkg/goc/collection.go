@@ -9,11 +9,11 @@ func (c *Collection) Elements() <-chan *Element {
 	return c.elements
 }
 
-func NewCollection(collector *Collector) *Collection {
+func NewCollection(context *Context) *Collection {
 	acks := make(chan *Stamp)
 	return &Collection{
-		elements: collector.Wrap(acks),
-		acks: acks,
+		elements: context.Attach(acks),
+		acks:     acks,
 	}
 }
 

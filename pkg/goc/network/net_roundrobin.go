@@ -20,7 +20,7 @@ func (n *NetRoundRobin) Initialize(node *Node) {
 	}
 }
 
-func (n *NetRoundRobin) Run(input <-chan *goc.Element, collector *goc.Collector) {
+func (n *NetRoundRobin) Run(input <-chan *goc.Element, context *goc.Context) {
 	go func() {
 		i := 0
 		for e := range input {
@@ -35,7 +35,7 @@ func (n *NetRoundRobin) Run(input <-chan *goc.Element, collector *goc.Collector)
 	}()
 
 	for e := range n.recv.Down() {
-		collector.Emit(e)
+		context.Emit(e)
 	}
 }
 
