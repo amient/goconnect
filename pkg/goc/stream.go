@@ -36,7 +36,7 @@ type Stream struct {
 	runner         func(output chan *Element)
 	isPassthrough  bool
 	pending        chan *Element
-	acks           chan Stamp
+	acks           chan *Stamp
 	terminate      chan bool
 	terminating    bool
 	completed      chan bool
@@ -219,7 +219,7 @@ func (stream *Stream) pendingAck(element *Element) {
 	}
 }
 
-func (stream *Stream) ack(s Stamp) {
+func (stream *Stream) ack(s *Stamp) {
 	if stream.isPassthrough {
 		stream.up.ack(s)
 	} else {
@@ -267,7 +267,7 @@ func (stream *Stream) initialize(stage int) {
 	// or should there be some kind of high-level back-pressure where the aggregations are "forced" to emit
 
 	stream.pending = make(chan *Element, 1000) //TODO this buffer is important so make it configurable but must be >= stream.cap
-	stream.acks = make(chan Stamp, 10000)
+	stream.acks = make(chan *Stamp, 10000)
 	stream.terminate = make(chan bool, 2)
 	stream.completed = make(chan bool, 1)
 	commits := make(chan map[int]interface{})

@@ -23,11 +23,11 @@ type Element struct {
 	Checkpoint Checkpoint //TODO make private and make sure it never leaves the stage fn
 	Value      interface{}
 	Stamp 	   Stamp
-	ack        func(stamp Stamp)
+	ack        func(stamp *Stamp)
 }
 
 func (e *Element) Ack() {
-	e.ack(e.Stamp)
+	e.ack(&e.Stamp)
 }
 
 /**

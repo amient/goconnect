@@ -1,4 +1,4 @@
-package prototype
+package network
 
 import "github.com/amient/goconnect/pkg/goc"
 
@@ -20,3 +20,6 @@ type ElementWiseStage interface {
 	Process(input *goc.Element, collector *goc.Collector)
 }
 
+type ForEachStage interface {
+	Process(input *goc.Element)
+}

@@ -1,23 +1,21 @@
-package io
+package network
 
 import (
 	"github.com/amient/goconnect/pkg/goc"
-	"github.com/amient/goconnect/pkg/goc/network"
-	"github.com/amient/goconnect/pkg/goc/network/prototype"
 )
 
 type NetRoundRobin struct {
-	instance *prototype.Node
-	send     []*network.Sender
-	recv     *network.Receiver
+	instance *Node
+	send     []*Sender
+	recv     *Receiver
 }
 
-func (n *NetRoundRobin) Initialize(node *prototype.Node) {
+func (n *NetRoundRobin) Initialize(node *Node) {
 	n.instance = node
 	n.recv = node.GetReceiver("round-robin")
-	n.send = make([]*network.Sender, node.NumPeers())
+	n.send = make([]*Sender, node.NumPeers())
 	for i, addr := range node.GetPeers() {
-		n.send[i] = network.NewSender(addr, n.recv.ID)
+		n.send[i] = NewSender(addr, n.recv.ID)
 	}
 	for _, s := range n.send {
 		if err := s.Start(); err != nil {
@@ -46,16 +44,16 @@ func (n *NetRoundRobin) Run(input <-chan *goc.Element, collector *goc.Collector)
 }
 
 type NetMergeOrdered struct {
-	send            *network.Sender
-	recv            *network.Receiver
+	send            *Sender
+	recv            *Receiver
 	mergeOnThisNode bool
 }
 
-func (n *NetMergeOrdered) Initialize(node *prototype.Node) {
+func (n *NetMergeOrdered) Initialize(node *Node) {
 	LastNodeID := node.NumPeers()
 	n.mergeOnThisNode = node.GetNodeID() == LastNodeID
 	targetNode := node.GetPeer(LastNodeID)
-	n.send = network.NewSender(targetNode, node.GetAllocatedReceiverID())
+	n.send = NewSender(targetNode, node.GetAllocatedReceiverID())
 	if n.mergeOnThisNode {
 		//log.Printf("merge send --FROM-- %v --TO-- %v", node.server.targetNode, targetNode)
 		n.recv = node.GetReceiver("merge")
@@ -79,11 +77,3 @@ func (n *NetMergeOrdered) Run(input <-chan *goc.Element, collector *goc.Collecto
 	}
 
 }
-
-type StdOutSink struct{}
-
-func (s *StdOutSink) Process(input *goc.Element, collector *goc.Collector) {
-	println(string(input.Value.([]byte)), input.Stamp.String())
-	//TODO input.Ack()
-}
-

@@ -1,6 +1,7 @@
 package goc
 
 import (
+	"log"
 	"sync/atomic"
 	"time"
 )
@@ -32,8 +33,8 @@ func (c *Collector) Emit2(value interface{}, checkpoint Checkpoint) {
 
 }
 
-func (c *Collector) Ack(element *Element) {
-	c.acks <- &element.Stamp
+func (c *Collector) Ack(stamp *Stamp) {
+	c.acks <- stamp
 }
 
 func (c *Collector) Close() {
@@ -57,7 +58,9 @@ func (c *Collector) Wrap(acks chan *Stamp) <-chan *Element {
 				element.Stamp.Unix = time.Now().Unix()
 			}
 			//checkpointing
+			element.ack = c.Ack
 			//TODO stream.pendingAck(element)
+
 			stampedOutput <- element
 		}
 	}()
@@ -65,8 +68,9 @@ func (c *Collector) Wrap(acks chan *Stamp) <-chan *Element {
 	//handling acks
 	go func() {
 		for stamp := range c.acks {
+			log.Println("TODO process ACK", stamp)
 			//TODO reconcile
-			acks <- stamp
+			//acks <- stamp
 		}
 	}()
 

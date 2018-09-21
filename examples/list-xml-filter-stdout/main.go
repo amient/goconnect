@@ -60,7 +60,6 @@ func main() {
 	pipeline := goc.NewPipeline(coder.Registry())
 
 	//root source of text elements
-	// TODO generated lists are one of the examples which must be coordinated and run on any one instance
 	//FIXME setting n=20 sometimes hangs because the iteration ends on a filtered-out element
 	messages := pipeline.Root(io.From(data))//.Apply(network.NetSplit())
 
@@ -75,9 +74,7 @@ func main() {
 	})
 
 	//output the aggregation result by applying a general StdOutSink transform
-	//TODO StdOOut sink must be network-merged to the single instance which last joined the group
 	filtered.Apply(new(customAggregator)).Apply(std.StdOutSink())
-
 	//filtered.Apply(&kafka1.Sink{Bootstrap: "localhost:9092", Topic: "test"})
 
 	pipeline.Run()

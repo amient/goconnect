@@ -1,9 +1,9 @@
-package prototype
+package network
 
 import (
 	"fmt"
 	"github.com/amient/goconnect/pkg/goc"
-	"github.com/amient/goconnect/pkg/goc/network"
+	"io"
 	"log"
 	"reflect"
 	"sync"
@@ -12,7 +12,7 @@ import (
 )
 
 func NewNode(addr string, nodes []string) (*Node, error) {
-	server := network.NewServer(addr)
+	server := NewServer(addr)
 	if err := server.Start(); err != nil {
 		return nil, err
 	} else {
@@ -27,7 +27,7 @@ func NewNode(addr string, nodes []string) (*Node, error) {
 type StageConstructor func(*Node) Stage
 
 type Node struct {
-	server     *network.Server
+	server     *Server
 	nodes      []string
 	graph      []*Edge
 	receiverId int32
@@ -60,7 +60,7 @@ func (node *Node) allocateNewReceiverID() uint16 {
 	return uint16(atomic.AddInt32(&node.receiverId, 1))
 }
 
-func (node *Node) GetReceiver(info string) *network.Receiver {
+func (node *Node) GetReceiver(info string) *Receiver {
 	return node.server.NewReceiver(uint16(node.receiverId), info)
 }
 
@@ -71,7 +71,7 @@ func (node *Node) GetAllocatedReceiverID() uint16 {
 func (node *Node) Join(nodes []string) {
 	for nodeId := 0; nodeId < len(nodes); {
 		addr := nodes[nodeId]
-		s := network.NewSender(addr, 0)
+		s := NewSender(addr, 0)
 		if err := s.Start(); err != nil {
 			time.Sleep(time.Second)
 			log.Printf("Waiting for node at %v stage join the cluster..", addr)
@@ -113,6 +113,10 @@ func (node *Node) Run() {
 				for e := range edge.src {
 					stage.Process(e, c)
 				}
+			case ForEachStage:
+				for e := range edge.src {
+					stage.Process(e)
+				}
 			case goc.MapFn:
 				for e := range edge.src {
 					out := stage.Process(e)
@@ -135,6 +139,9 @@ func (node *Node) Run() {
 					panic(fmt.Errorf("Unsupported Stage Type %q", t))
 				}
 
+			}
+			if cl, is := (*edge.stage).(io.Closer); is {
+				cl.Close()
 			}
 			c.Close()
 			stages.Done()

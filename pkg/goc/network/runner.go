@@ -1,4 +1,4 @@
-package prototype
+package network
 
 import (
 	"log"
