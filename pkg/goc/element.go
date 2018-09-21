@@ -42,4 +42,26 @@ type Checkpoint struct {
 }
 
 
+func NewOrderedElementSet(cap int) *OrderedElementSet {
+	return &OrderedElementSet{
+		elements: make(map[uint64]*Element, cap),
+	}
+}
+
+type OrderedElementSet struct {
+	next     uint64
+	elements map[uint64]*Element
+}
+
+func (set *OrderedElementSet) AddElement(elementToAdd *Element, collector *Collector) {
+	set.elements[elementToAdd.Stamp.Hi] = elementToAdd
+	for ; set.elements[set.next + 1] != nil; {
+		set.next ++
+		collector.Emit(set.elements[set.next])
+		delete(set.elements, set.next)
+	}
+}
+
+
+
 

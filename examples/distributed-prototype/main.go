@@ -4,7 +4,6 @@ import (
 	"github.com/amient/goconnect/pkg/goc"
 	"github.com/amient/goconnect/pkg/goc/network"
 	"github.com/amient/goconnect/pkg/goc/network/prototype"
-	"github.com/amient/goconnect/pkg/goc/util"
 	"log"
 	"strings"
 )
@@ -136,7 +135,7 @@ func (n *NetMergeOrdered) Run(input <-chan *goc.Element, collector *goc.Collecto
 	}()
 
 	if n.mergeOnThisNode {
-		buf := util.NewOrderedElementSet(10)
+		buf := goc.NewOrderedElementSet(10)
 		for e := range n.recv.Down() {
 			buf.AddElement(e, collector)
 		}
