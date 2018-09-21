@@ -1,35 +1,11 @@
 package prototype
 
 import (
-	"github.com/amient/goconnect/pkg/goc"
 	"log"
 	"sync"
 )
 
-type PipeEdge struct {
-	from <-chan *goc.Element
-	to   *Stage
-}
-
-type Pipe struct {
-	edges []*PipeEdge
-}
-
-func NewPipe() *Pipe {
-	return &Pipe{
-		edges: make([]*PipeEdge, 0, 10),
-	}
-}
-
-//func (pipe *Pipe) Root(stage *Stage) chan<- *goc.Element {
-//	pipe.edges = append(pipe.edges, &PipeEdge{
-//		src: nil,
-//		stage: stage,
-//	})
-//}
-
-func (pipe *Pipe) Run(nodes []string, declarePipeline func(node *Node)) {
-
+func JoinCluster(nodes []string) []*Node {
 	//start all nodes that can listen on this host
 	instances := make([]*Node, 0)
 	for _, node := range nodes {
@@ -52,28 +28,23 @@ func (pipe *Pipe) Run(nodes []string, declarePipeline func(node *Node)) {
 	}
 	cluster.Wait()
 
-	//apply pipeline definition
-	log.Println("Declaring Pipelines")
-	for _, instance := range instances {
-		declarePipeline(instance)
-	}
+	return instances
+}
 
-	//materialize
-	log.Println("Materializing Pipelines")
-	for _, instance := range instances {
-		instance.Materialize()
+func MaterializeAndRun(nodes []*Node) {
+	log.Println("Materializing")
+	for _, node := range nodes {
+		node.Materialize()
 	}
-
 	//run
 	log.Println("Running all instances")
 	group := new(sync.WaitGroup)
-	for _, instance := range instances {
+	for _, node := range nodes {
 		group.Add(1)
 		go func(instance *Node) {
 			instance.Run()
 			group.Done()
-		}(instance)
+		}(node)
 	}
 	group.Wait()
-
 }

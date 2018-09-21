@@ -5,53 +5,49 @@ import (
 	"github.com/amient/goconnect/pkg/goc/network"
 	"github.com/amient/goconnect/pkg/goc/network/prototype"
 	"github.com/amient/goconnect/pkg/goc/util"
+	"log"
 	"strings"
 )
 
 func main() {
 
-	var nodes = []string{"127.0.0.1:19001", "127.0.0.1:19002"}
+	//pipeline := goc.NewPipeline(coder.Registry())
+	//messages := pipeline.Root(io.From([]string{"aaa", "bbb", "ccc"}))
+	//distributed := messages.Apply(new(NetRoundRobin))
+	//transformed := distributed.Apply(new(UpperCase))
+	//merged := transformed.Apply(new(NetMergeOrdered))
+	//merged.Apply(std.StdOutSink())
 
-	//TODO declare pipeline prior to deployment
-	pipe := new(prototype.Pipe)
-	//s1 := pipe.Root(RootStage([]string{"aaa", "bbb", "ccc"}))
-	//s2 := s1.Apply(new(NetRoundRobin))
-	//s3 := s2.Apply(func(input []byte) []byte)
-	//s4 := s3.Apply(new(NetMergeOrdered))
-	//s4.Apply(new(stdOutSink))
+	nodes := prototype.JoinCluster([]string{"127.0.0.1:19001", "127.0.0.1:19002"})
 
-	pipe.Run(nodes, func(instance *prototype.Node){
-		s1 := instance.Apply(nil, RootStage([]string{"aaa", "bbb", "ccc"}))
-		s2 := instance.Apply(s1, new(NetRoundRobin))
-		s3 := instance.Apply(s2, new(UpperCase))
-		s4 := instance.Apply(s3, new(NetMergeOrdered))
-		instance.Apply(s4, new(stdOutSink))
-	})
+	//apply pipeline definition
+	log.Println("Declaring")
+	for _, node := range nodes {
+		s1 := node.Apply(nil, &SomeRootStage{Data: []string{"aaa", "bbb", "ccc"}})
+		s2 := node.Apply(s1, new(NetRoundRobin))
+		s3 := node.Apply(s2, new(UpperCase))
+		s4 := node.Apply(s3, new(NetMergeOrdered))
+		node.Apply(s4, new(stdOutSink))
+	}
 
-
+	prototype.MaterializeAndRun(nodes)
 
 }
 
-type rootStage struct {
+type SomeRootStage struct {
+	Data     []string
 	assigned bool
-	data     []string
 }
 
-func RootStage(data []string) prototype.Stage {
-	return &rootStage{data: data}
-}
-
-func (r *rootStage) Initialize(instance *prototype.Node) {
+func (r *SomeRootStage) Initialize(instance *prototype.Node) {
 	//runs on the first assigned node
 	r.assigned = instance.GetNodeID() == 1
 }
 
-func (r *rootStage) Materialize() {}
-
-func (r *rootStage) Run(collector *goc.Collector) {
+func (r *SomeRootStage) Run(collector *goc.Collector) {
 	if r.assigned {
-		for i, d := range r.data {
-			collector.Emit2([]byte(d), goc.Checkpoint{Part:0, Data: i})
+		for i, d := range r.Data {
+			collector.Emit2([]byte(d), goc.Checkpoint{Part: 0, Data: i})
 		}
 	}
 }
@@ -100,8 +96,6 @@ func (n *NetRoundRobin) Run(input <-chan *goc.Element, collector *goc.Collector)
 
 type UpperCase struct{}
 
-func (t *UpperCase) Initialize(instance *prototype.Node) {}
-func (t *UpperCase) Materialize()                        {}
 func (t *UpperCase) Run(input <-chan *goc.Element, collector *goc.Collector) {
 	for e := range input {
 		collector.Emit(&goc.Element{
@@ -152,8 +146,6 @@ func (n *NetMergeOrdered) Run(input <-chan *goc.Element, collector *goc.Collecto
 
 type stdOutSink struct{}
 
-func (s *stdOutSink) Initialize(instance *prototype.Node) {}
-func (s *stdOutSink) Materialize()                        {}
 func (s *stdOutSink) Process(input *goc.Element, collector *goc.Collector) {
 	println(string(input.Value.([]byte)), input.Stamp.String())
 	//TODO input.Ack()
