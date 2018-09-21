@@ -83,7 +83,7 @@ func (node *Node) Join(nodes []string) {
 	<-node.server.Assigned
 }
 
-func (node *Node) Apply(up *Collection, stage Stage) *Collection {
+func (node *Node) Apply(up *goc.Collection, stage Stage) *goc.Collection {
 
 	collector := goc.NewCollector(node.GetNodeID())
 	var upstream <- chan *goc.Element
@@ -95,11 +95,7 @@ func (node *Node) Apply(up *Collection, stage Stage) *Collection {
 	if s, is := stage.(Initialize); is {
 		s.Initialize(node)
 	}
-	acks := make(chan *goc.Stamp)
-	return &Collection{
-		elements: collector.Wrap(acks),
-		acks: acks,
-	}
+	return goc.NewCollection(collector)
 }
 
 func (node *Node) Materialize() {
