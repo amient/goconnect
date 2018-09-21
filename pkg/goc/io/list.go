@@ -109,3 +109,14 @@ func (it *randomOf) Run(output chan *goc.Element) {
 	}
 	close(output)
 }
+
+func (it *randomOf) Do(context *goc.Context) {
+	size := it.val.Len()
+	for l := 0; l < it.n; l++ {
+		i := rand.Int() % size
+		context.Emit(&goc.Element{
+			Checkpoint: goc.Checkpoint{Data: i},
+			Value:      it.val.Index(i).Interface(),
+		})
+	}
+}

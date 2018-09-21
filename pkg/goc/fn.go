@@ -25,7 +25,25 @@ type Fn interface {}
 
 type RootFn interface {
 	OutType() reflect.Type
-	Run(output chan *Element)
+	Run(output chan *Element) //deprecated
+	Do(*Context)
+}
+
+type NetworkFn interface {
+	//in and out types are always []byte
+	Run(<-chan *Element, *Context)
+}
+
+type TransformFn interface {
+	InType() reflect.Type
+	OutType() reflect.Type
+	Run(<-chan *Element, *Context)
+}
+
+type ElementWiseFn interface {
+	InType() reflect.Type
+	OutType() reflect.Type
+	Process(*Element, *Context)
 }
 
 type MapFn interface {

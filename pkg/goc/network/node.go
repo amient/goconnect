@@ -24,7 +24,10 @@ func NewNode(addr string, nodes []string) (*Node, error) {
 	}
 }
 
-type StageConstructor func(*Node) Stage
+//TODO get rid of Initialize by adding all required methods to Context
+type Initialize interface {
+	Initialize(*Node)
+}
 
 type Node struct {
 	server     *Server
@@ -36,7 +39,7 @@ type Node struct {
 
 type Edge struct {
 	src     <-chan *goc.Element
-	stage   *Stage
+	stage   *goc.Fn
 	context *goc.Context
 }
 
@@ -83,7 +86,7 @@ func (node *Node) Join(nodes []string) {
 	<-node.server.Assigned
 }
 
-func (node *Node) Apply(up *goc.Collection, stage Stage) *goc.Collection {
+func (node *Node) Apply(up *goc.Collection, stage goc.Fn) *goc.Collection {
 
 	context := goc.NewContext(node.GetNodeID())
 	var upstream <-chan *goc.Element
@@ -106,15 +109,17 @@ func (node *Node) Run() {
 			c := edge.context
 			stage := *edge.stage
 			switch stage := stage.(type) {
-			case RootStage:
+			case goc.RootFn:
 				stage.Do(c)
-			case TransformStage:
+			case goc.NetworkFn:
 				stage.Run(edge.src, c)
-			case ElementWiseStage:
+			case goc.TransformFn:
+				stage.Run(edge.src, c)
+			case goc.ElementWiseFn:
 				for e := range edge.src {
 					stage.Process(e, c)
 				}
-			case ForEachStage:
+			case goc.ForEachFn:
 				for e := range edge.src {
 					stage.Process(e)
 				}

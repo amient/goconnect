@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+
 func NewContext(nodeId uint16) *Context {
 	return &Context{
 		NodeID: nodeId,
