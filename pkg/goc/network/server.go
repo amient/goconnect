@@ -93,7 +93,7 @@ func (server *Server) NewReceiver(handlerId uint16) *TCPReceiver {
 		down:   make(chan *goc.Element, 100), //TODO the capacity should be the number of nodes
 	}
 	if handlerId > 0 {
-		log.Printf("REGISTER[%v] %d", server.addr, handlerId)
+		//log.Printf("REGISTER[%v] %d", server.addr, handlerId)
 	}
 	return server.receivers[handlerId]
 

@@ -46,7 +46,7 @@ func NewPipeline(coders []MapFn) *Pipeline {
 func (p *Pipeline) Root(source RootFn) *Stream {
 	return p.register(&Stream{
 		Type:   source.OutType(),
-		fn:     source,
+		Fn:     source,
 		runner: source.Run,
 	})
 }
@@ -85,6 +85,23 @@ func (p *Pipeline) Map(that *Stream, fn MapFn) *Stream {
 	})
 }
 
+func (p *Pipeline) UserMap(that *Stream, fn interface{}) *Stream {
+	t := reflect.TypeOf(fn)
+	inType := t.In(0)
+	if !that.Type.AssignableTo(inType) {
+		return p.UserMap(p.injectCoder(that, inType), fn)
+	}
+	v := reflect.ValueOf(fn)
+	return p.elementWise(that, t.Out(0), fn, func(input *Element, output chan *Element) {
+		output <- &Element{
+			Stamp: input.Stamp,
+			Value: v.Call([]reflect.Value{reflect.ValueOf(input.Value)})[0].Interface(),
+		}
+	})
+
+
+}
+
 func (p *Pipeline) ForEach(that *Stream, fn ForEachFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
 		return p.ForEach(p.injectCoder(that, fn.InType()), fn)
@@ -106,8 +123,8 @@ func (p *Pipeline) Group(that *Stream, fn GroupFn) *Stream {
 func (p *Pipeline) transform(up *Stream, out reflect.Type, fn Fn, run func(input <- chan *Element, context *Context)) *Stream {
 	return p.register(&Stream{
 		Type: out,
-		fn:   fn,
-		up:   up,
+		Fn:   fn,
+		Up:   up,
 		runner: func(output chan *Element) {
 			defer close(output)
 			//TODO maybe
@@ -118,8 +135,8 @@ func (p *Pipeline) transform(up *Stream, out reflect.Type, fn Fn, run func(input
 func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(input *Element, output chan *Element)) *Stream {
 	return p.register(&Stream{
 		Type: out,
-		fn:   fn,
-		up:   up,
+		Fn:   fn,
+		Up:   up,
 		runner: func(output chan *Element) {
 			defer close(output)
 			groupFn, isGroupFn := fn.(GroupFn)
@@ -223,6 +240,7 @@ func (p *Pipeline) Run() {
 
 func (p *Pipeline) register(stream *Stream) *Stream {
 	stream.pipeline = p
+	stream.Id = len(p.Streams)
 	p.Streams = append(p.Streams, stream)
 	return stream
 }
@@ -250,7 +268,7 @@ func (p *Pipeline) injectCoder(that *Stream, to reflect.Type) *Stream {
 		}
 		panic(fmt.Errorf("cannot find any coders to satisfy: %v => %v, depth %d", in, out, d))
 	}
-	log.Printf("Injecting coders to satisfy: %v => %v ", that.Type, to)
+	//log.Printf("Injecting coders to satisfy: %v => %v ", that.Type, to)
 	for _, mapper := range scan(that.Type, to, 1, []MapFn{}) {
 		log.Printf("Injecting coder: %v => %v ", that.Type, mapper.OutType())
 		that = that.Apply(mapper)
@@ -273,17 +291,9 @@ func (p *Pipeline) Apply(stream *Stream, f Fn) *Stream {
 	default:
 		t := reflect.TypeOf(fn)
 		if t.Kind() == reflect.Func && t.NumIn() == 1 && t.NumOut() == 1 {
-			//simple mapper function
-			//inType := t.In(0)
-			v := reflect.ValueOf(fn)
-			return p.elementWise(stream, t.Out(0), nil, func(input *Element, output chan *Element) {
-				output <- &Element{
-					Stamp: input.Stamp,
-					Value: v.Call([]reflect.Value{reflect.ValueOf(input.Value)})[0].Interface(),
-				}
-			})
+			return p.UserMap(stream ,f)
 		} else {
-			panic(fmt.Errorf("only on of the interfaces defined in goc/fn.go  can be applied"))
+			panic(fmt.Errorf("only on of the interfaces defined in goc/Fn.go  can be applied"))
 		}
 
 		panic(fmt.Errorf("reflective transforms need: a) stream.Group to have guaranteees and b) perf-tested, %v", reflect.TypeOf(f)))
@@ -299,7 +309,7 @@ func (p *Pipeline) Apply(stream *Stream, f Fn) *Stream {
 		//	for i := 0; i < method.Type.NumOut(); i++ {
 		//		ret[i] = method.Type.Out(i)
 		//	}
-		//	fn := reflect.MakeFunc(reflect.FuncOf(args, ret, false), func(args []reflect.Data) (results []reflect.Data) {
+		//	Fn := reflect.MakeFunc(reflect.FuncOf(args, ret, false), func(args []reflect.Data) (results []reflect.Data) {
 		//		methodArgs := append([]reflect.Data{v}, args...)
 		//		return method.Func.Call(methodArgs)
 		//	})
@@ -308,11 +318,11 @@ func (p *Pipeline) Apply(stream *Stream, f Fn) *Stream {
 		//	if len(ret) > 1 {
 		//		panic(fmt.Errorf("transform must have 0 or 1 return value"))
 		//	} else if len(ret) == 0 {
-		//		output = stream.Group(fn)
+		//		output = stream.Group(Fn)
 		//	} else {
-		//		output = stream.Map(fn.Interface())
+		//		output = stream.Map(Fn.Interface())
 		//	}
-		//	output.fn = f
+		//	output.Fn = f
 		//	return output
 		//}
 

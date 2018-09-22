@@ -62,61 +62,61 @@ func (node *Node) Join(nodes []string) {
 	<-node.server.Assigned
 }
 
-//func (node *Node) Apply(pipeline *goc.Pipeline) {
-//	for _, stream := range pipeline.Streams {
-//		context := goc.NewContext(node.server.ID, node, uint16(atomic.AddInt32(&node.receiverId, 1)))
-//		var upstream <-chan *goc.Element
-//		if stream.
-//
-//	}
-//}
+func (node *Node) Deploy(pipeline *goc.Pipeline) {
+	node.graph = make([]*goc.Edge, len(pipeline.Streams))
+	log.Printf("Deploying pipline into node %d listening on %v", node.server.ID, node.server.addr)
+	for _, stream := range pipeline.Streams {
+		context := goc.NewContext(node.server.ID, node, uint16(atomic.AddInt32(&node.receiverId, 1)))
+		dest := goc.NewCollection(context)
+		node.graph[stream.Id] = &goc.Edge{Context: context, Fn: stream.Fn, Dest: dest}
+		if stream.Id > 0 {
+			//println(stream.Up.Id, "->", stream.Id )
+			node.graph[stream.Id].Source = node.graph[stream.Up.Id].Dest
+		}
 
-func (node *Node) Apply(up *goc.Collection, fn goc.Fn) *goc.Collection {
-
-	context := goc.NewContext(node.server.ID, node, uint16(atomic.AddInt32(&node.receiverId, 1)))
-	var upstream <-chan *goc.Element
-	if up != nil {
-		upstream = up.Elements()
 	}
-	node.graph = append(node.graph, &goc.Edge{upstream, &fn, context})
+}
 
-	return goc.NewCollection(context)
+func (node *Node) Apply(source *goc.Collection, fn goc.Fn) *goc.Collection {
+	context := goc.NewContext(node.server.ID, node, uint16(atomic.AddInt32(&node.receiverId, 1)))
+	dest := goc.NewCollection(context)
+	node.graph = append(node.graph, &goc.Edge{context, source, fn, dest})
+	return dest
 }
 
 func (node *Node) Run() {
 	stages := sync.WaitGroup{}
-	for _, edge := range node.graph {
+	for _, e := range node.graph {
 		stages.Add(1)
-		go func(edge *goc.Edge) {
-			c := edge.Context
-			stage := *edge.Fn
-			switch stage := stage.(type) {
+		fn := e.Fn
+		go func(fn goc.Fn, source *goc.Collection, context *goc.Context) {
+			switch stage := fn.(type) {
 			case goc.RootFn:
-				stage.Do(c)
+				stage.Do(context)
 			case goc.TransformFn:
-				stage.Run(edge.Source, c)
+				stage.Run(source.Elements(), context)
 			case goc.ElementWiseFn:
-				for e := range edge.Source {
-					stage.Process(e, c)
+				for e := range source.Elements() {
+					stage.Process(e, context)
 				}
 			case goc.ForEachFn:
-				for e := range edge.Source {
+				for e := range source.Elements() {
 					stage.Process(e)
 				}
 			case goc.MapFn:
-				for e := range edge.Source {
+				for e := range source.Elements() {
 					out := stage.Process(e)
 					out.Stamp = e.Stamp
 					out.Checkpoint = e.Checkpoint
-					c.Emit(out)
+					context.Emit(out)
 				}
 			default:
 				t := reflect.TypeOf(stage)
 				if t.Kind() == reflect.Func && t.NumIn() == 1 && t.NumOut() == 1 {
 					//simple mapper function
 					v := reflect.ValueOf(stage)
-					for e := range edge.Source {
-						c.Emit(&goc.Element{
+					for e := range source.Elements() {
+						context.Emit(&goc.Element{
 							Stamp: e.Stamp,
 							Value:  v.Call([]reflect.Value{reflect.ValueOf(e.Value)})[0].Interface(),
 						})
@@ -124,15 +124,15 @@ func (node *Node) Run() {
 				} else {
 					panic(fmt.Errorf("Unsupported Stage Type %q", t))
 				}
-
 			}
-			if cl, is := stage.(io.Closer); is {
+			if cl, is := fn.(io.Closer); is {
 				cl.Close()
 			}
-			c.Close()
+			context.Close()
 			stages.Done()
-		}(edge)
+		}(fn, e.Source, e.Context)
 	}
 	stages.Wait()
 	node.server.Close()
+
 }

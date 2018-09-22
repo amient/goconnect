@@ -20,7 +20,7 @@
 package goc
 
 type Element struct {
-	Checkpoint Checkpoint //TODO make private and make sure it never leaves the stage fn
+	Checkpoint Checkpoint //TODO make private and make sure it never leaves the stage Fn
 	Value      interface{}
 	Stamp 	   Stamp
 	ack        func(stamp *Stamp)

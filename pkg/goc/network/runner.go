@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-func JoinCluster(nodes []string) []*Node {
+func JoinCluster(nodes ...string) []*Node {
 	//start all nodes that can listen on this host
 	instances := make([]*Node, 0)
 	for _, node := range nodes {

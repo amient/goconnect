@@ -28,8 +28,9 @@ import (
 
 type Stream struct {
 	Type           reflect.Type
-	fn             Fn
-	up             *Stream
+	Fn             Fn
+	Id             int
+	Up             *Stream
 	pipeline       *Pipeline
 	stage          int
 	output         chan *Element
@@ -177,7 +178,7 @@ func (stream *Stream) pendingAck(element *Element) {
 
 func (stream *Stream) ack(s *Stamp) {
 	if stream.isPassthrough {
-		stream.up.ack(s)
+		stream.Up.ack(s)
 	} else {
 		stream.acks <- s
 	}
@@ -186,7 +187,7 @@ func (stream *Stream) ack(s *Stamp) {
 func (stream *Stream) close() {
 	if ! stream.closed {
 		stream.log("STAGE[%d] Closed %v", stream.stage, stream.Type)
-		if fn, ok := stream.fn.(io.Closer); ok {
+		if fn, ok := stream.Fn.(io.Closer); ok {
 			if err := fn.Close(); err != nil {
 				panic(err)
 			}
@@ -199,11 +200,11 @@ func (stream *Stream) initialize(stage int) {
 	stream.stage = stage
 	var commitable Commitable
 	var isCommitable bool
-	if stream.fn == nil {
+	if stream.Fn == nil {
 		stream.isPassthrough = true
 	} else {
-		_, stream.isPassthrough = stream.fn.(MapFn)
-		commitable, isCommitable = stream.fn.(Commitable)
+		_, stream.isPassthrough = stream.Fn.(MapFn)
+		commitable, isCommitable = stream.Fn.(Commitable)
 	}
 
 	if stream.isPassthrough {
@@ -313,7 +314,7 @@ func (stream *Stream) initialize(stage int) {
 				if stamp.Hi > stream.highestAcked {
 					stream.highestAcked = stamp.Hi
 				}
-				//this doesn't have to block because it doesn't create any memory build-up, if anything it frees memory
+				//this doesn't have to block because it doesn't create any memory build-Up, if anything it frees memory
 				for u := stamp.Lo; u <= stamp.Hi; u ++ {
 					if c, ok := pendingCheckpoints[u]; ok {
 						c.acked = true
@@ -323,8 +324,8 @@ func (stream *Stream) initialize(stage int) {
 				resolveAcks()
 
 				//stream.log("STAGE[%d] ACK(%d) Pending: %v Checkpoints: %v\n", stream.stage, stamp, pending.String(), pendingCheckpoints)
-				if stream.up != nil {
-					stream.up.ack(stamp)
+				if stream.Up != nil {
+					stream.Up.ack(stamp)
 				}
 
 			case e := <-pendingSuspendable:

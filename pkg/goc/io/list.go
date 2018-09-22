@@ -21,8 +21,6 @@ package io
 
 import (
 	"github.com/amient/goconnect/pkg/goc"
-	"log"
-	"math/rand"
 	"reflect"
 )
 
@@ -40,20 +38,10 @@ func RoundRobin(n int, list interface{}) *iterable {
 	}
 }
 
-func RandomOf(n int, list interface{}) goc.RootFn {
-	//TODO validate array or slice
-	return &randomOf{
-		n:   n,
-		val: reflect.ValueOf(list),
-		typ: reflect.TypeOf(list),
-	}
-}
-
 type iterable struct {
-	offset int
-	n      int
-	val    reflect.Value
-	typ    reflect.Type
+	n   int
+	val reflect.Value
+	typ reflect.Type
 }
 
 func (it *iterable) OutType() reflect.Type {
@@ -79,44 +67,5 @@ func (it *iterable) Do(context *goc.Context) {
 			i := l % limit
 			context.Emit2(it.val.Index(i).Interface(), goc.Checkpoint{Data: l})
 		}
-	}
-}
-
-func (it *iterable) Commit(checkpoint map[int]interface{}) error {
-	log.Println("DEBUG ITERABLE COMMIT UP TO", checkpoint[0])
-	it.offset = checkpoint[0].(int)
-	return nil
-}
-
-type randomOf struct {
-	n   int
-	val reflect.Value
-	typ reflect.Type
-}
-
-func (it *randomOf) OutType() reflect.Type {
-	return it.typ.Elem()
-}
-
-func (it *randomOf) Run(output chan *goc.Element) {
-	size := it.val.Len()
-	for l := 0; l < it.n; l++ {
-		i := rand.Int() % size
-		output <- &goc.Element{
-			Checkpoint: goc.Checkpoint{Data: i},
-			Value:      it.val.Index(i).Interface(),
-		}
-	}
-	close(output)
-}
-
-func (it *randomOf) Do(context *goc.Context) {
-	size := it.val.Len()
-	for l := 0; l < it.n; l++ {
-		i := rand.Int() % size
-		context.Emit(&goc.Element{
-			Checkpoint: goc.Checkpoint{Data: i},
-			Value:      it.val.Index(i).Interface(),
-		})
 	}
 }

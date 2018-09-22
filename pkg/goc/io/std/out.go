@@ -35,6 +35,7 @@ func StdOutSink() goc.ForEachFn {
 		closed: make(chan error, 1),
 		stdout: bufio.NewWriter(os.Stdout),
 	}
+	//FIXME this type of initialization has to happen during materialization not initialization
 	ticker := time.NewTicker(300 * time.Millisecond).C
 	go func() {
 		for {
