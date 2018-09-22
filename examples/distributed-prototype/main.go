@@ -14,9 +14,9 @@ func main() {
 
 	//pipeline := goc.NewPipeline(coder.Registry())
 	//messages := pipeline.Root(io.From([]string{"aaa", "bbb", "ccc"}))
-	//distributed := messages.Apply(new(NetRoundRobin))
-	//transformed := distributed.Apply(new(UpperCase))
-	//merged := transformed.Apply(new(NetMergeOrdered))
+	//distributed := messages.Apply(new(network.NetRoundRobin))
+	//transformed := distributed.Apply(func(input string) string { return strings.ToUpper(input) })
+	//merged := transformed.Apply(new(network.NetMergeOrdered))
 	//merged.Apply(std.StdOutSink())
 
 	nodes := network.JoinCluster([]string{"127.0.0.1:19001", "127.0.0.1:19002"})

@@ -56,8 +56,21 @@ func (stream *Stream) Apply(f Fn) *Stream {
 		return stream.pipeline.Map(stream, fn)
 	case FlatMapFn:
 		return stream.pipeline.FlatMap(stream, fn)
+	//case TransformFn:
+	//
 	default:
-		if reflect.TypeOf(f).Kind() != reflect.Interface {
+		t := reflect.TypeOf(fn)
+		if t.Kind() == reflect.Func && t.NumIn() == 1 && t.NumOut() == 1 {
+			//simple mapper function
+			//inType := t.In(0)
+			v := reflect.ValueOf(fn)
+			return stream.pipeline.elementWise(stream, t.Out(0), nil, func(input *Element, output chan *Element) {
+				output <- &Element{
+					Stamp: input.Stamp,
+					Value: v.Call([]reflect.Value{reflect.ValueOf(input.Value)})[0].Interface(),
+				}
+			})
+		} else {
 			panic(fmt.Errorf("only on of the interfaces defined in goc/fn.go  can be applied"))
 		}
 
@@ -342,7 +355,6 @@ func (stream *Stream) initialize(stage int) {
 			}
 			maybeTerminate()
 		}
-
 
 		for !terminated {
 			select {

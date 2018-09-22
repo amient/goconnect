@@ -32,7 +32,7 @@ type RootFn interface {
 type TransformFn interface {
 	InType() reflect.Type
 	OutType() reflect.Type
-	Run(<-chan *Element, *Context)
+	Run(<-chan *Element, *Context) //deprecated
 }
 
 type ElementWiseFn interface {
@@ -55,7 +55,7 @@ type ForEachFn interface {
 type FlatMapFn interface {
 	InType() reflect.Type
 	OutType() reflect.Type
-	Process(input *Element) []*Element
+	Process(input *Element) []*Element //deprecated
 }
 
 type GroupFn interface {
