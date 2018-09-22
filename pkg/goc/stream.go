@@ -47,64 +47,7 @@ type Stream struct {
 }
 
 func (stream *Stream) Apply(f Fn) *Stream {
-	switch fn := f.(type) {
-	case GroupFn:
-		return stream.pipeline.Group(stream, fn)
-	case ForEachFn:
-		return stream.pipeline.ForEach(stream, fn)
-	case MapFn:
-		return stream.pipeline.Map(stream, fn)
-	case FlatMapFn:
-		return stream.pipeline.FlatMap(stream, fn)
-	//case TransformFn:
-	//
-	default:
-		t := reflect.TypeOf(fn)
-		if t.Kind() == reflect.Func && t.NumIn() == 1 && t.NumOut() == 1 {
-			//simple mapper function
-			//inType := t.In(0)
-			v := reflect.ValueOf(fn)
-			return stream.pipeline.elementWise(stream, t.Out(0), nil, func(input *Element, output chan *Element) {
-				output <- &Element{
-					Stamp: input.Stamp,
-					Value: v.Call([]reflect.Value{reflect.ValueOf(input.Value)})[0].Interface(),
-				}
-			})
-		} else {
-			panic(fmt.Errorf("only on of the interfaces defined in goc/fn.go  can be applied"))
-		}
-
-		panic(fmt.Errorf("reflective transforms need: a) stream.Group to have guaranteees and b) perf-tested, %v", reflect.TypeOf(f)))
-		//if method, exists := reflect.TypeOf(f).MethodByName("process"); !exists {
-		//	panic(fmt.Errorf("transform must provide process method"))
-		//} else {
-		//	v := reflect.ValueOf(f)
-		//	args := make([]reflect.Type, method.Type.NumIn()-1)
-		//	for i := 1; i < method.Type.NumIn(); i++ {
-		//		args[i-1] = method.Type.In(i)
-		//	}
-		//	ret := make([]reflect.Type, method.Type.NumOut())
-		//	for i := 0; i < method.Type.NumOut(); i++ {
-		//		ret[i] = method.Type.Out(i)
-		//	}
-		//	fn := reflect.MakeFunc(reflect.FuncOf(args, ret, false), func(args []reflect.Data) (results []reflect.Data) {
-		//		methodArgs := append([]reflect.Data{v}, args...)
-		//		return method.Func.Call(methodArgs)
-		//	})
-		//
-		//	var output *Stream
-		//	if len(ret) > 1 {
-		//		panic(fmt.Errorf("transform must have 0 or 1 return value"))
-		//	} else if len(ret) == 0 {
-		//		output = stream.Group(fn)
-		//	} else {
-		//		output = stream.Map(fn.Interface())
-		//	}
-		//	output.fn = f
-		//	return output
-		//}
-
-	}
+	return stream.pipeline.Apply(stream, f)
 }
 
 func (stream *Stream) Map(f interface{}) *Stream {

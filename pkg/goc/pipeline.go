@@ -31,14 +31,14 @@ import (
 )
 
 type Pipeline struct {
-	streams []*Stream
+	Streams []*Stream
 	stamp   uint64
 	coders  []MapFn
 }
 
 func NewPipeline(coders []MapFn) *Pipeline {
 	return &Pipeline{
-		streams: []*Stream{},
+		Streams: []*Stream{},
 		coders:  coders,
 	}
 }
@@ -50,6 +50,14 @@ func (p *Pipeline) Root(source RootFn) *Stream {
 		runner: source.Run,
 	})
 }
+
+func (p *Pipeline) Transform(that *Stream, fn TransformFn) *Stream {
+	if !that.Type.AssignableTo(fn.InType()) {
+		return p.Transform(p.injectCoder(that, fn.InType()), fn)
+	}
+	return p.transform(that, fn.OutType(), fn , fn.Run)
+}
+
 
 func (p *Pipeline) FlatMap(that *Stream, fn FlatMapFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
@@ -95,6 +103,18 @@ func (p *Pipeline) Group(that *Stream, fn GroupFn) *Stream {
 	})
 }
 
+func (p *Pipeline) transform(up *Stream, out reflect.Type, fn Fn, run func(input <- chan *Element, context *Context)) *Stream {
+	return p.register(&Stream{
+		Type: out,
+		fn:   fn,
+		up:   up,
+		runner: func(output chan *Element) {
+			defer close(output)
+			//TODO maybe
+		},
+	})
+}
+
 func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(input *Element, output chan *Element)) *Stream {
 	return p.register(&Stream{
 		Type: out,
@@ -136,9 +156,9 @@ func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(inp
 
 func (p *Pipeline) Run() {
 
-	log.Printf("Materializing Pipeline of %d stages\n", len(p.streams))
+	log.Printf("Materializing Pipeline of %d stages\n", len(p.Streams))
 
-	source := p.streams[0]
+	source := p.Streams[0]
 
 	var start = time.Now()
 	stopwatch := func() {
@@ -146,7 +166,7 @@ func (p *Pipeline) Run() {
 	}
 	defer stopwatch()
 
-	for s, stream := range p.streams {
+	for s, stream := range p.Streams {
 		stream.initialize(s + 1)
 
 		intercept := make(chan *Element, 1)
@@ -192,8 +212,8 @@ func (p *Pipeline) Run() {
 				source.terminate <- true
 			}
 		case <-source.completed:
-			for i := len(p.streams) - 1; i >= 0; i-- {
-				p.streams[i].close()
+			for i := len(p.Streams) - 1; i >= 0; i-- {
+				p.Streams[i].close()
 			}
 			return
 		}
@@ -203,7 +223,7 @@ func (p *Pipeline) Run() {
 
 func (p *Pipeline) register(stream *Stream) *Stream {
 	stream.pipeline = p
-	p.streams = append(p.streams, stream)
+	p.Streams = append(p.Streams, stream)
 	return stream
 }
 
@@ -236,4 +256,66 @@ func (p *Pipeline) injectCoder(that *Stream, to reflect.Type) *Stream {
 		that = that.Apply(mapper)
 	}
 	return that
+}
+
+func (p *Pipeline) Apply(stream *Stream, f Fn) *Stream {
+	switch fn := f.(type) {
+	case GroupFn:
+		return p.Group(stream, fn)
+	case ForEachFn:
+		return p.ForEach(stream, fn)
+	case MapFn:
+		return p.Map(stream, fn)
+	case FlatMapFn:
+		return p.FlatMap(stream, fn)
+	case TransformFn:
+		return p.Transform(stream ,fn)
+	default:
+		t := reflect.TypeOf(fn)
+		if t.Kind() == reflect.Func && t.NumIn() == 1 && t.NumOut() == 1 {
+			//simple mapper function
+			//inType := t.In(0)
+			v := reflect.ValueOf(fn)
+			return p.elementWise(stream, t.Out(0), nil, func(input *Element, output chan *Element) {
+				output <- &Element{
+					Stamp: input.Stamp,
+					Value: v.Call([]reflect.Value{reflect.ValueOf(input.Value)})[0].Interface(),
+				}
+			})
+		} else {
+			panic(fmt.Errorf("only on of the interfaces defined in goc/fn.go  can be applied"))
+		}
+
+		panic(fmt.Errorf("reflective transforms need: a) stream.Group to have guaranteees and b) perf-tested, %v", reflect.TypeOf(f)))
+		//if method, exists := reflect.TypeOf(f).MethodByName("process"); !exists {
+		//	panic(fmt.Errorf("transform must provide process method"))
+		//} else {
+		//	v := reflect.ValueOf(f)
+		//	args := make([]reflect.Type, method.Type.NumIn()-1)
+		//	for i := 1; i < method.Type.NumIn(); i++ {
+		//		args[i-1] = method.Type.In(i)
+		//	}
+		//	ret := make([]reflect.Type, method.Type.NumOut())
+		//	for i := 0; i < method.Type.NumOut(); i++ {
+		//		ret[i] = method.Type.Out(i)
+		//	}
+		//	fn := reflect.MakeFunc(reflect.FuncOf(args, ret, false), func(args []reflect.Data) (results []reflect.Data) {
+		//		methodArgs := append([]reflect.Data{v}, args...)
+		//		return method.Func.Call(methodArgs)
+		//	})
+		//
+		//	var output *Stream
+		//	if len(ret) > 1 {
+		//		panic(fmt.Errorf("transform must have 0 or 1 return value"))
+		//	} else if len(ret) == 0 {
+		//		output = stream.Group(fn)
+		//	} else {
+		//		output = stream.Map(fn.Interface())
+		//	}
+		//	output.fn = f
+		//	return output
+		//}
+
+	}
+
 }

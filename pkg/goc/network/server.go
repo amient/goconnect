@@ -24,9 +24,9 @@ func NewServer(addr string) *Server {
 }
 
 type Server struct {
-	Rand      int64
-	NodeId    uint16
+	ID        uint16
 	Addr      net.Addr
+	Rand      int64
 	Assigned  chan bool
 	ln        *net.TCPListener
 	addr      string
@@ -141,8 +141,8 @@ func (h *TCPReceiver) handle(duplex *Duplex, conn net.Conn) {
 			rand := int64(duplex.readUInt64())
 			if rand == h.server.Rand {
 				log.Printf("Assignment: Node ID %d is listening on %v", id, conn.LocalAddr().String())
-				if h.server.NodeId != id {
-					h.server.NodeId = id
+				if h.server.ID != id {
+					h.server.ID = id
 					h.server.Assigned <- true
 				}
 			}
