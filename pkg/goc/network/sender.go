@@ -6,15 +6,15 @@ import (
 	"net"
 )
 
-func NewSender(addr string, handlerId uint16) *Sender {
-	return &Sender{
+func newSender(addr string, handlerId uint16) *TCPSender {
+	return &TCPSender{
 		addr:      addr,
 		handlerId: handlerId,
 		stamps:    make(chan *goc.Stamp, 1),
 	}
 }
 
-type Sender struct {
+type TCPSender struct {
 	addr      string
 	handlerId uint16
 	conn      net.Conn
@@ -22,11 +22,11 @@ type Sender struct {
 	stamps    chan *goc.Stamp
 }
 
-func (sender *Sender) Up() <-chan *goc.Stamp {
+func (sender *TCPSender) Up() <-chan *goc.Stamp {
 	return sender.stamps
 }
 
-func (sender *Sender) SendDown(e *goc.Element) {
+func (sender *TCPSender) SendDown(e *goc.Element) {
 	sender.duplex.writeUInt16(2) //magic
 	sender.duplex.writeUInt64(uint64(e.Stamp.Unix))
 	sender.duplex.writeUInt64(e.Stamp.Lo)
@@ -39,12 +39,12 @@ func (sender *Sender) SendDown(e *goc.Element) {
 	sender.duplex.writer.Flush()
 }
 
-func (sender *Sender) Close() error {
+func (sender *TCPSender) Close() error {
 	close(sender.stamps)
 	return sender.duplex.Close()
 }
 
-func (sender *Sender) Start() error {
+func (sender *TCPSender) Start() error {
 	var err error
 	if sender.conn, err = net.Dial("tcp", sender.addr); err != nil {
 		return err
@@ -77,7 +77,7 @@ func (sender *Sender) Start() error {
 	}()
 	return nil
 }
-func (sender *Sender) SendNodeIdentify(nodeId int, receiver *Server) {
+func (sender *TCPSender) SendNodeIdentify(nodeId int, receiver *Server) {
 	sender.duplex.writeUInt16(1) //magic
 	sender.duplex.writeUInt16(uint16(nodeId))
 	sender.duplex.writeUInt64(uint64(receiver.Rand))

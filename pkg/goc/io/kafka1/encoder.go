@@ -24,21 +24,17 @@ import (
 	"reflect"
 )
 
-func NilKeyEncoder() goc.MapFn {
-	return &encoder{}
-}
+type NilKeyEncoder struct{}
 
-type encoder struct{}
-
-func (d *encoder) InType() reflect.Type {
+func (d *NilKeyEncoder) InType() reflect.Type {
 	return goc.ByteArrayType
 }
 
-func (d *encoder) OutType() reflect.Type {
+func (d *NilKeyEncoder) OutType() reflect.Type {
 	return reflect.TypeOf(goc.KVBytes{})
 }
 
-func (d *encoder) Process(input *goc.Element) *goc.Element {
+func (d *NilKeyEncoder) Process(input *goc.Element) *goc.Element {
 	return &goc.Element{Value: goc.KVBytes{
 		Key:   nil,
 		Value: input.Value.([]byte),

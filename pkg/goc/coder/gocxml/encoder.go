@@ -26,21 +26,17 @@ import (
 	"reflect"
 )
 
-func Encoder() goc.MapFn {
-	return &bytesEncoder{}
-}
+type Encoder struct{}
 
-type bytesEncoder struct{}
-
-func (d *bytesEncoder) InType() reflect.Type {
+func (d *Encoder) InType() reflect.Type {
 	return NodeType
 }
 
-func (d *bytesEncoder) OutType() reflect.Type {
+func (d *Encoder) OutType() reflect.Type {
 	return goc.ByteArrayType
 }
 
-func (d *bytesEncoder) Process(input *goc.Element) *goc.Element {
+func (d *Encoder) Process(input *goc.Element) *goc.Element {
 	var b bytes.Buffer
 	w := bufio.NewWriter(&b)
 	_, err := WriteNode(w, input.Value.(Node))

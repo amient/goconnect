@@ -24,18 +24,13 @@ func NewNode(addr string, nodes []string) (*Node, error) {
 	}
 }
 
-//TODO get rid of Initialize by adding all required methods to Context
-type Initialize interface {
-	Initialize(*Node)
-}
-
 type Node struct {
 	server     *Server
 	nodes      []string
 	graph      []*Edge
 	receiverId int32
-	autoi      uint64
 }
+
 
 type Edge struct {
 	src     <-chan *goc.Element
@@ -43,38 +38,26 @@ type Edge struct {
 	context *goc.Context
 }
 
-func (node *Node) GetNodeID() uint16 {
-	return node.server.NodeId
-}
-
-func (node *Node) NumPeers() uint16 {
-	return uint16(len(node.nodes))
-}
-
 func (node *Node) GetPeers() []string {
 	return node.nodes
 }
 
-func (node *Node) GetPeer(nodeId uint16) string {
-	return node.nodes[nodeId-1]
+func (node *Node) GetReceiver(handlerId uint16) goc.Receiver {
+	return node.server.NewReceiver(handlerId)
 }
 
-func (node *Node) allocateNewReceiverID() uint16 {
-	return uint16(atomic.AddInt32(&node.receiverId, 1))
-}
-
-func (node *Node) GetReceiver(info string) *Receiver {
-	return node.server.NewReceiver(uint16(node.receiverId), info)
-}
-
-func (node *Node) GetAllocatedReceiverID() uint16 {
-	return uint16(node.receiverId)
+func (node *Node) NewSender(addr string, handlerId uint16) goc.Sender {
+	sender := newSender(addr, handlerId)
+	if err := sender.Start(); err != nil {
+		panic(err)
+	}
+	return sender
 }
 
 func (node *Node) Join(nodes []string) {
 	for nodeId := 0; nodeId < len(nodes); {
 		addr := nodes[nodeId]
-		s := NewSender(addr, 0)
+		s := newSender(addr, 0)
 		if err := s.Start(); err != nil {
 			time.Sleep(time.Second)
 			log.Printf("Waiting for node at %v stage join the cluster..", addr)
@@ -88,16 +71,13 @@ func (node *Node) Join(nodes []string) {
 
 func (node *Node) Apply(up *goc.Collection, stage goc.Fn) *goc.Collection {
 
-	context := goc.NewContext(node.GetNodeID())
+	context := goc.NewContext(node.server.NodeId, node, uint16(atomic.AddInt32(&node.receiverId, 1)))
 	var upstream <-chan *goc.Element
 	if up != nil {
 		upstream = up.Elements()
 	}
 	node.graph = append(node.graph, &Edge{upstream, &stage, context})
-	node.allocateNewReceiverID()
-	if s, is := stage.(Initialize); is {
-		s.Initialize(node)
-	}
+
 	return goc.NewCollection(context)
 }
 
@@ -111,8 +91,6 @@ func (node *Node) Run() {
 			switch stage := stage.(type) {
 			case goc.RootFn:
 				stage.Do(c)
-			case goc.NetworkFn:
-				stage.Run(edge.src, c)
 			case goc.TransformFn:
 				stage.Run(edge.src, c)
 			case goc.ElementWiseFn:

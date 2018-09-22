@@ -17,9 +17,9 @@ func NewServer(addr string) *Server {
 		addr:      addr,
 		Assigned:  make(chan bool, 1),
 		quit:      make(chan bool, 1),
-		receivers: make(map[uint16]*Receiver),
+		receivers: make(map[uint16]*TCPReceiver),
 	}
-	recv.NewReceiver(0, "default") //default Receiver for node discovery
+	recv.NewReceiver(0) //default TCPReceiver for node discovery
 	return &recv
 }
 
@@ -31,7 +31,7 @@ type Server struct {
 	ln        *net.TCPListener
 	addr      string
 	quit      chan bool
-	receivers map[uint16]*Receiver
+	receivers map[uint16]*TCPReceiver
 	lock      sync.Mutex
 }
 
@@ -69,7 +69,7 @@ func (server *Server) Start() error {
 						handlerId := duplex.readUInt16()
 						server.lock.Lock()
 						if receiver, exists := server.receivers[handlerId]; !exists {
-							panic(fmt.Errorf("ERROR[%v/%d] Receiver not registered", server.addr, handlerId))
+							panic(fmt.Errorf("ERROR[%v] TCPReceiver not registered %d", server.addr, handlerId))
 						} else {
 							//reply that the channel has been setup
 							duplex.writeUInt16(handlerId)
@@ -84,30 +84,34 @@ func (server *Server) Start() error {
 	}
 	return nil
 }
-func (server *Server) NewReceiver(handlerId uint16, info string) *Receiver {
+func (server *Server) NewReceiver(handlerId uint16) *TCPReceiver {
 	server.lock.Lock()
 	defer server.lock.Unlock()
-	server.receivers[handlerId] = &Receiver{
-		ID:     handlerId,
+	server.receivers[handlerId] = &TCPReceiver{
+		id:     handlerId,
 		server: server,
 		down:   make(chan *goc.Element, 100), //TODO the capacity should be the number of nodes
 	}
 	if handlerId > 0 {
-		//log.Printf("REGISTER[%v/%d] %s", server.addr, handlerId, info)
+		log.Printf("REGISTER[%v] %d", server.addr, handlerId)
 	}
 	return server.receivers[handlerId]
 
 }
 
-type Receiver struct {
-	ID       uint16
+type TCPReceiver struct {
+	id       uint16
 	server   *Server
 	down     chan *goc.Element
 	refCount int32
 	//duplex *Duplex
 }
 
-//func (h *Receiver) SendUp(stamp *goc.Stamp) error {
+func (h *TCPReceiver) ID() uint16 {
+	return h.id
+}
+
+//func (h *TCPReceiver) SendUp(stamp *goc.Stamp) error {
 //	h.duplex.writeUInt16(1) //magic
 //	h.duplex.writeUInt64(uint64(stamp.Unix))
 //	h.duplex.writeUInt64(stamp.Lo)
@@ -115,10 +119,10 @@ type Receiver struct {
 //	return h.duplex.writer.Flush()
 //}
 
-func (h *Receiver) handle(duplex *Duplex, conn net.Conn) {
+func (h *TCPReceiver) handle(duplex *Duplex, conn net.Conn) {
 	//refCount :=
 	atomic.AddInt32(&h.refCount, 1)
-	if h.ID > 0 {
+	if h.id > 0 {
 		//log.Printf("OPEN[%v/%d] refCount=%d", h.server.addr, h.ID, refCount)
 		defer h.Close()
 	}
@@ -127,7 +131,8 @@ func (h *Receiver) handle(duplex *Duplex, conn net.Conn) {
 	defer conn.Close()
 	for {
 		//log.Printf("NEXT[%v/%d]", h.server.addr, h.NodeID)
-		switch duplex.readUInt16() {
+		magic := duplex.readUInt16()
+		switch magic {
 		case 0: //eof
 			//log.Printf("EOF[%v/%d]", h.server.addr, h.NodeID)
 			return
@@ -165,24 +170,25 @@ func (h *Receiver) handle(duplex *Duplex, conn net.Conn) {
 			}
 			//log.Printf("RECEIVED[%v/%d] %v element: %v", h.server.addr, h.NodeID, stamp, value)
 		default:
-			panic("unknown magic byte")
+			panic(fmt.Errorf("unknown magic byte %d", magic))
 		}
 	}
 
 }
 
-func (h *Receiver) Down() <-chan *goc.Element {
+func (h *TCPReceiver) Down() <-chan *goc.Element {
 	if h.down == nil {
 		panic("output channel not initialized")
 	}
 	return h.down
 }
 
-func (h *Receiver) Close() {
+func (h *TCPReceiver) Close() error {
 	refCount := atomic.AddInt32(&h.refCount, -1)
 	//log.Printf("CLOSE[%v/%d] refCount=%d", h.server.addr, h.ID, refCount)
 	if refCount == 0 {
-		delete(h.server.receivers, h.ID)
+		delete(h.server.receivers, h.id)
 		close(h.down)
 	}
+	return nil
 }

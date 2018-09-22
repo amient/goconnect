@@ -25,21 +25,18 @@ import (
 	"reflect"
 )
 
-func Decoder() goc.MapFn {
-	return &bytesDecoder{}
-}
 
-type bytesDecoder struct{}
+type Decoder struct{}
 
-func (d *bytesDecoder) InType() reflect.Type {
+func (d *Decoder) InType() reflect.Type {
 	return goc.ByteArrayType
 }
 
-func (d *bytesDecoder) OutType() reflect.Type {
+func (d *Decoder) OutType() reflect.Type {
 	return NodeType
 }
 
-func (d *bytesDecoder) Process(input *goc.Element) *goc.Element {
+func (d *Decoder) Process(input *goc.Element) *goc.Element {
 	if node, err := ReadNode(bytes.NewReader(input.Value.([]byte))); err != nil {
 		panic(err)
 	} else {

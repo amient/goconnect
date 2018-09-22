@@ -1,40 +1,41 @@
 package network
 
-import "github.com/amient/goconnect/pkg/goc"
+import (
+	"github.com/amient/goconnect/pkg/goc"
+	"reflect"
+)
 
-type NetRoundRobin struct {
-	send     []*Sender
-	recv     *Receiver
+type NetRoundRobin struct {}
+
+func (n *NetRoundRobin) InType() reflect.Type {
+	return goc.ByteArrayType
 }
 
-func (n *NetRoundRobin) Initialize(node *Node) {
-	n.recv = node.GetReceiver("round-robin")
-	n.send = make([]*Sender, node.NumPeers())
-	for i, addr := range node.GetPeers() {
-		n.send[i] = NewSender(addr, n.recv.ID)
-	}
-	for _, s := range n.send {
-		if err := s.Start(); err != nil {
-			panic(err)
-		}
-	}
+func (n *NetRoundRobin) OutType() reflect.Type {
+	return goc.ByteArrayType
 }
 
 func (n *NetRoundRobin) Run(input <-chan *goc.Element, context *goc.Context) {
+	recv := context.GetReceiver()
+	peers := context.GetPeers()
+	send := make([]goc.Sender, len(peers))
+	for i, addr := range peers {
+		send[i] = context.GetSender(addr)
+	}
 	go func() {
 		i := 0
 		for e := range input {
-			n.send[i].SendDown(e)
-			if i += 1; i >= len(n.send) {
+			send[i].SendDown(e)
+			if i += 1; i >= len(send) {
 				i = 0
 			}
 		}
-		for _, s := range n.send {
+		for _, s := range send {
 			s.Close()
 		}
 	}()
 
-	for e := range n.recv.Down() {
+	for e := range recv.Down() {
 		context.Emit(e)
 	}
 }

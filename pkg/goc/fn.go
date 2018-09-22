@@ -29,11 +29,6 @@ type RootFn interface {
 	Do(*Context)
 }
 
-type NetworkFn interface {
-	//in and out types are always []byte
-	Run(<-chan *Element, *Context)
-}
-
 type TransformFn interface {
 	InType() reflect.Type
 	OutType() reflect.Type

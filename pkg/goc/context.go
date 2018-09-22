@@ -6,21 +6,53 @@ import (
 	"time"
 )
 
+type Receiver interface {
+	Down() <- chan *Element
+	//Close() error
+}
 
-func NewContext(nodeId uint16) *Context {
+type Sender interface {
+	SendDown(element *Element)
+	Close() error
+}
+
+type Connector interface{
+	GetReceiver(handlerId uint16) Receiver
+	GetPeers() []string
+	NewSender(addr string, handlerId uint16) Sender
+}
+
+func NewContext(nodeId uint16, connector Connector, handlerId uint16) *Context {
 	return &Context{
-		NodeID: nodeId,
-		emits:  make(chan *Element, 1),
-		acks:   make(chan *Stamp, 1), //TODO configurable/adaptible
+		NodeID:    nodeId,
+		handlerId: handlerId,
+		connector: connector,
+		emits:     make(chan *Element, 1),
+		acks:      make(chan *Stamp, 1), //TODO configurable/adaptible
 	}
 }
 
 type Context struct {
-	NodeID uint16
-	emits  chan *Element
-	acks   chan *Stamp
-	autoi  uint64
+	NodeID    uint16
+	handlerId uint16
+	connector Connector
+	emits     chan *Element
+	acks      chan *Stamp
+	autoi     uint64
 }
+
+func (c *Context) GetReceiver() Receiver {
+	return c.connector.GetReceiver(c.handlerId)
+}
+
+func (c *Context) GetPeers() []string {
+	return c.connector.GetPeers()
+}
+
+func (c *Context) GetSender(addr string) Sender {
+	return c.connector.NewSender(addr, c.handlerId)
+}
+
 
 func (c *Context) Emit(element *Element) {
 	c.emits <- element
@@ -74,7 +106,6 @@ func (c *Context) Attach(acks chan *Stamp) <-chan *Element {
 			//acks <- stamp
 		}
 	}()
-
 
 	return stampedOutput
 }
