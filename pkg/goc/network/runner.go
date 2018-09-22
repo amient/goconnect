@@ -13,11 +13,20 @@ func Runner(pipeline *goc.Pipeline, addrs ...string) {
 
 	log.Println("Applying pipeline to all nodes")
 	for _, node := range nodes {
-		node.Deploy(pipeline)
+		node.Apply(pipeline)
 	}
 
-	RunLocal(nodes)
-	//FIXME this must terminate only when acks have been processed
+	log.Println("Running all nodes")
+	group := new(sync.WaitGroup)
+	for _, node := range nodes {
+		group.Add(1)
+		go func(node *Node) {
+			node.Run()
+			group.Done()
+		}(node)
+	}
+	group.Wait()
+
 
 }
 
@@ -47,16 +56,3 @@ func JoinCluster(nodes ...string) []*Node {
 	return instances
 }
 
-func RunLocal(nodes []*Node) {
-	//run
-	log.Println("Running all nodes")
-	group := new(sync.WaitGroup)
-	for _, node := range nodes {
-		group.Add(1)
-		go func(instance *Node) {
-			instance.Run()
-			group.Done()
-		}(node)
-	}
-	group.Wait()
-}

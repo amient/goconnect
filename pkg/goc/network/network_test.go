@@ -11,8 +11,8 @@ import (
 func TestNetworkTools(t *testing.T) {
 
 	server := NewServer("127.0.0.1:10000")
-	handler := server.NewReceiver(1, "test")
-	sender := NewSender("127.0.0.1:10000", handler.ID)
+	handler := server.NewReceiver(1)
+	sender := newSender("127.0.0.1:10000", handler.id)
 
 	server.Start()
 	sender.Start()

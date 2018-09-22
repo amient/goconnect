@@ -61,7 +61,7 @@ func (node *Node) Join(nodes []string) {
 	<-node.server.Assigned
 }
 
-func (node *Node) Deploy(pipeline *goc.Pipeline) {
+func (node *Node) Apply(pipeline *goc.Pipeline) {
 	node.graph = make([]*goc.Edge, len(pipeline.Streams))
 	log.Printf("Deploying pipline into node %d listening on %v", node.server.ID, node.server.addr)
 	for _, stream := range pipeline.Streams {
@@ -76,14 +76,8 @@ func (node *Node) Deploy(pipeline *goc.Pipeline) {
 	}
 }
 
-func (node *Node) Apply(source *goc.Collection, fn goc.Fn) *goc.Collection {
-	context := goc.NewContext(node.server.ID, node, uint16(atomic.AddInt32(&node.receiverId, 1)))
-	dest := goc.NewCollection(context)
-	node.graph = append(node.graph, &goc.Edge{context, source, fn, dest})
-	return dest
-}
-
 func (node *Node) Run() {
+	//FIXME this must terminate only when acks have been processed
 	stages := sync.WaitGroup{}
 	for _, e := range node.graph {
 		stages.Add(1)
