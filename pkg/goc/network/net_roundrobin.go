@@ -17,25 +17,19 @@ func (n *NetRoundRobin) OutType() reflect.Type {
 
 func (n *NetRoundRobin) Run(input <-chan *goc.Element, context *goc.Context) {
 	recv := context.GetReceiver()
-	peers := context.GetPeers()
-	send := make([]goc.Sender, len(peers))
-	for i, addr := range peers {
-		send[i] = context.GetSender(addr)
-	}
+	senders := context.GetSenders()
 	go func() {
 		i := 0
 		for e := range input {
-			send[i].SendDown(e)
-			if i += 1; i >= len(send) {
-				i = 0
-			}
+			senders[i].Send(e)
+			i = (i + 1) % len(senders)
 		}
-		for _, s := range send {
+		for _, s := range senders {
 			s.Close()
 		}
 	}()
 
-	for e := range recv.Down() {
+	for e := range recv.Elements() {
 		context.Emit(e)
 	}
 }

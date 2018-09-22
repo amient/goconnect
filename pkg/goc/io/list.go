@@ -61,7 +61,7 @@ func (it *iterable) Run(output chan *goc.Element) {
 }
 
 func (it *iterable) Do(context *goc.Context) {
-	if context.NodeID == 1 {
+	if context.GetNodeID() == 1 {
 		limit := it.val.Len()
 		for l := 0; l < it.n; l++ {
 			i := l % limit

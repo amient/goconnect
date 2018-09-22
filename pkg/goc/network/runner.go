@@ -9,16 +9,16 @@ import (
 
 func Runner(pipeline *goc.Pipeline, addrs ...string) {
 
-	nodes := JoinCluster(addrs...)
+	localNodes := JoinCluster(addrs...)
 
 	log.Println("Applying pipeline to all nodes")
-	for _, node := range nodes {
+	for _, node := range localNodes {
 		node.Apply(pipeline)
 	}
 
 	log.Println("Running all nodes")
 	group := new(sync.WaitGroup)
-	for _, node := range nodes {
+	for _, node := range localNodes {
 		group.Add(1)
 		go func(node *Node) {
 			node.Run()

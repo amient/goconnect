@@ -17,27 +17,25 @@ func (n *NetMergeOrdered) OutType() reflect.Type {
 }
 
 func (n *NetMergeOrdered) Run(input <-chan *goc.Element, context *goc.Context) {
-	peers := context.GetPeers()
-	LastNodeID := uint16(len(peers))
-	mergeOnThisNode := context.NodeID == LastNodeID
+
+	LastNode := context.GetNumPeers()
+	mergeOnThisNode := context.GetNodeID() == LastNode
 	var recv goc.Receiver
 	if mergeOnThisNode {
-		//log.Printf("merge send --FROM-- %v --TO-- %v", node.server.targetNode, targetNode)
 		recv = context.GetReceiver()
 	}
-	targetNode := peers[LastNodeID - 1]
-	send := context.GetSender(targetNode)
+	send := context.GetSender(LastNode)
 
 	go func() {
 		for e := range input {
-			send.SendDown(e)
+			send.Send(e)
 		}
 		send.Close()
 	}()
 
 	if mergeOnThisNode {
 		buf := goc.NewOrderedElementSet(10)
-		for e := range recv.Down() {
+		for e := range recv.Elements() {
 			buf.AddElement(e, context)
 		}
 	}

@@ -68,13 +68,14 @@ func (server *Server) Start() error {
 						duplex := NewDuplex(conn)
 						handlerId := duplex.readUInt16()
 						server.lock.Lock()
-						if receiver, exists := server.receivers[handlerId]; !exists {
+						receiver, exists := server.receivers[handlerId]
+						server.lock.Unlock()
+						if !exists {
 							panic(fmt.Errorf("ERROR[%v] TCPReceiver not registered %d", server.addr, handlerId))
 						} else {
 							//reply that the channel has been setup
 							duplex.writeUInt16(handlerId)
 							duplex.writer.Flush()
-							server.lock.Unlock()
 							go receiver.handle(duplex, conn)
 						}
 					}
@@ -154,12 +155,12 @@ func (h *TCPReceiver) handle(duplex *Duplex, conn net.Conn) {
 			hi := duplex.readUInt64()
 			numTraceSteps := duplex.readUInt16()
 			stamp := goc.Stamp{
-				Unix: unix,
-				Lo:   lo,
-				Hi:   hi,
+				Unix:  unix,
+				Lo:    lo,
+				Hi:    hi,
 				Trace: goc.NewTrace(numTraceSteps),
 			}
-			for i := uint16(0); i< numTraceSteps; i++ {
+			for i := uint16(0); i < numTraceSteps; i++ {
 				stamp.AddTrace(duplex.readUInt16())
 			}
 			//element value second
@@ -176,7 +177,7 @@ func (h *TCPReceiver) handle(duplex *Duplex, conn net.Conn) {
 
 }
 
-func (h *TCPReceiver) Down() <-chan *goc.Element {
+func (h *TCPReceiver) Elements() <-chan *goc.Element {
 	if h.down == nil {
 		panic("output channel not initialized")
 	}

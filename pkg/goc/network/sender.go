@@ -26,7 +26,7 @@ func (sender *TCPSender) Up() <-chan *goc.Stamp {
 	return sender.stamps
 }
 
-func (sender *TCPSender) SendDown(e *goc.Element) {
+func (sender *TCPSender) Send(e *goc.Element) {
 	sender.duplex.writeUInt16(2) //magic
 	sender.duplex.writeUInt64(uint64(e.Stamp.Unix))
 	sender.duplex.writeUInt64(e.Stamp.Lo)

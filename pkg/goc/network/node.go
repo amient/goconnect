@@ -30,15 +30,20 @@ type Node struct {
 	receiverId int32
 }
 
-func (node *Node) GetPeers() []string {
-	return node.nodes
+func (node *Node) GetNodeID() uint16 {
+	return node.server.ID
+}
+
+func (node *Node) GetNumPeers() uint16 {
+	return uint16(len(node.nodes))
 }
 
 func (node *Node) GetReceiver(handlerId uint16) goc.Receiver {
 	return node.server.NewReceiver(handlerId)
 }
 
-func (node *Node) NewSender(addr string, handlerId uint16) goc.Sender {
+func (node *Node) NewSender(targetNodeId uint16, handlerId uint16) goc.Sender {
+	addr := node.nodes[targetNodeId - 1]
 	sender := newSender(addr, handlerId)
 	if err := sender.Start(); err != nil {
 		panic(err)
@@ -65,7 +70,7 @@ func (node *Node) Apply(pipeline *goc.Pipeline) {
 	node.graph = make([]*goc.Edge, len(pipeline.Streams))
 	log.Printf("Deploying pipline into node %d listening on %v", node.server.ID, node.server.addr)
 	for _, stream := range pipeline.Streams {
-		context := goc.NewContext(node.server.ID, node, uint16(atomic.AddInt32(&node.receiverId, 1)))
+		context := goc.NewContext(node, uint16(atomic.AddInt32(&node.receiverId, 1)))
 		dest := goc.NewCollection(context)
 		node.graph[stream.Id] = &goc.Edge{Context: context, Fn: stream.Fn, Dest: dest}
 		if stream.Id > 0 {
@@ -78,28 +83,27 @@ func (node *Node) Apply(pipeline *goc.Pipeline) {
 
 func (node *Node) Run() {
 	//FIXME this must terminate only when acks have been processed
-	stages := sync.WaitGroup{}
+	w := sync.WaitGroup{}
 	for _, e := range node.graph {
-		stages.Add(1)
-		fn := e.Fn
-		go func(fn goc.Fn, source *goc.Collection, context *goc.Context) {
+		w.Add(1)
+		go func(fn goc.Fn, input <- chan *goc.Element, context *goc.Context) {
 			switch stage := fn.(type) {
 			case goc.Root:
 				stage.Do(context)
 			case goc.Transform:
-				stage.Run(source.Elements(), context)
+				stage.Run(input, context)
 			case goc.ForEach:
-				stage.Run(source.Elements(), context)
+				stage.Run(input, context)
 			case goc.ElementWiseFn:
-				for e := range source.Elements() {
+				for e := range input {
 					stage.Process(e, context)
 				}
 			case goc.ForEachFn:
-				for e := range source.Elements() {
+				for e := range input {
 					stage.Process(e)
 				}
 			case goc.MapFn:
-				for e := range source.Elements() {
+				for e := range input {
 					out := stage.Process(e)
 					out.Stamp = e.Stamp
 					out.Checkpoint = e.Checkpoint
@@ -110,7 +114,7 @@ func (node *Node) Run() {
 				if t.Kind() == reflect.Func && t.NumIn() == 1 && t.NumOut() == 1 {
 					//simple mapper function
 					v := reflect.ValueOf(stage)
-					for e := range source.Elements() {
+					for e := range input {
 						context.Emit(&goc.Element{
 							Stamp: e.Stamp,
 							Value: v.Call([]reflect.Value{reflect.ValueOf(e.Value)})[0].Interface(),
@@ -121,10 +125,10 @@ func (node *Node) Run() {
 				}
 			}
 			context.Close()
-			stages.Done()
-		}(fn, e.Source, e.Context)
+			w.Done()
+		}(e.Fn, e.Source.Elements(), e.Context)
 	}
-	stages.Wait()
+	w.Wait()
 	node.server.Close()
 
 }

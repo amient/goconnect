@@ -6,14 +6,17 @@ type Collection struct {
 }
 
 func (c *Collection) Elements() <-chan *Element {
-	return c.elements
+	if c == nil {
+		return nil
+	} else {
+		return c.elements
+	}
 }
 
 func NewCollection(context *Context) *Collection {
 	acks := make(chan *Stamp)
 	return &Collection{
-		elements: context.Attach(acks),
+		elements: context.Attach(),
 		acks:     acks,
 	}
 }
-

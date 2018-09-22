@@ -26,10 +26,10 @@ func TestNetworkTools(t *testing.T) {
 		Value: []byte("Hello World"),
 	}
 
-	sender.SendDown(&fixture)
+	sender.Send(&fixture)
 
 
-	received := <-handler.Down()
+	received := <-handler.Elements()
 	if (*received).Stamp.Lo != fixture.Stamp.Lo || (*received).Stamp.Hi != fixture.Stamp.Hi || reflect.DeepEqual((*received).Stamp.Trace, fixture.Stamp.Trace) {
 		log.Println(fixture.Stamp)
 		log.Println((*received).Stamp)
