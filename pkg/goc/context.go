@@ -85,6 +85,9 @@ func (c *Context) Close() {
 	close(c.emits)
 }
 func (c *Context) Attach() <-chan *Element {
+	if c == nil {
+		return nil
+	}
 
 	c.pending = make(chan *Element, 1000) //TODO this buffer is important so make it configurable but must be >= stream.cap
 

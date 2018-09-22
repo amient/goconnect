@@ -70,9 +70,8 @@ func (node *Node) Apply(pipeline *goc.Pipeline) {
 	node.graph = make([]*goc.Edge, len(pipeline.Streams))
 	log.Printf("Deploying pipline into node %d listening on %v", node.server.ID, node.server.addr)
 	for _, stream := range pipeline.Streams {
-		context := goc.NewContext(node, uint16(atomic.AddInt32(&node.receiverId, 1)))
-		dest := goc.NewCollection(context)
-		node.graph[stream.Id] = &goc.Edge{Context: context, Fn: stream.Fn, Dest: dest}
+		dest := goc.NewContext(node, uint16(atomic.AddInt32(&node.receiverId, 1)))
+		node.graph[stream.Id] = &goc.Edge{Fn: stream.Fn, Dest: dest}
 		if stream.Id > 0 {
 			//println(stream.Up.Id, "->", stream.Id )
 			node.graph[stream.Id].Source = node.graph[stream.Up.Id].Dest
@@ -126,7 +125,7 @@ func (node *Node) Run() {
 			}
 			context.Close()
 			w.Done()
-		}(e.Fn, e.Source.Elements(), e.Context)
+		}(e.Fn, e.Source.Attach(), e.Dest)
 	}
 	w.Wait()
 	node.server.Close()
