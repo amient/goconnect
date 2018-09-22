@@ -23,17 +23,24 @@ import "reflect"
 
 type Fn interface {}
 
-type RootFn interface {
+type Root interface {
 	OutType() reflect.Type
 	Run(output chan *Element) //deprecated
 	Do(*Context)
 }
 
-type TransformFn interface {
+type Transform interface {
 	InType() reflect.Type
 	OutType() reflect.Type
-	Run(<-chan *Element, *Context) //deprecated
+	Run(<-chan *Element, *Context)
 }
+
+type ForEach interface {
+	InType() reflect.Type
+	Run(<-chan *Element, *Context)
+}
+
+
 
 type ElementWiseFn interface {
 	InType() reflect.Type
@@ -49,7 +56,7 @@ type MapFn interface {
 
 type ForEachFn interface {
 	InType() reflect.Type
-	Process(input *Element)
+	Process(input *Element) //deprecated
 }
 
 type FlatMapFn interface {

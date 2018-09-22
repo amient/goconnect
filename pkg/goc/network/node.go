@@ -3,7 +3,6 @@ package network
 import (
 	"fmt"
 	"github.com/amient/goconnect/pkg/goc"
-	"io"
 	"log"
 	"reflect"
 	"sync"
@@ -91,9 +90,11 @@ func (node *Node) Run() {
 		fn := e.Fn
 		go func(fn goc.Fn, source *goc.Collection, context *goc.Context) {
 			switch stage := fn.(type) {
-			case goc.RootFn:
+			case goc.Root:
 				stage.Do(context)
-			case goc.TransformFn:
+			case goc.Transform:
+				stage.Run(source.Elements(), context)
+			case goc.ForEach:
 				stage.Run(source.Elements(), context)
 			case goc.ElementWiseFn:
 				for e := range source.Elements() {
@@ -118,15 +119,12 @@ func (node *Node) Run() {
 					for e := range source.Elements() {
 						context.Emit(&goc.Element{
 							Stamp: e.Stamp,
-							Value:  v.Call([]reflect.Value{reflect.ValueOf(e.Value)})[0].Interface(),
+							Value: v.Call([]reflect.Value{reflect.ValueOf(e.Value)})[0].Interface(),
 						})
 					}
 				} else {
 					panic(fmt.Errorf("Unsupported Stage Type %q", t))
 				}
-			}
-			if cl, is := fn.(io.Closer); is {
-				cl.Close()
 			}
 			context.Close()
 			stages.Done()

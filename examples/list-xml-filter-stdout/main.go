@@ -74,7 +74,7 @@ func main() {
 	})
 
 	//output the aggregation result by applying a general StdOutSink transform
-	filtered.Apply(new(customAggregator)).Apply(std.StdOutSink())
+	filtered.Apply(new(customAggregator)).Apply(new(std.Out))
 	//filtered.Apply(&kafka1.Sink{Bootstrap: "localhost:9092", Topic: "test"})
 
 	pipeline.Run()

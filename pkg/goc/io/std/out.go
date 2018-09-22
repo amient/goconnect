@@ -28,77 +28,111 @@ import (
 	"time"
 )
 
-func StdOutSink() goc.ForEachFn {
-	sink := stdOutSink{
-		buffer: make([]*goc.Element, 0, 100),
-		queue:  make(chan *goc.Element),
-		closed: make(chan error, 1),
-		stdout: bufio.NewWriter(os.Stdout),
+type Out struct {
+	queue  chan *goc.Element //deprecated
+	buffer []*goc.Element //deprecated
+	closed chan error //deprecated
+	stdout *bufio.Writer //deprecated
+}
+
+func (sink *Out) InType() reflect.Type {
+	return goc.AnyType
+}
+
+//deprecated
+func (sink *Out) Process(input *goc.Element) {
+	if sink.stdout == nil {
+		sink.buffer = make([]*goc.Element, 0, 100)
+		sink.queue = make(chan *goc.Element)
+		sink.closed =  make(chan error, 1)
+		sink.stdout = bufio.NewWriter(os.Stdout)
+		ticker := time.NewTicker(300 * time.Millisecond).C
+		go func() {
+			for {
+				select {
+				case <-ticker:
+					sink.buffer = sink.flush(sink.stdout, sink.buffer)
+				case e := <-sink.queue:
+					sink.buffer = append(sink.buffer, e)
+				case <-sink.closed:
+					sink.buffer = sink.flush(sink.stdout, sink.buffer)
+					sink.closed <- nil
+					return
+				}
+			}
+		}()
 	}
-	//FIXME this type of initialization has to happen during materialization not initialization
+	sink.process(sink.stdout, input.Value)
+	sink.queue <- input
+}
+
+
+func (sink *Out) Run(input <-chan *goc.Element, context *goc.Context) {
+	buffer := make([]*goc.Element, 0, 100)
+	queue :=  make(chan *goc.Element, 100)
+	closed := make(chan bool, 1)
 	ticker := time.NewTicker(300 * time.Millisecond).C
+	stdout := bufio.NewWriter(os.Stdout)
+
 	go func() {
 		for {
 			select {
 			case <-ticker:
-				sink.flush()
-			case e := <-sink.queue:
-				sink.buffer = append(sink.buffer, e)
-			case <-sink.closed:
-				sink.closed <- sink.flush()
+				buffer = sink.flush(stdout, buffer)
+			case e := <-queue:
+				buffer = append(buffer, e)
+			case <-closed:
+				buffer = sink.flush(stdout, buffer)
 				return
 			}
 		}
 	}()
-	return &sink
+
+	for element := range input {
+		sink.process(stdout, element.Value)
+		queue <- element
+	}
+
+	closed <- true
+
 }
 
-type stdOutSink struct {
-	queue  chan *goc.Element
-	buffer []*goc.Element
-	closed chan error
-	stdout *bufio.Writer
+//deprecated
+func (sink *Out) Close() error {
+	if sink.closed != nil {
+		sink.flush(sink.stdout, sink.buffer)
+		sink.closed <- nil
+		return <-sink.closed
+	}
+	return nil
 }
 
-func (sink *stdOutSink) InType() reflect.Type {
-	return goc.AnyType
-}
 
-func (sink *stdOutSink) Process(input *goc.Element) {
-	sink.process(input.Value)
-	sink.queue <- input
-}
-
-func (sink *stdOutSink) flush() error {
-	for _, e := range sink.buffer {
+func (sink *Out) flush(stdout *bufio.Writer, buffer []*goc.Element) []*goc.Element {
+	stdout.Flush()
+	for _, e := range buffer {
 		e.Ack()
 	}
-	sink.buffer = make([]*goc.Element, 0, 100)
-	return sink.stdout.Flush()
+	return make([]*goc.Element, 0, 100)
 }
 
-func (sink *stdOutSink) process(element interface{}) {
+func (sink *Out) process(stdout *bufio.Writer, element interface{}) {
 	switch e := element.(type) {
 	case []byte:
-		sink.stdout.Write(e)
+		stdout.Write(e)
 	case string:
-		sink.stdout.WriteString(e)
+		stdout.WriteString(e)
 	case goc.KV:
-		sink.process(e.Key)
-		sink.process(" -> ")
-		sink.process(e.Value)
+		sink.process(stdout, e.Key)
+		sink.process(stdout, " -> ")
+		sink.process(stdout, e.Value)
 	case goc.KVBytes:
-		sink.process(e.Key)
-		sink.process(" -> ")
-		sink.process(e.Value)
+		sink.process(stdout, e.Key)
+		sink.process(stdout, " -> ")
+		sink.process(stdout, e.Value)
 	default:
-		fmt.Fprint(sink.stdout, element)
+		fmt.Fprint(stdout, element)
 	}
-	sink.stdout.WriteByte('\n')
+	stdout.WriteByte('\n')
 }
 
-func (sink *stdOutSink) Close() error {
-	sink.flush()
-	sink.closed <- nil
-	return <-sink.closed
-}

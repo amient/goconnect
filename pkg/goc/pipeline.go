@@ -43,21 +43,13 @@ func NewPipeline(coders []MapFn) *Pipeline {
 	}
 }
 
-func (p *Pipeline) Root(source RootFn) *Stream {
+func (p *Pipeline) Root(source Root) *Stream {
 	return p.register(&Stream{
 		Type:   source.OutType(),
 		Fn:     source,
 		runner: source.Run,
 	})
 }
-
-func (p *Pipeline) Transform(that *Stream, fn TransformFn) *Stream {
-	if !that.Type.AssignableTo(fn.InType()) {
-		return p.Transform(p.injectCoder(that, fn.InType()), fn)
-	}
-	return p.transform(that, fn.OutType(), fn , fn.Run)
-}
-
 
 func (p *Pipeline) FlatMap(that *Stream, fn FlatMapFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
@@ -102,9 +94,9 @@ func (p *Pipeline) UserMap(that *Stream, fn interface{}) *Stream {
 
 }
 
-func (p *Pipeline) ForEach(that *Stream, fn ForEachFn) *Stream {
+func (p *Pipeline) ForEachFn(that *Stream, fn ForEachFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
-		return p.ForEach(p.injectCoder(that, fn.InType()), fn)
+		return p.ForEachFn(p.injectCoder(that, fn.InType()), fn)
 	}
 	return p.elementWise(that, ErrorType, fn, func(input *Element, output chan *Element) {
 		fn.Process(input)
@@ -120,17 +112,6 @@ func (p *Pipeline) Group(that *Stream, fn GroupFn) *Stream {
 	})
 }
 
-func (p *Pipeline) transform(up *Stream, out reflect.Type, fn Fn, run func(input <- chan *Element, context *Context)) *Stream {
-	return p.register(&Stream{
-		Type: out,
-		Fn:   fn,
-		Up:   up,
-		runner: func(output chan *Element) {
-			defer close(output)
-			//TODO maybe
-		},
-	})
-}
 
 func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(input *Element, output chan *Element)) *Stream {
 	return p.register(&Stream{
@@ -281,19 +262,17 @@ func (p *Pipeline) Apply(stream *Stream, f Fn) *Stream {
 	case GroupFn:
 		return p.Group(stream, fn)
 	case ForEachFn:
-		return p.ForEach(stream, fn)
+		return p.ForEachFn(stream, fn)
 	case MapFn:
 		return p.Map(stream, fn)
 	case FlatMapFn:
 		return p.FlatMap(stream, fn)
-	case TransformFn:
-		return p.Transform(stream ,fn)
 	default:
 		t := reflect.TypeOf(fn)
 		if t.Kind() == reflect.Func && t.NumIn() == 1 && t.NumOut() == 1 {
 			return p.UserMap(stream ,f)
 		} else {
-			panic(fmt.Errorf("only on of the interfaces defined in goc/Fn.go  can be applied"))
+			panic(fmt.Errorf("only on of the interfaces defined in goc/Fn.go can be applied"))
 		}
 
 		panic(fmt.Errorf("reflective transforms need: a) stream.Group to have guaranteees and b) perf-tested, %v", reflect.TypeOf(f)))
