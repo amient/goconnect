@@ -1,9 +1,25 @@
 package network
 
 import (
+	"github.com/amient/goconnect/pkg/goc"
 	"log"
 	"sync"
 )
+
+
+func Runner(pipeline *goc.Pipeline, addrs ...string) {
+
+	nodes := JoinCluster(addrs...)
+
+	log.Println("Applying pipeline to all nodes")
+	for _, node := range nodes {
+		node.Deploy(pipeline)
+	}
+
+	RunLocal(nodes)
+	//FIXME this must terminate only when acks have been processed
+
+}
 
 func JoinCluster(nodes ...string) []*Node {
 	//start all nodes that can listen on this host
@@ -33,7 +49,7 @@ func JoinCluster(nodes ...string) []*Node {
 
 func RunLocal(nodes []*Node) {
 	//run
-	log.Println("Running all instances")
+	log.Println("Running all nodes")
 	group := new(sync.WaitGroup)
 	for _, node := range nodes {
 		group.Add(1)

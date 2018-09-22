@@ -80,5 +80,3 @@ func main() {
 	pipeline.Run()
 
 }
-
-//TODO next step is adding networking-friendly checkpointer with pipeline options of optimistic or pessimistic one

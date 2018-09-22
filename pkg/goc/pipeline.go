@@ -51,6 +51,30 @@ func (p *Pipeline) Root(source Root) *Stream {
 	})
 }
 
+func (p *Pipeline) Transform(that *Stream, fn Transform) *Stream {
+	if !that.Type.AssignableTo(fn.InType()) {
+		return p.Transform(p.injectCoder(that, fn.InType()), fn)
+	}
+	return p.register(&Stream{
+		Up:     that,
+		Type:   fn.OutType(),
+		Fn:     fn,
+		runner: nil,
+	})
+}
+
+func (p *Pipeline) ForEach(that *Stream, fn ForEach) *Stream {
+	if !that.Type.AssignableTo(fn.InType()) {
+		return p.ForEach(p.injectCoder(that, fn.InType()), fn)
+	}
+	return p.register(&Stream{
+		Up:     that,
+		Type:   ErrorType,
+		Fn:     fn,
+		runner: nil,
+	})
+}
+
 func (p *Pipeline) FlatMap(that *Stream, fn FlatMapFn) *Stream {
 	if !that.Type.AssignableTo(fn.InType()) {
 		return p.FlatMap(p.injectCoder(that, fn.InType()), fn)
@@ -91,7 +115,6 @@ func (p *Pipeline) UserMap(that *Stream, fn interface{}) *Stream {
 		}
 	})
 
-
 }
 
 func (p *Pipeline) ForEachFn(that *Stream, fn ForEachFn) *Stream {
@@ -112,7 +135,6 @@ func (p *Pipeline) Group(that *Stream, fn GroupFn) *Stream {
 	})
 }
 
-
 func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(input *Element, output chan *Element)) *Stream {
 	return p.register(&Stream{
 		Type: out,
@@ -126,7 +148,7 @@ func (p *Pipeline) elementWise(up *Stream, out reflect.Type, fn Fn, run func(inp
 			for {
 				select {
 				//TODO trigger <- false based on the Fn's trigger channel
-				case terminated := <- trigger:
+				case terminated := <-trigger:
 					if isGroupFn {
 						for _, element := range groupFn.Trigger() {
 							element.Stamp = highStamp
@@ -267,10 +289,14 @@ func (p *Pipeline) Apply(stream *Stream, f Fn) *Stream {
 		return p.Map(stream, fn)
 	case FlatMapFn:
 		return p.FlatMap(stream, fn)
+	case Transform:
+		return p.Transform(stream, fn)
+	case ForEach:
+		return p.ForEach(stream, fn)
 	default:
 		t := reflect.TypeOf(fn)
 		if t.Kind() == reflect.Func && t.NumIn() == 1 && t.NumOut() == 1 {
-			return p.UserMap(stream ,f)
+			return p.UserMap(stream, f)
 		} else {
 			panic(fmt.Errorf("only on of the interfaces defined in goc/Fn.go can be applied"))
 		}
