@@ -11,21 +11,18 @@ func Runner(pipeline *goc.Pipeline, addrs ...string) {
 
 	localNodes := JoinCluster(addrs...)
 
-	log.Println("Applying pipeline to all nodes")
+	graphs := make([]goc.Graph, len(localNodes))
 	for _, node := range localNodes {
-		node.Apply(pipeline)
+		graphs = append(graphs, goc.BuildGraph(node, pipeline))
 	}
 
-	log.Println("Running all nodes")
-	group := new(sync.WaitGroup)
+	log.Println("Running all graphs")
+	goc.RunGraphs(graphs)
+
+	log.Println("Run graphs completed")
 	for _, node := range localNodes {
-		group.Add(1)
-		go func(node *Node) {
-			node.Run()
-			group.Done()
-		}(node)
+		node.server.Close()
 	}
-	group.Wait()
 
 
 }

@@ -1,6 +1,7 @@
 package goc
 
 import (
+	"fmt"
 	"log"
 	"sync/atomic"
 	"time"
@@ -17,28 +18,33 @@ type Sender interface {
 
 type Connector interface {
 	GetNodeID() uint16
-	GetReceiver(handlerId uint16) Receiver
+	GetReceiver(stage uint16) Receiver
 	GetNumPeers() uint16
-	NewSender(nodeId uint16, handlerId uint16) Sender
+	NewSender(nodeId uint16, stage uint16) Sender
+	GenerateStageID() uint16
 }
 
-func NewContext(connector Connector, handlerId uint16) *Context {
+func NewContext(connector Connector) *Context {
+	stage := connector.GenerateStageID()
 	return &Context{
-		handlerId: handlerId,
+		stage:     stage,
 		connector: connector,
 		emits:     make(chan *Element, 1),
-		acks:      make(chan *Stamp, 1), //TODO configurable/adaptible
 	}
 }
 
 type Context struct {
-	handlerId      uint16
+	stage          uint16
 	connector      Connector
 	emits          chan *Element
 	acks           chan *Stamp
 	autoi          uint64
 	pending        chan *Element
+	terminate      chan bool
+	terminating    bool
+	completed      chan bool
 	highestPending uint64
+	highestAcked   uint64
 }
 
 func (c *Context) GetNodeID() uint16 {
@@ -46,7 +52,7 @@ func (c *Context) GetNodeID() uint16 {
 }
 
 func (c *Context) GetReceiver() Receiver {
-	return c.connector.GetReceiver(c.handlerId)
+	return c.connector.GetReceiver(c.stage)
 }
 
 func (c *Context) GetNumPeers() uint16 {
@@ -54,7 +60,7 @@ func (c *Context) GetNumPeers() uint16 {
 }
 
 func (c *Context) GetSender(targetNodeId uint16) Sender {
-	return c.connector.NewSender(targetNodeId, c.handlerId)
+	return c.connector.NewSender(targetNodeId, c.stage)
 }
 
 func (c *Context) GetSenders() []Sender {
@@ -84,22 +90,20 @@ func (c *Context) Ack(stamp *Stamp) {
 func (c *Context) Close() {
 	close(c.emits)
 }
+
 func (c *Context) Attach() <-chan *Element {
 	if c == nil {
 		return nil
 	}
 
-	c.pending = make(chan *Element, 1000) //TODO this buffer is important so make it configurable but must be >= stream.cap
-
-	//handling elements
 	stampedOutput := make(chan *Element, 10)
-	go c.downstream(stampedOutput)
-	go c.upstream()
+	go c.interceptor(stampedOutput)
+	//go c.checkpointer()
 
 	return stampedOutput
 }
 
-func (c *Context) downstream(stampedOutput chan *Element) {
+func (c *Context) interceptor(stampedOutput chan *Element) {
 	defer close(stampedOutput)
 	for element := range c.emits {
 		element.Stamp.AddTrace(c.GetNodeID())
@@ -118,8 +122,8 @@ func (c *Context) downstream(stampedOutput chan *Element) {
 			c.highestPending = element.Stamp.Hi
 		}
 		//TODO if !c.isPassthrough {
-		//stream.log("STAGE[%d] Incoming %d", stream.stage, element.Stamp)
-		c.pending <- element
+		//c.log("STAGE[%d] Incoming %d", c.stage, element.Stamp)
+		//c.pending <- element
 		//}
 
 		stampedOutput <- element
@@ -127,11 +131,148 @@ func (c *Context) downstream(stampedOutput chan *Element) {
 }
 
 
-func (c *Context) upstream() {
-	//handling acks
-	for stamp := range c.acks {
-		log.Println("TODO process ACK", stamp)
-		//TODO reconcile
-		//acks <- stamp
+func (c *Context) checkpointer() {
+	//var commitable Commitable
+	var isCommitable bool = false //FIXME
+	//if c.Fn == nil {
+	//	stream.isPassthrough = true
+	//} else {
+	//	_, stream.isPassthrough = stream.Fn.(MapFn)
+	//	commitable, isCommitable = stream.Fn.(Commitable)
+	//}
+	//
+	//if stream.isPassthrough {
+	//	log.Printf("Initializing Passthru Stage %d %v\n", stage, stream.Type)
+	//	return
+	//} else {
+	//	log.Printf("Initializing Buffered Stage %d %v\n", stage, stream.Type)
+	//}
+
+	cap := 100000
+	c.pending = make(chan *Element, 1000) //TODO this buffer is important so make it configurable but must be >= stream.cap
+	c.acks = make(chan *Stamp, 10000)
+	c.terminate = make(chan bool, 2)
+	c.completed = make(chan bool, 1)
+	commits := make(chan map[int]interface{})
+	commitRequests := make(chan bool)
+
+	pendingSuspendable := c.pending
+	terminated := false
+	pending := Stamp{}
+	pendingCheckpoints := make(map[uint64]*Checkpoint, 10000) //TODO configurable capacity
+	checkpoint := make(map[int]interface{})
+	pendingCommitReuqest := false
+
+	doCommit := func() {
+		if len(checkpoint) > 0 {
+			pendingCommitReuqest = false
+			//TODO if isCommitable {
+				//stream.log("STAGE[%d] Commit Checkpoint: %v", stream.stage, checkpoint)
+				commits <- checkpoint
+			//}
+			checkpoint = make(map[int]interface{})
+		}
+	}
+
+	maybeTerminate := func() {
+		if c.terminating {
+			if len(checkpoint) == 0 && c.highestPending == c.highestAcked {
+				clean := (pendingCommitReuqest || !isCommitable) && !pending.Valid()
+				if clean {
+					terminated = true
+					c.log("STAGE[%d] Completed", c.stage)
+					close(commits)
+					close(commitRequests)
+					commitRequests = nil
+					close(c.acks)
+					close(c.pending)
+					c.acks = nil
+					c.pending = nil
+				}
+			}
+		}
+	}
+
+	resolveAcks := func() {
+		//resolve acks <> pending
+		for ; pending.Valid() && pendingCheckpoints[pending.Lo] != nil && pendingCheckpoints[pending.Lo].acked; {
+			lo := pending.Lo
+			pending.Lo += 1
+			chk := pendingCheckpoints[lo]
+			delete(pendingCheckpoints, lo)
+			checkpoint[chk.Part] = chk.Data
+			//stream.log("STAGE[%d] DELETING PART %d DATA %v \n", stream.stage, chk.Part, chk.Data)
+		}
+		if len(pendingCheckpoints) < cap && pendingSuspendable == nil {
+			//release the backpressure after capacity is freed
+			pendingSuspendable = c.pending
+		}
+
+		//commit if pending commit request or not commitable in which case commit requests are never fired
+		if pendingCommitReuqest || !isCommitable {
+			doCommit()
+		}
+		maybeTerminate()
+	}
+
+	for !terminated {
+		select {
+		case <-c.terminate:
+			//c.log("STAGE[%d] Terminating", c.stage)
+			c.terminating = true
+			maybeTerminate()
+		case <-commitRequests:
+			pendingCommitReuqest = true
+			doCommit()
+			maybeTerminate()
+		case stamp := <-c.acks:
+			if stamp.Hi > c.highestAcked {
+				c.highestAcked = stamp.Hi
+			}
+			//this doesn't have to block because it doesn't create any memory build-Up, if anything it frees memory
+			for u := stamp.Lo; u <= stamp.Hi; u ++ {
+				if c, ok := pendingCheckpoints[u]; ok {
+					c.acked = true
+				}
+			}
+
+			resolveAcks()
+
+			c.log("STAGE[%d] ACK(%d) Pending: %v Checkpoints: %v\n", c.stage, stamp, pending.String(), pendingCheckpoints)
+			//FIXME
+			//if stream.Up != nil {
+			//	stream.Up.ack(stamp)
+			//}
+
+		case e := <-pendingSuspendable:
+			if terminated {
+				panic(fmt.Errorf("STAGE[%d] Illegal Pending %v",  -1, e))//)FIXME c.stage, e))
+			}
+			pending.Merge(e.Stamp)
+			for u := e.Stamp.Lo; u <= e.Stamp.Hi; u++ {
+				pendingCheckpoints[u] = &e.Checkpoint
+			}
+
+			resolveAcks()
+
+			c.log("STAGE[%d] Pending: %v Checkpoints: %v\n", c.stage, pending, len(pendingCheckpoints))
+			if len(pendingCheckpoints) == cap {
+				//in order to apply backpressure this channel needs to be nilld but right now it hangs after second pendingSuspendable
+				pendingSuspendable = nil
+				//stream.log("STAGE[%d] Applying backpressure, pending acks: %d\n", stream.stage, len(pendingCheckpoints))
+			} else if len(pendingCheckpoints) > cap {
+				panic(fmt.Errorf("illegal accumulator state, buffer size higher than %d", cap))
+			}
+
+		}
+
+	}
+	c.completed <- true
+
+}
+
+func (c *Context) log(f string, args ... interface{}) {
+	if c.stage > 0 {
+		log.Printf(f, args...)
 	}
 }
