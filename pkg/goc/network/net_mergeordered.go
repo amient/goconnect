@@ -22,9 +22,9 @@ func (n *NetMergeOrdered) Run(input <-chan *goc.Element, context *goc.Context) {
 	mergeOnThisNode := context.GetNodeID() == LastNode
 	var recv goc.Receiver
 	if mergeOnThisNode {
-		recv = context.GetReceiver()
+		recv = context.MakeReceiver()
 	}
-	send := context.GetSender(LastNode)
+	send := context.MakeSender(LastNode)
 
 	go func() {
 		for e := range input {

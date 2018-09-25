@@ -39,7 +39,7 @@ func (sender *TCPSender) Start() error {
 	//println("Open", sender.addr, sender.handlerId)
 	sender.duplex = NewDuplex(sender.conn)
 	sender.duplex.writeUInt16(sender.handlerId)
-	sender.duplex.writer.Flush()
+	sender.duplex.Flush()
 	//this needs to block until the handler is open
 	sender.duplex.readUInt16()
 
@@ -75,14 +75,14 @@ func (sender *TCPSender) Send(e *goc.Element) {
 		sender.duplex.writeUInt16(nodeId)
 	}
 	sender.duplex.writeSlice(e.Value.([]byte))
-	sender.duplex.writer.Flush()
+	sender.duplex.Flush()
 }
 
 func (sender *TCPSender) SendNodeIdentify(nodeId int, receiver *Server) {
 	sender.duplex.writeUInt16(1) //magic
 	sender.duplex.writeUInt16(uint16(nodeId))
 	sender.duplex.writeUInt64(uint64(receiver.Rand))
-	sender.duplex.writer.Flush()
+	sender.duplex.Flush()
 	sender.duplex.readUInt16()
 	sender.Close()
 }

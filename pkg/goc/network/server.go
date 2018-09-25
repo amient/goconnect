@@ -75,7 +75,7 @@ func (server *Server) Start() error {
 						} else {
 							//reply that the channel has been setup
 							duplex.writeUInt16(handlerId)
-							duplex.writer.Flush()
+							duplex.Flush()
 							go receiver.handle(duplex, conn)
 						}
 					}
@@ -105,7 +105,7 @@ type TCPReceiver struct {
 	server   *Server
 	down     chan *goc.Element
 	refCount int32
-	//duplex *Duplex
+	duplex   []*Duplex
 }
 
 func (h *TCPReceiver) ID() uint16 {
@@ -113,11 +113,13 @@ func (h *TCPReceiver) ID() uint16 {
 }
 
 //func (h *TCPReceiver) SendUp(stamp *goc.Stamp) error {
-//	h.duplex.writeUInt16(1) //magic
-//	h.duplex.writeUInt64(uint64(stamp.Unix))
-//	h.duplex.writeUInt64(stamp.Lo)
-//	h.duplex.writeUInt64(stamp.Hi)
-//	return h.duplex.writer.Flush()
+//	upstreamNode := stamp.Trace[int(h.ID())]
+//	duplex := h.duplex[upstreamNode]
+//	duplex.writeUInt16(1) //magic
+//	duplex.writeUInt64(uint64(stamp.Unix))
+//	duplex.writeUInt64(stamp.Lo)
+//	duplex.writeUInt64(stamp.Hi)
+//	return duplex.Flush()
 //}
 
 func (h *TCPReceiver) handle(duplex *Duplex, conn net.Conn) {
@@ -178,9 +180,6 @@ func (h *TCPReceiver) handle(duplex *Duplex, conn net.Conn) {
 }
 
 func (h *TCPReceiver) Elements() <-chan *goc.Element {
-	if h.down == nil {
-		panic("output channel not initialized")
-	}
 	return h.down
 }
 
@@ -190,6 +189,7 @@ func (h *TCPReceiver) Close() error {
 	if refCount == 0 {
 		delete(h.server.receivers, h.id)
 		close(h.down)
+		h.down = nil
 	}
 	return nil
 }

@@ -100,7 +100,6 @@ func RunGraph(graph Graph) {
 			default:
 				panic(fmt.Errorf("Unsupported Stage Type %q", reflect.TypeOf(fn)))
 			}
-			context.Close()
 			context.terminate <- true
 		}(ctx)
 	}

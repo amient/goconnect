@@ -27,18 +27,19 @@ type Connector interface {
 
 func NewContext(connector Connector, fn Fn) *Context {
 	context := Context{
-		stage:     connector.GenerateStageID(),
-		connector: connector,
-		fn:        fn,
-		emits:     make(chan *Element, 1),
-		terminate: make(chan bool, 2),
-		completed: make(chan bool, 1),
+		stage:          connector.GenerateStageID(),
+		connector:      connector,
+		fn:             fn,
+		emits:          make(chan *Element, 1),
+		commits:        make(chan Watermark),
+		commitRequests: make(chan bool),
+		terminate:      make(chan bool, 2),
+		completed:      make(chan bool, 1),
 	}
 	if fn == nil {
 		context.isPassthrough = true
 	} else {
 		_, context.isPassthrough = fn.(MapFn)
-		context.commitable, context.isCommitable = fn.(Commitable)
 	}
 	return &context
 }
@@ -50,9 +51,10 @@ type Context struct {
 	up             *Context
 	emits          chan *Element
 	acks           chan *Stamp
+	commitRequests chan bool
+	commits        chan Watermark
 	autoi          uint64
 	isPassthrough  bool
-	commitable     Commitable
 	isCommitable   bool
 	pending        chan *Element
 	terminate      chan bool
@@ -63,26 +65,29 @@ type Context struct {
 	highestAcked   uint64
 }
 
+func (c *Context) Closed() bool {
+	return c.closed
+}
 func (c *Context) GetNodeID() uint16 {
 	return c.connector.GetNodeID()
-}
-
-func (c *Context) GetReceiver() Receiver {
-	return c.connector.GetReceiver(c.stage)
 }
 
 func (c *Context) GetNumPeers() uint16 {
 	return c.connector.GetNumPeers()
 }
 
-func (c *Context) GetSender(targetNodeId uint16) Sender {
+func (c *Context) MakeReceiver() Receiver {
+	return c.connector.GetReceiver(c.stage)
+}
+
+func (c *Context) MakeSender(targetNodeId uint16) Sender {
 	return c.connector.NewSender(targetNodeId, c.stage)
 }
 
-func (c *Context) GetSenders() []Sender {
+func (c *Context) MakeSenders() []Sender {
 	senders := make([]Sender, c.GetNumPeers())
 	for peer := uint16(1); peer <= c.GetNumPeers(); peer++ {
-		senders[peer-1] = c.GetSender(peer)
+		senders[peer-1] = c.MakeSender(peer)
 	}
 	return senders
 }
@@ -101,6 +106,7 @@ func (c *Context) Ack(stamp *Stamp) {
 
 func (c *Context) Close() {
 	if ! c.closed {
+		c.log("STAGE[%d] Close", c.stage)
 		c.closed = true
 		close(c.emits)
 		if fn, ok := c.fn.(io.Closer); ok {
@@ -109,6 +115,12 @@ func (c *Context) Close() {
 			}
 		}
 	}
+}
+
+func (c *Context) Commits() <-chan Watermark {
+	c.isCommitable = true
+	c.commitRequests <- true
+	return c.commits
 }
 
 func (c *Context) Attach() <-chan *Element {
@@ -155,8 +167,7 @@ func (c *Context) checkpointer(cap int) {
 
 	c.pending = make(chan *Element, 1000) //TODO this buffer is important so make it configurable but must be >= stream.cap
 	c.acks = make(chan *Stamp, 10000)
-	commits := make(chan map[int]interface{})
-	commitRequests := make(chan bool)
+	//commitRequests := make(chan bool)
 
 	go func() {
 		pendingSuspendable := c.pending
@@ -164,40 +175,28 @@ func (c *Context) checkpointer(cap int) {
 		pending := Stamp{}
 		pendingCheckpoints := make(map[uint64]*Checkpoint, cap)
 		acked := make(map[uint64]bool, cap)
-		checkpoint := make(map[int]interface{})
+		watermark := make(Watermark)
 		pendingCommitReuqest := false
 
-		if c.isCommitable {
-			go func() {
-				commitRequests <- true
-				for checkpoint := range commits {
-					c.log("STAGE[%d] Commit Checkpoint: %v", c.stage, checkpoint)
-					c.commitable.Commit(checkpoint)
-					commitRequests <- true
-				}
-			}()
-		}
-
 		doCommit := func() {
-			if len(checkpoint) > 0 {
+			if len(watermark) > 0 {
 				pendingCommitReuqest = false
 				if c.isCommitable {
-					commits <- checkpoint
+					c.log("STAGE[%d] Commit Checkpoint: %v", c.stage, watermark)
+					c.commits <- watermark
 				}
-				checkpoint = make(map[int]interface{})
+				watermark = make(map[int]interface{})
 			}
 		}
 
 		maybeTerminate := func() {
 			if c.terminating {
-				if len(checkpoint) == 0 && c.highestPending == c.highestAcked {
+				if len(watermark) == 0 && c.highestPending == c.highestAcked {
 					clean := (pendingCommitReuqest || !c.isCommitable) && !pending.Valid()
 					if clean {
 						terminated = true
 						c.log("STAGE[%d] Completed", c.stage)
-						close(commits)
-						close(commitRequests)
-						commitRequests = nil
+						close(c.commits)
 						close(c.acks)
 						close(c.pending)
 						c.acks = nil
@@ -215,7 +214,7 @@ func (c *Context) checkpointer(cap int) {
 				chk := pendingCheckpoints[lo]
 				delete(pendingCheckpoints, lo)
 				delete(acked, lo)
-				checkpoint[chk.Part] = chk.Data
+				watermark[chk.Part] = chk.Data
 				//c.log("STAGE[%d] DELETING PART %d DATA %v \n", c.stage, chk.Part, chk.Data)
 			}
 			if len(pendingCheckpoints) < cap && pendingSuspendable == nil {
@@ -236,10 +235,10 @@ func (c *Context) checkpointer(cap int) {
 				c.log("STAGE[%d] Terminating", c.stage)
 				c.terminating = true
 				maybeTerminate()
-			case <-commitRequests:
-				pendingCommitReuqest = true
-				doCommit()
-				maybeTerminate()
+  		    case <-c.commitRequests:
+				   pendingCommitReuqest = true
+				   doCommit()
+				   maybeTerminate()
 			case stamp := <-c.acks:
 				if stamp.Hi > c.highestAcked {
 					c.highestAcked = stamp.Hi
@@ -247,14 +246,11 @@ func (c *Context) checkpointer(cap int) {
 				//this doesn't have to block because it doesn't create any memory build-Up, if anything it frees memory
 				for u := stamp.Lo; u <= stamp.Hi; u ++ {
 					acked[u] = true
-					//if c, ok := pendingCheckpoints[u]; ok {
-					//	c.acked = true
-					//}
 				}
 
 				resolveAcks()
 
-				c.log("STAGE[%d] ACK(%d) Pending: %v Acked: %v\n", c.stage, stamp, pending.String(), acked)
+				c.log("STAGE[%d] ACK(%d) Pending: %v Acked: %v isCommitable=%v, commitRequested=%v\n", c.stage, stamp, pending.String(), acked, c.isCommitable, pendingCommitReuqest)
 
 				if c.up != nil {
 					c.up.Ack(stamp)

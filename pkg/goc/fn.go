@@ -74,10 +74,6 @@ type GroupFn interface {
 	Trigger() []*Element
 }
 
-type Commitable interface {
-	Commit(checkpoint map[int]interface{}) error
-}
-
 func UserMapFn(f interface{}) MapFn {
 	t := reflect.TypeOf(f)
 	if t.Kind() != reflect.Func || t.NumIn() != 1 || t.NumOut() != 1 {

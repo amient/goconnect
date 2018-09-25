@@ -2,10 +2,11 @@ package network
 
 import (
 	"github.com/amient/goconnect/pkg/goc"
+	"log"
 	"reflect"
 )
 
-type NetRoundRobin struct {}
+type NetRoundRobin struct{}
 
 func (n *NetRoundRobin) InType() reflect.Type {
 	return goc.ByteArrayType
@@ -16,8 +17,8 @@ func (n *NetRoundRobin) OutType() reflect.Type {
 }
 
 func (n *NetRoundRobin) Run(input <-chan *goc.Element, context *goc.Context) {
-	recv := context.GetReceiver()
-	senders := context.GetSenders()
+	receiver := context.MakeReceiver()
+	senders := context.MakeSenders()
 	go func() {
 		i := 0
 		for e := range input {
@@ -29,8 +30,22 @@ func (n *NetRoundRobin) Run(input <-chan *goc.Element, context *goc.Context) {
 		}
 	}()
 
-	for e := range recv.Elements() {
-		context.Emit(e)
+	for !context.Closed() {
+		select {
+		case checkpoint, ok := <-context.Commits():
+			if ok {
+				log.Println("!", checkpoint)
+			}
+		case e, ok := <-receiver.Elements():
+			if ok {
+
+				e.Checkpoint = goc.Checkpoint{
+					Part: int(e.Stamp.Trace[len(e.Stamp.Trace)-1]),
+					Data: e.Stamp,
+				}
+				context.Emit(e)
+			}
+
+		}
 	}
 }
-

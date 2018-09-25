@@ -30,6 +30,10 @@ func (duplex *Duplex) Close() error {
 	return duplex.conn.Close()
 }
 
+func (duplex *Duplex) Flush() error {
+	return duplex.writer.Flush()
+}
+
 func (duplex *Duplex) writeUInt16(i uint16) {
 	binary.BigEndian.PutUint16(duplex.writeBuf, i)
 	duplex.writeFully(duplex.writeBuf, 2)

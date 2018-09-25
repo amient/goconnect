@@ -35,6 +35,8 @@ func (e *Element) Ack() {
 	may have only one identifier, e.g. AMQP Source, others may have multiple, e.g. Kafka Source
  */
 
+type Watermark map[int]interface{}
+
 type Checkpoint struct {
 	Part  int
 	Data  interface{}
