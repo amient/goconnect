@@ -51,66 +51,6 @@ func (source *Source) OutType() reflect.Type {
 	return reflect.TypeOf(goc.KVBytes{})
 }
 
-func (source *Source) Run(output chan *goc.Element) {
-	var err error
-	source.counter = make(map[int32]uint64)
-	source.consumer, err = kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers": source.Bootstrap,
-		"group.id":          source.Group,
-		"default.topic.config": kafka.ConfigMap{
-			"auto.offset.reset":  "earliest", //TODO pass this as config
-			"enable.auto.commit": "false",
-		},
-		"enable.auto.commit":       "false",
-		"go.events.channel.enable": true,
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	log.Printf("Subscribing to kafka topic %s", source.Topic)
-	if err := source.consumer.Subscribe(source.Topic, nil); err != nil {
-		panic(err)
-	}
-
-	for event := range source.consumer.Events() {
-		switch e := event.(type) {
-		case kafka.AssignedPartitions: //not used
-		case kafka.RevokedPartitions: //not used
-		case *kafka.Message:
-			if len(source.counter) == 0 {
-				source.start = time.Now()
-			}
-			if _, contains := source.counter[e.TopicPartition.Partition]; !contains {
-				source.counter[e.TopicPartition.Partition] = 0
-			}
-			source.counter[e.TopicPartition.Partition]++
-			output <- &goc.Element{
-				Stamp: goc.Stamp{Unix: e.Timestamp.Unix()},
-				Checkpoint: goc.Checkpoint{
-					Part: int(e.TopicPartition.Partition),
-					Data: e.TopicPartition.Offset,
-				},
-				Value: goc.KVBytes{
-					Key:   e.Key,
-					Value: e.Value,
-				},
-			}
-		case kafka.PartitionEOF:
-			source.total += source.counter[e.Partition]
-			delete(source.counter, e.Partition)
-			if len(source.counter) == 0 && source.total > 0 {
-				log.Printf("EOF: Consumed %d in %f ms\n", source.total, time.Now().Sub(source.start).Seconds())
-				source.total = 0
-			}
-
-		case kafka.Error:
-			panic(e)
-		}
-	}
-
-}
-
 func (source *Source) Do(context *goc.Context) {
 	var err error
 	source.counter = make(map[int32]uint64)

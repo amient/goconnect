@@ -258,7 +258,7 @@ func (c *Context) checkpointer(cap int) {
 
 				resolveAcks()
 
-				c.log("STAGE[%d] ACK(%d) Pending: %v Checkpoints: %v\n", c.stage, stamp, pending.String(), pendingCheckpoints)
+				c.log("STAGE[%d] ACK(%d) Pending: %v Acked: %v\n", c.stage, stamp, pending.String(), acked)
 
 				if c.up != nil {
 					c.up.Ack(stamp)

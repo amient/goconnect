@@ -28,48 +28,14 @@ import (
 	"time"
 )
 
-type Out struct {
-	queue  chan *goc.Element //deprecated
-	buffer []*goc.Element //deprecated
-	closed chan error //deprecated
-	stdout *bufio.Writer //deprecated
-}
+type Out struct {}
 
 func (sink *Out) InType() reflect.Type {
 	return goc.AnyType
 }
 
-//deprecated
-func (sink *Out) Process(input *goc.Element) {
-	if sink.stdout == nil {
-		sink.buffer = make([]*goc.Element, 0, 100)
-		sink.queue = make(chan *goc.Element)
-		sink.closed =  make(chan error, 1)
-		sink.stdout = bufio.NewWriter(os.Stdout)
-		ticker := time.NewTicker(300 * time.Millisecond).C
-		go func() {
-			for {
-				select {
-				case <-ticker:
-					sink.buffer = sink.flush(sink.stdout, sink.buffer)
-				case e := <-sink.queue:
-					sink.buffer = append(sink.buffer, e)
-				case <-sink.closed:
-					sink.buffer = sink.flush(sink.stdout, sink.buffer)
-					sink.closed <- nil
-					return
-				}
-			}
-		}()
-	}
-	sink.process(sink.stdout, input.Value)
-	sink.queue <- input
-}
-
-
 func (sink *Out) Run(input <-chan *goc.Element, context *goc.Context) {
 	buffer := make([]*goc.Element, 0, 100)
-	queue :=  make(chan *goc.Element, 100)
 	closed := make(chan bool, 1)
 	ticker := time.NewTicker(300 * time.Millisecond).C
 	stdout := bufio.NewWriter(os.Stdout)
@@ -79,8 +45,6 @@ func (sink *Out) Run(input <-chan *goc.Element, context *goc.Context) {
 			select {
 			case <-ticker:
 				buffer = sink.flush(stdout, buffer)
-			case e := <-queue:
-				buffer = append(buffer, e)
 			case <-closed:
 				buffer = sink.flush(stdout, buffer)
 				return
@@ -90,23 +54,12 @@ func (sink *Out) Run(input <-chan *goc.Element, context *goc.Context) {
 
 	for element := range input {
 		sink.process(stdout, element.Value)
-		queue <- element
+		buffer = append(buffer, element)
 	}
 
 	closed <- true
 
 }
-
-//deprecated
-func (sink *Out) Close() error {
-	if sink.closed != nil {
-		sink.flush(sink.stdout, sink.buffer)
-		sink.closed <- nil
-		return <-sink.closed
-	}
-	return nil
-}
-
 
 func (sink *Out) flush(stdout *bufio.Writer, buffer []*goc.Element) []*goc.Element {
 	stdout.Flush()
