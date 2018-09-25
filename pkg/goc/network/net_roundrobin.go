@@ -2,7 +2,6 @@ package network
 
 import (
 	"github.com/amient/goconnect/pkg/goc"
-	"log"
 	"reflect"
 )
 
@@ -32,7 +31,6 @@ func (n *NetRoundRobin) Run(input <-chan *goc.Element, context *goc.Context) {
 
 	for e := range receiver.Elements() {
 		fromNode := e.Stamp.Trace[context.GetStage()-2]
-		log.Printf("STAGE[%d] ELEMENT FROM NODE %d", context.GetStage(), fromNode)
 		e.Checkpoint = goc.Checkpoint{
 			Part: int(fromNode),
 			Data: e.Stamp,

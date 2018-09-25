@@ -13,7 +13,7 @@ func Runner(pipeline *goc.Pipeline, addrs ...string) {
 
 	graphs := make([]goc.Graph, len(localNodes))
 	for i, node := range localNodes {
-		graphs[i] = goc.BuildGraph(node, pipeline)
+		graphs[i] = goc.ConnectStages(node, pipeline)
 	}
 
 	log.Println("Running all graphs")

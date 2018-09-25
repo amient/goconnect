@@ -25,6 +25,7 @@ import (
 	"github.com/amient/goconnect/pkg/goc/coder"
 	"github.com/amient/goconnect/pkg/goc/io/amqp09"
 	"github.com/amient/goconnect/pkg/goc/io/kafka1"
+	"github.com/amient/goconnect/pkg/goc/network"
 )
 
 var (
@@ -60,6 +61,6 @@ func main() {
 		Topic:     *kafkaSinkTopic,
 	})
 
-	pipeline.Run()
+	network.Runner(pipeline, "127.0.0.1:8234")
 
 }

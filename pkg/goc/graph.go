@@ -11,7 +11,7 @@ import (
 
 type Graph []*Context
 
-func BuildGraph(connector Connector, pipeline *Pipeline) Graph {
+func ConnectStages(connector Connector, pipeline *Pipeline) Graph {
 	graph := make(Graph, len(pipeline.Streams))
 	log.Printf("Applying pipline of %d stages to node %d", len(graph), connector.GetNodeID())
 	for _, stream := range pipeline.Streams {
@@ -26,32 +26,34 @@ func BuildGraph(connector Connector, pipeline *Pipeline) Graph {
 func RunGraphs(graphs ...Graph) {
 	//this method assumes a single source in each graph
 	sources := make([]*Context, len(graphs))
-	cases := make([]reflect.SelectCase, len(graphs)+1)
 	sigterm := make(chan os.Signal, 1)
 	signal.Notify(sigterm, syscall.SIGINT, syscall.SIGTERM)
-	cases[0] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(sigterm)}
+	cases := []reflect.SelectCase{
+		{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(sigterm)},
+	}
+	runningStages := 0
 	for i, graph := range graphs {
 		sources[i] = graph[0]
+		for _, s := range graph {
+			cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(s.completed)})
+			runningStages++
+		}
 		RunGraph(graph)
-		cases[i+1] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(sources[i].completed)}
+
 	}
 
-	runningGraphs := len(graphs)
 	for {
 		if chosen, value, _ := reflect.Select(cases); chosen == 0 {
 			log.Printf("Caught signal %v: Cancelling\n", value.Interface())
 			for _, source := range sources {
 				if !source.closed {
-					source.terminate <- true
+					source.Terminate()
 				}
 			}
 		} else {
-			runningGraphs--
-			println(chosen, "completed, num running: ", runningGraphs)
-			for i := len(graphs[chosen-1]) - 1; i >= 0; i-- {
-				graphs[chosen-1][i].Close()
-			}
-			if runningGraphs == 0 {
+			runningStages--
+			log.Printf("A Stage Completed [%v], num running stages: %v", chosen, runningStages)
+			if runningStages == 0 {
 				return
 			}
 		}
@@ -76,6 +78,7 @@ func RunGraph(graph Graph) {
 				fn.Run(context.up.Attach(), context)
 			case ForEach:
 				fn.Run(context.up.Attach(), context)
+
 			case ElementWiseFn:
 				for e := range context.up.Attach() {
 					fn.Process(e, context)
@@ -98,9 +101,9 @@ func RunGraph(graph Graph) {
 					}
 				}
 			default:
-				panic(fmt.Errorf("Unsupported Stage Type %q", reflect.TypeOf(fn)))
+				panic(fmt.Errorf("unsupported Stage Type %q", reflect.TypeOf(fn)))
 			}
-			context.terminate <- true
+			context.Terminate()
 		}(ctx)
 	}
 

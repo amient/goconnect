@@ -35,13 +35,17 @@ func NewContext(connector Connector, fn Fn) *Context {
 		emits:          make(chan *Element, 1),
 		commits:        make(chan Watermark),
 		commitRequests: make(chan bool),
-		terminate:      make(chan bool, 2),
-		completed:      make(chan bool, 1),
+		terminate:      make(chan bool),
+		completed:      make(chan bool),
 	}
 	if fn == nil {
 		context.isPassthrough = true
 	} else {
-		_, context.isPassthrough = fn.(MapFn)
+		_, isMapFn := fn.(MapFn)
+		_, isTransform := fn.(Transform)
+		_, isForEach := fn.(ForEach)
+		_, isForEachFn := fn.(ForEachFn)
+		context.isPassthrough = !isTransform && (isMapFn || isForEachFn || isForEach)
 	}
 	return &context
 }
@@ -129,16 +133,11 @@ func (c *Context) Ack(stamp *Stamp) {
 	}
 }
 
-func (c *Context) Close() {
-	if ! c.closed {
-		c.log("STAGE[%d] Close", c.stage)
-		c.closed = true
-		close(c.emits)
-		if fn, ok := c.fn.(io.Closer); ok {
-			if err := fn.Close(); err != nil {
-				panic(err)
-			}
-		}
+func (c *Context) Terminate() {
+	if c.isPassthrough {
+		c.close()
+	} else {
+		c.terminate <- true
 	}
 }
 
@@ -177,7 +176,7 @@ func (c *Context) Attach() <-chan *Element {
 				c.highestPending = element.Stamp.Hi
 			}
 			if !c.isPassthrough {
-				//c.log("STAGE[%d] Incoming %d", c.stage, element.Stamp)
+				c.log("Incoming %d", element.Stamp)
 				c.pending <- element
 			}
 
@@ -192,11 +191,9 @@ func (c *Context) checkpointer(cap int) {
 
 	c.pending = make(chan *Element, 1000) //TODO this buffer is important so make it configurable but must be >= stream.cap
 	c.acks = make(chan *Stamp, 10000)
-	//commitRequests := make(chan bool)
 
 	go func() {
 		pendingSuspendable := c.pending
-		terminated := false
 		pending := Stamp{}
 		pendingCheckpoints := make(map[uint64]*Checkpoint, cap)
 		acked := make(map[uint64]bool, cap)
@@ -207,7 +204,7 @@ func (c *Context) checkpointer(cap int) {
 			if len(watermark) > 0 {
 				pendingCommitReuqest = false
 				if c.isCommitable {
-					//c.log("STAGE[%d] Commit Checkpoint: %v", c.stage, watermark)
+					//c.log("Commit Checkpoint: %v", watermark)
 					c.commits <- watermark
 				}
 				watermark = make(map[int]interface{})
@@ -219,13 +216,7 @@ func (c *Context) checkpointer(cap int) {
 				if len(watermark) == 0 && c.highestPending == c.highestAcked {
 					clean := (pendingCommitReuqest || !c.isCommitable) && !pending.Valid()
 					if clean {
-						terminated = true
-						c.log("STAGE[%d] Completed", c.stage)
-						close(c.commits)
-						close(c.acks)
-						close(c.pending)
-						c.acks = nil
-						c.pending = nil
+						c.close()
 					}
 				}
 			}
@@ -244,7 +235,7 @@ func (c *Context) checkpointer(cap int) {
 				} else {
 					watermark[chk.Part] = chk.Data
 				}
-				//c.log("STAGE[%d] DELETING PART %d DATA %v \n", c.stage, chk.Part, chk.Data)
+				//c.log("DELETING PART %d DATA %v \n", chk.Part, chk.Data)
 			}
 			if len(pendingCheckpoints) < cap && pendingSuspendable == nil {
 				//release the backpressure after capacity is freed
@@ -258,10 +249,10 @@ func (c *Context) checkpointer(cap int) {
 			maybeTerminate()
 		}
 
-		for !terminated {
+		for !c.closed {
 			select {
 			case <-c.terminate:
-				c.log("STAGE[%d] Terminating", c.stage)
+				c.log("Terminating")
 				c.terminating = true
 				maybeTerminate()
 			case <-c.commitRequests:
@@ -279,7 +270,7 @@ func (c *Context) checkpointer(cap int) {
 
 				resolveAcks()
 
-				c.log("STAGE[%d] ACK(%d) Pending: %v Acked: %v isCommitable=%v, commitRequested=%v\n", c.stage, stamp, pending.String(), acked, c.isCommitable, pendingCommitReuqest)
+				c.log("ACK(%d) Pending: %v Acked: %v isCommitable=%v, commitRequested=%v\n", stamp, pending.String(), acked, c.isCommitable, pendingCommitReuqest)
 
 				if c.up != nil && !c.isCommitable {
 					//commitables have to ack their upstream manually
@@ -287,7 +278,7 @@ func (c *Context) checkpointer(cap int) {
 				}
 
 			case e := <-pendingSuspendable:
-				if terminated {
+				if c.closed {
 					panic(fmt.Errorf("STAGE[%d] Illegal Pending %v", c.stage, e))
 				}
 				pending.Merge(e.Stamp)
@@ -297,7 +288,7 @@ func (c *Context) checkpointer(cap int) {
 
 				resolveAcks()
 
-				c.log("STAGE[%d] Pending: %v Checkpoints: %v\n", c.stage, pending, len(pendingCheckpoints))
+				c.log("Pending: %v Checkpoints: %v\n", pending, len(pendingCheckpoints))
 				if len(pendingCheckpoints) == cap {
 					//in order to apply backpressure this channel needs to be nilld but right now it hangs after second pendingSuspendable
 					pendingSuspendable = nil
@@ -307,14 +298,44 @@ func (c *Context) checkpointer(cap int) {
 				}
 
 			}
-
 		}
-		c.completed <- true
 	}()
 }
 
-func (c *Context) log(f string, args ... interface{}) {
-	if c.stage > 0 {
-		log.Printf(f, args...)
+
+func (c *Context) close() {
+	if ! c.closed {
+		c.log("Close()")
+		c.completed <- true
+		close(c.emits)
+		if !c.isPassthrough {
+			close(c.commits)
+			close(c.acks)
+			close(c.pending)
+			c.acks = nil
+			c.pending = nil
+		}
+		c.closed = true
+		if fn, ok := c.fn.(io.Closer); ok {
+			if err := fn.Close(); err != nil {
+				panic(err)
+			}
+		}
+
 	}
 }
+
+func (c *Context) log(f string, args ... interface{}) {
+	args2 := make([]interface{}, len(args) + 2)
+	args2[0] = c.GetNodeID()
+	args2[1] = c.stage
+	for i := range args {
+		args2[i+2] = args[i]
+	}
+	if c.stage > 0 {
+		log.Printf("NODE[%d] STAGE[%d] "+f, args2...)
+	}
+}
+
+
+
