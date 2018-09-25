@@ -67,6 +67,7 @@ func (server *Server) Start() error {
 					} else {
 						duplex := NewDuplex(conn)
 						handlerId := duplex.readUInt16()
+						remoteNodeId := duplex.readUInt16()
 						server.lock.Lock()
 						receiver, exists := server.receivers[handlerId]
 						server.lock.Unlock()
@@ -76,6 +77,7 @@ func (server *Server) Start() error {
 							//reply that the channel has been setup
 							duplex.writeUInt16(handlerId)
 							duplex.Flush()
+							receiver.duplex[remoteNodeId] = duplex
 							go receiver.handle(duplex, conn)
 						}
 					}
@@ -91,6 +93,7 @@ func (server *Server) NewReceiver(handlerId uint16) *TCPReceiver {
 	server.receivers[handlerId] = &TCPReceiver{
 		id:     handlerId,
 		server: server,
+		duplex: make(map[uint16]*Duplex),
 		down:   make(chan *goc.Element, 100), //TODO the capacity should be the number of nodes
 	}
 	if handlerId > 0 {
@@ -105,22 +108,24 @@ type TCPReceiver struct {
 	server   *Server
 	down     chan *goc.Element
 	refCount int32
-	duplex   []*Duplex
+	duplex   map[uint16]*Duplex
 }
 
 func (h *TCPReceiver) ID() uint16 {
 	return h.id
 }
 
-//func (h *TCPReceiver) SendUp(stamp *goc.Stamp) error {
-//	upstreamNode := stamp.Trace[int(h.ID())]
-//	duplex := h.duplex[upstreamNode]
-//	duplex.writeUInt16(1) //magic
-//	duplex.writeUInt64(uint64(stamp.Unix))
-//	duplex.writeUInt64(stamp.Lo)
-//	duplex.writeUInt64(stamp.Hi)
-//	return duplex.Flush()
-//}
+func (h *TCPReceiver) Ack(stamp goc.Stamp) error {
+	upstreamNode := stamp.Trace[int(h.ID()-2)]
+	log.Printf("TCP-ACK[%v/%d] upstream node =%d", h.server.addr, h.ID, upstreamNode)
+	duplex := h.duplex[upstreamNode]
+	duplex.writeUInt16(1) //magic
+	duplex.writeUInt64(uint64(stamp.Unix))
+	duplex.writeUInt64(stamp.Lo)
+	duplex.writeUInt64(stamp.Hi)
+	return duplex.Flush()
+
+}
 
 func (h *TCPReceiver) handle(duplex *Duplex, conn net.Conn) {
 	//refCount :=

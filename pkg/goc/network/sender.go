@@ -6,28 +6,30 @@ import (
 	"net"
 )
 
-func newSender(addr string, handlerId uint16) *TCPSender {
+func newSender(addr string, handlerId uint16, nodeId uint16) *TCPSender {
 	return &TCPSender{
 		addr:      addr,
 		handlerId: handlerId,
-		stamps:    make(chan *goc.Stamp, 1),
+		nodeId:    nodeId,
+		acks:      make(chan *goc.Stamp, 1),
 	}
 }
 
 type TCPSender struct {
 	addr      string
 	handlerId uint16
+	nodeId    uint16
 	conn      net.Conn
 	duplex    *Duplex
-	stamps    chan *goc.Stamp
+	acks      chan *goc.Stamp
 }
 
-func (sender *TCPSender) Up() <-chan *goc.Stamp {
-	return sender.stamps
+func (sender *TCPSender) Acks() <-chan *goc.Stamp {
+	return sender.acks
 }
 
 func (sender *TCPSender) Close() error {
-	close(sender.stamps)
+	close(sender.acks)
 	return sender.duplex.Close()
 }
 
@@ -39,6 +41,7 @@ func (sender *TCPSender) Start() error {
 	//println("Open", sender.addr, sender.handlerId)
 	sender.duplex = NewDuplex(sender.conn)
 	sender.duplex.writeUInt16(sender.handlerId)
+	sender.duplex.writeUInt16(sender.nodeId)
 	sender.duplex.Flush()
 	//this needs to block until the handler is open
 	sender.duplex.readUInt16()
@@ -56,7 +59,7 @@ func (sender *TCPSender) Start() error {
 					Lo:   d.readUInt64(),
 					Hi:   d.readUInt64(),
 				}
-				sender.stamps <- &stamp
+				sender.acks <- &stamp
 			default:
 				panic(fmt.Errorf("unknown magic byte %d", magic))
 			}

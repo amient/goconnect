@@ -30,22 +30,13 @@ func (n *NetRoundRobin) Run(input <-chan *goc.Element, context *goc.Context) {
 		}
 	}()
 
-	for !context.Closed() {
-		select {
-		case checkpoint, ok := <-context.Commits():
-			if ok {
-				log.Println("!", checkpoint)
-			}
-		case e, ok := <-receiver.Elements():
-			if ok {
-
-				e.Checkpoint = goc.Checkpoint{
-					Part: int(e.Stamp.Trace[len(e.Stamp.Trace)-1]),
-					Data: e.Stamp,
-				}
-				context.Emit(e)
-			}
-
+	for e := range receiver.Elements() {
+		fromNode := e.Stamp.Trace[context.GetStage()-2]
+		log.Printf("STAGE[%d] ELEMENT FROM NODE %d", context.GetStage(), fromNode)
+		e.Checkpoint = goc.Checkpoint{
+			Part: int(fromNode),
+			Data: e.Stamp,
 		}
+		context.Emit(e)
 	}
 }

@@ -10,9 +10,11 @@ import (
 
 type Receiver interface {
 	Elements() <-chan *Element
+	Ack(Stamp) error
 }
 
 type Sender interface {
+	Acks() <-chan *Stamp
 	Send(element *Element)
 	Close() error
 }
@@ -72,16 +74,39 @@ func (c *Context) GetNodeID() uint16 {
 	return c.connector.GetNodeID()
 }
 
+func (c *Context) GetStage() uint16 {
+	return c.stage
+}
+
 func (c *Context) GetNumPeers() uint16 {
 	return c.connector.GetNumPeers()
 }
 
 func (c *Context) MakeReceiver() Receiver {
-	return c.connector.GetReceiver(c.stage)
+	receiver := c.connector.GetReceiver(c.stage)
+	go func() {
+		for !c.closed {
+			select {
+			case checkpoint, ok := <-c.Commits():
+				if ok {
+					for _, stamp := range checkpoint {
+						receiver.Ack(stamp.(Stamp))
+					}
+				}
+			}
+		}
+	}()
+	return receiver
 }
 
 func (c *Context) MakeSender(targetNodeId uint16) Sender {
-	return c.connector.NewSender(targetNodeId, c.stage)
+	sender := c.connector.NewSender(targetNodeId, c.stage)
+	go func() {
+		for stamp := range sender.Acks() {
+			c.up.Ack(stamp)
+		}
+	}()
+	return sender
 }
 
 func (c *Context) MakeSenders() []Sender {
@@ -182,7 +207,7 @@ func (c *Context) checkpointer(cap int) {
 			if len(watermark) > 0 {
 				pendingCommitReuqest = false
 				if c.isCommitable {
-					c.log("STAGE[%d] Commit Checkpoint: %v", c.stage, watermark)
+					//c.log("STAGE[%d] Commit Checkpoint: %v", c.stage, watermark)
 					c.commits <- watermark
 				}
 				watermark = make(map[int]interface{})
@@ -214,7 +239,11 @@ func (c *Context) checkpointer(cap int) {
 				chk := pendingCheckpoints[lo]
 				delete(pendingCheckpoints, lo)
 				delete(acked, lo)
-				watermark[chk.Part] = chk.Data
+				if stamp, is := watermark[chk.Part].(Stamp); is {
+					watermark[chk.Part] = stamp.Merge(chk.Data.(Stamp))
+				} else {
+					watermark[chk.Part] = chk.Data
+				}
 				//c.log("STAGE[%d] DELETING PART %d DATA %v \n", c.stage, chk.Part, chk.Data)
 			}
 			if len(pendingCheckpoints) < cap && pendingSuspendable == nil {
@@ -235,10 +264,10 @@ func (c *Context) checkpointer(cap int) {
 				c.log("STAGE[%d] Terminating", c.stage)
 				c.terminating = true
 				maybeTerminate()
-  		    case <-c.commitRequests:
-				   pendingCommitReuqest = true
-				   doCommit()
-				   maybeTerminate()
+			case <-c.commitRequests:
+				pendingCommitReuqest = true
+				doCommit()
+				maybeTerminate()
 			case stamp := <-c.acks:
 				if stamp.Hi > c.highestAcked {
 					c.highestAcked = stamp.Hi
@@ -252,7 +281,8 @@ func (c *Context) checkpointer(cap int) {
 
 				c.log("STAGE[%d] ACK(%d) Pending: %v Acked: %v isCommitable=%v, commitRequested=%v\n", c.stage, stamp, pending.String(), acked, c.isCommitable, pendingCommitReuqest)
 
-				if c.up != nil {
+				if c.up != nil && !c.isCommitable {
+					//commitables have to ack their upstream manually
 					c.up.Ack(stamp)
 				}
 
@@ -267,7 +297,7 @@ func (c *Context) checkpointer(cap int) {
 
 				resolveAcks()
 
-				//c.log("STAGE[%d] Pending: %v Checkpoints: %v\n", c.stage, pending, len(pendingCheckpoints))
+				c.log("STAGE[%d] Pending: %v Checkpoints: %v\n", c.stage, pending, len(pendingCheckpoints))
 				if len(pendingCheckpoints) == cap {
 					//in order to apply backpressure this channel needs to be nilld but right now it hangs after second pendingSuspendable
 					pendingSuspendable = nil

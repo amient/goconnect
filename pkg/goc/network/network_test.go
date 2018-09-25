@@ -12,7 +12,7 @@ func TestNetworkTools(t *testing.T) {
 
 	server := NewServer("127.0.0.1:10000")
 	handler := server.NewReceiver(1)
-	sender := newSender("127.0.0.1:10000", handler.id)
+	sender := newSender("127.0.0.1:10000", handler.id, 1)
 
 	server.Start()
 	sender.Start()

@@ -43,7 +43,7 @@ func (node *Node) GetReceiver(stageId uint16) goc.Receiver {
 
 func (node *Node) NewSender(targetNodeId uint16, stageId uint16) goc.Sender {
 	addr := node.nodes[targetNodeId - 1]
-	sender := newSender(addr, stageId)
+	sender := newSender(addr, stageId, node.server.ID)
 	if err := sender.Start(); err != nil {
 		panic(err)
 	}
@@ -53,7 +53,7 @@ func (node *Node) NewSender(targetNodeId uint16, stageId uint16) goc.Sender {
 func (node *Node) Join(nodes []string) {
 	for nodeId := 0; nodeId < len(nodes); {
 		addr := nodes[nodeId]
-		s := newSender(addr, 0)
+		s := newSender(addr, 0, uint16(nodeId))
 		if err := s.Start(); err != nil {
 			time.Sleep(time.Second)
 			log.Printf("Waiting for node at %v fn join the cluster..", addr)
