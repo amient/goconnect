@@ -6,25 +6,17 @@ import (
 	"reflect"
 	"sync"
 )
-type Graph []*Edge
 
-type Edge struct {
-	Source *Context
-	Dest   *Context
-	Fn     Fn
-}
+type Graph []*Context
 
 func BuildGraph(connector Connector, pipeline *Pipeline) Graph {
 	graph := make(Graph, len(pipeline.Streams))
 	log.Printf("Applying pipline of %d stages to node %d", len(graph), connector.GetNodeID())
 	for _, stream := range pipeline.Streams {
-		dest := NewContext(connector)
-		edge := Edge{Fn: stream.Fn, Dest: dest}
+		graph[stream.Id] = NewContext(connector, stream.Fn)
 		if stream.Id > 0 {
-			//println(stream.Up.Id, "->", stream.Id )
-			edge.Source = graph[stream.Up.Id].Dest
+			graph[stream.Id].up = graph[stream.Up.Id]
 		}
-		graph[stream.Id] = &edge
 	}
 	return graph
 }
@@ -41,39 +33,39 @@ func RunGraphs(graphs []Graph) {
 	group.Wait()
 }
 
-func RunGraph(edges []*Edge) {
+func RunGraph(graph Graph) {
 	w := sync.WaitGroup{}
-	for _, e := range edges {
+	for _, ctx := range graph {
 		w.Add(1)
-		go func(fn Fn, input <- chan *Element, context *Context) {
-			switch stage := fn.(type) {
+		go func(context *Context) {
+			switch fn := context.fn.(type) {
 			case Root:
-				stage.Do(context)
+				fn.Do(context)
 			case Transform:
-				stage.Run(input, context)
+				fn.Run(context.up.Attach(), context)
 			case ForEach:
-				stage.Run(input, context)
+				fn.Run(context.up.Attach(), context)
 			case ElementWiseFn:
-				for e := range input {
-					stage.Process(e, context)
+				for e := range context.up.Attach() {
+					fn.Process(e, context)
 				}
 			case ForEachFn:
-				for e := range input {
-					stage.Process(e)
+				for e := range context.up.Attach() {
+					fn.Process(e)
 				}
 			case MapFn:
-				for e := range input {
-					out := stage.Process(e)
+				for e := range context.up.Attach() {
+					out := fn.Process(e)
 					out.Stamp = e.Stamp
 					out.Checkpoint = e.Checkpoint
 					context.Emit(out)
 				}
 			default:
-				t := reflect.TypeOf(stage)
+				t := reflect.TypeOf(fn)
 				if t.Kind() == reflect.Func && t.NumIn() == 1 && t.NumOut() == 1 {
 					//simple mapper function
-					v := reflect.ValueOf(stage)
-					for e := range input {
+					v := reflect.ValueOf(fn)
+					for e := range context.up.Attach() {
 						context.Emit(&Element{
 							Stamp: e.Stamp,
 							Value: v.Call([]reflect.Value{reflect.ValueOf(e.Value)})[0].Interface(),
@@ -85,7 +77,7 @@ func RunGraph(edges []*Edge) {
 			}
 			context.Close()
 			w.Done()
-		}(e.Fn, e.Source.Attach(), e.Dest)
+		}(ctx)
 	}
 	w.Wait()
 

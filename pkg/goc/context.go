@@ -24,11 +24,12 @@ type Connector interface {
 	GenerateStageID() uint16
 }
 
-func NewContext(connector Connector) *Context {
+func NewContext(connector Connector, fn Fn) *Context {
 	stage := connector.GenerateStageID()
 	return &Context{
 		stage:     stage,
 		connector: connector,
+		fn:        fn,
 		emits:     make(chan *Element, 1),
 	}
 }
@@ -36,6 +37,8 @@ func NewContext(connector Connector) *Context {
 type Context struct {
 	stage          uint16
 	connector      Connector
+	fn             Fn
+	up             *Context
 	emits          chan *Element
 	acks           chan *Stamp
 	autoi          uint64
@@ -75,16 +78,8 @@ func (c *Context) Emit(element *Element) {
 	c.emits <- element
 }
 
-func (c *Context) Emit2(value interface{}, checkpoint Checkpoint) {
-	c.emits <- &Element{
-		Value:      value,
-		Checkpoint: checkpoint,
-	}
-
-}
-
 func (c *Context) Ack(stamp *Stamp) {
-	c.acks <- stamp
+	//c.acks <- stamp
 }
 
 func (c *Context) Close() {
@@ -96,40 +91,38 @@ func (c *Context) Attach() <-chan *Element {
 		return nil
 	}
 
-	stampedOutput := make(chan *Element, 10)
-	go c.interceptor(stampedOutput)
 	//go c.checkpointer()
+
+	stampedOutput := make(chan *Element, 10)
+	go func() {
+		defer close(stampedOutput)
+		for element := range c.emits {
+			element.Stamp.AddTrace(c.GetNodeID())
+			//initial stamping of elements
+			if element.Stamp.Hi == 0 {
+				s := atomic.AddUint64(&c.autoi, 1)
+				element.Stamp.Hi = s
+				element.Stamp.Lo = s
+			}
+			if element.Stamp.Unix == 0 {
+				element.Stamp.Unix = time.Now().Unix()
+			}
+			//checkpointing
+			element.ack = c.Ack
+			if element.Stamp.Hi > c.highestPending {
+				c.highestPending = element.Stamp.Hi
+			}
+			//TODO if !c.isPassthrough {
+			//c.log("STAGE[%d] Incoming %d", c.stage, element.Stamp)
+			//c.pending <- element
+			//}
+
+			stampedOutput <- element
+		}
+	}()
 
 	return stampedOutput
 }
-
-func (c *Context) interceptor(stampedOutput chan *Element) {
-	defer close(stampedOutput)
-	for element := range c.emits {
-		element.Stamp.AddTrace(c.GetNodeID())
-		//initial stamping of elements
-		if element.Stamp.Hi == 0 {
-			s := atomic.AddUint64(&c.autoi, 1)
-			element.Stamp.Hi = s
-			element.Stamp.Lo = s
-		}
-		if element.Stamp.Unix == 0 {
-			element.Stamp.Unix = time.Now().Unix()
-		}
-		//checkpointing
-		element.ack = c.Ack
-		if element.Stamp.Hi > c.highestPending {
-			c.highestPending = element.Stamp.Hi
-		}
-		//TODO if !c.isPassthrough {
-		//c.log("STAGE[%d] Incoming %d", c.stage, element.Stamp)
-		//c.pending <- element
-		//}
-
-		stampedOutput <- element
-	}
-}
-
 
 func (c *Context) checkpointer() {
 	//var commitable Commitable
@@ -163,13 +156,23 @@ func (c *Context) checkpointer() {
 	checkpoint := make(map[int]interface{})
 	pendingCommitReuqest := false
 
+	if isCommitable {
+		go func() {
+			commitRequests <- true
+			for checkpoint := range commits {
+				c.log("STAGE[%d] Commit Checkpoint: %v", c.stage, checkpoint)
+				//commitable.Commit(checkpoint)
+				commitRequests <- true
+			}
+		}()
+	}
+
 	doCommit := func() {
 		if len(checkpoint) > 0 {
 			pendingCommitReuqest = false
 			//TODO if isCommitable {
-				//stream.log("STAGE[%d] Commit Checkpoint: %v", stream.stage, checkpoint)
-				commits <- checkpoint
-			//}
+			//commits <- checkpoint
+			//}s
 			checkpoint = make(map[int]interface{})
 		}
 	}
@@ -201,7 +204,7 @@ func (c *Context) checkpointer() {
 			chk := pendingCheckpoints[lo]
 			delete(pendingCheckpoints, lo)
 			checkpoint[chk.Part] = chk.Data
-			//stream.log("STAGE[%d] DELETING PART %d DATA %v \n", stream.stage, chk.Part, chk.Data)
+			//c.log("STAGE[%d] DELETING PART %d DATA %v \n", c.stage, chk.Part, chk.Data)
 		}
 		if len(pendingCheckpoints) < cap && pendingSuspendable == nil {
 			//release the backpressure after capacity is freed
@@ -218,7 +221,7 @@ func (c *Context) checkpointer() {
 	for !terminated {
 		select {
 		case <-c.terminate:
-			//c.log("STAGE[%d] Terminating", c.stage)
+			c.log("STAGE[%d] Terminating", c.stage)
 			c.terminating = true
 			maybeTerminate()
 		case <-commitRequests:
@@ -246,7 +249,7 @@ func (c *Context) checkpointer() {
 
 		case e := <-pendingSuspendable:
 			if terminated {
-				panic(fmt.Errorf("STAGE[%d] Illegal Pending %v",  -1, e))//)FIXME c.stage, e))
+				panic(fmt.Errorf("STAGE[%d] Illegal Pending %v", c.stage, e))
 			}
 			pending.Merge(e.Stamp)
 			for u := e.Stamp.Lo; u <= e.Stamp.Hi; u++ {
@@ -255,7 +258,7 @@ func (c *Context) checkpointer() {
 
 			resolveAcks()
 
-			c.log("STAGE[%d] Pending: %v Checkpoints: %v\n", c.stage, pending, len(pendingCheckpoints))
+			//c.log("STAGE[%d] Pending: %v Checkpoints: %v\n", c.stage, pending, len(pendingCheckpoints))
 			if len(pendingCheckpoints) == cap {
 				//in order to apply backpressure this channel needs to be nilld but right now it hangs after second pendingSuspendable
 				pendingSuspendable = nil
@@ -268,7 +271,6 @@ func (c *Context) checkpointer() {
 
 	}
 	c.completed <- true
-
 }
 
 func (c *Context) log(f string, args ... interface{}) {

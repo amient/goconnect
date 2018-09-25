@@ -21,7 +21,7 @@ func main() {
 		Apply(new(network.NetMergeOrdered)).
 		Apply(new(std.Out))
 
-	network.Runner(pipeline, "127.0.0.1:19001", "127.0.0.1:19002")
+	network.Runner(pipeline, "127.0.0.1:19001")//, "127.0.0.1:19002")
 
 	//FIXME
 	time.Sleep(1 * time.Second)

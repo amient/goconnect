@@ -40,15 +40,15 @@ func JoinCluster(nodes ...string) []*Node {
 
 	//join the cluster
 	log.Printf("Joining Cluser of %d nodes with %d running in this process", len(nodes), len(instances))
-	cluster := sync.WaitGroup{}
+	join := sync.WaitGroup{}
 	for _, instance := range instances {
-		cluster.Add(1)
+		join.Add(1)
 		go func(node *Node) {
 			node.Join(nodes)
-			cluster.Done()
+			join.Done()
 		}(instance)
 	}
-	cluster.Wait()
+	join.Wait()
 
 	return instances
 }

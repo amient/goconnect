@@ -65,7 +65,10 @@ func (it *iterable) Do(context *goc.Context) {
 		limit := it.val.Len()
 		for l := 0; l < it.n; l++ {
 			i := l % limit
-			context.Emit2(it.val.Index(i).Interface(), goc.Checkpoint{Data: l})
+			context.Emit(&goc.Element{
+				Value:      it.val.Index(i).Interface(),
+				Checkpoint: goc.Checkpoint{Data: l},
+			})
 		}
 	}
 }

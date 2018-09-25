@@ -26,19 +26,6 @@ func (sender *TCPSender) Up() <-chan *goc.Stamp {
 	return sender.stamps
 }
 
-func (sender *TCPSender) Send(e *goc.Element) {
-	sender.duplex.writeUInt16(2) //magic
-	sender.duplex.writeUInt64(uint64(e.Stamp.Unix))
-	sender.duplex.writeUInt64(e.Stamp.Lo)
-	sender.duplex.writeUInt64(e.Stamp.Hi)
-	sender.duplex.writeUInt16(e.Stamp.TraceLen())
-	for _, nodeId := range e.Stamp.Trace {
-		sender.duplex.writeUInt16(nodeId)
-	}
-	sender.duplex.writeSlice(e.Value.([]byte))
-	sender.duplex.writer.Flush()
-}
-
 func (sender *TCPSender) Close() error {
 	close(sender.stamps)
 	return sender.duplex.Close()
@@ -77,6 +64,20 @@ func (sender *TCPSender) Start() error {
 	}()
 	return nil
 }
+
+func (sender *TCPSender) Send(e *goc.Element) {
+	sender.duplex.writeUInt16(2) //magic
+	sender.duplex.writeUInt64(uint64(e.Stamp.Unix))
+	sender.duplex.writeUInt64(e.Stamp.Lo)
+	sender.duplex.writeUInt64(e.Stamp.Hi)
+	sender.duplex.writeUInt16(e.Stamp.TraceLen())
+	for _, nodeId := range e.Stamp.Trace {
+		sender.duplex.writeUInt16(nodeId)
+	}
+	sender.duplex.writeSlice(e.Value.([]byte))
+	sender.duplex.writer.Flush()
+}
+
 func (sender *TCPSender) SendNodeIdentify(nodeId int, receiver *Server) {
 	sender.duplex.writeUInt16(1) //magic
 	sender.duplex.writeUInt16(uint16(nodeId))
