@@ -38,7 +38,6 @@ func (e *Element) Ack() {
 type Checkpoint struct {
 	Part  int
 	Data  interface{}
-	acked bool
 }
 
 

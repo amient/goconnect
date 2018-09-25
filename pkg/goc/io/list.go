@@ -21,6 +21,7 @@ package io
 
 import (
 	"github.com/amient/goconnect/pkg/goc"
+	"log"
 	"reflect"
 )
 
@@ -48,18 +49,6 @@ func (it *iterable) OutType() reflect.Type {
 	return it.typ.Elem()
 }
 
-func (it *iterable) Run(output chan *goc.Element) {
-	limit := it.val.Len()
-	for l := 0; l < it.n; l++ {
-		i := l % limit
-		output <- &goc.Element{
-			Checkpoint: goc.Checkpoint{Data: l},
-			Value:      it.val.Index(i).Interface(),
-		}
-	}
-	close(output)
-}
-
 func (it *iterable) Do(context *goc.Context) {
 	if context.GetNodeID() == 1 {
 		limit := it.val.Len()
@@ -71,4 +60,9 @@ func (it *iterable) Do(context *goc.Context) {
 			})
 		}
 	}
+}
+
+func (it *iterable) Commit(checkpoint map[int]interface{}) error {
+	log.Println("ITERABLE COMMIT: ", checkpoint[0])
+	return nil
 }

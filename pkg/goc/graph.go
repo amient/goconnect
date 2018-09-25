@@ -3,8 +3,10 @@ package goc
 import (
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
 	"reflect"
-	"sync"
+	"syscall"
 )
 
 type Graph []*Context
@@ -21,22 +23,44 @@ func BuildGraph(connector Connector, pipeline *Pipeline) Graph {
 	return graph
 }
 
-func RunGraphs(graphs []Graph) {
-	group := new(sync.WaitGroup)
-	for _, graph := range graphs {
-		group.Add(1)
-		go func(graph Graph) {
-			RunGraph(graph)
-			group.Done()
-		}(graph)
+func RunGraphs(graphs ...Graph) {
+	//this method assumes a single source in each graph
+	sources := make([]*Context, len(graphs))
+	cases := make([]reflect.SelectCase, len(graphs)+1)
+	sigterm := make(chan os.Signal, 1)
+	signal.Notify(sigterm, syscall.SIGINT, syscall.SIGTERM)
+	cases[0] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(sigterm)}
+	for i, graph := range graphs {
+		sources[i] = graph[0]
+		RunGraph(graph)
+		cases[i+1] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(sources[i].completed)}
 	}
-	group.Wait()
+
+	runningGraphs := len(graphs)
+	for {
+		if chosen, value, _ := reflect.Select(cases); chosen == 0 {
+			log.Printf("Caught signal %v: Cancelling\n", value.Interface())
+			for _, source := range sources {
+				if !source.closed {
+					source.terminate <- true
+				}
+			}
+		} else {
+			runningGraphs--
+			println(chosen, "completed, num running: ", runningGraphs)
+			for i := len(graphs[chosen-1]) - 1; i >= 0; i-- {
+				graphs[chosen-1][i].Close()
+			}
+			if runningGraphs == 0 {
+				return
+			}
+		}
+
+	}
 }
 
 func RunGraph(graph Graph) {
-	w := sync.WaitGroup{}
 	for _, ctx := range graph {
-		w.Add(1)
 		go func(context *Context) {
 			switch fn := context.fn.(type) {
 			case Root:
@@ -60,25 +84,18 @@ func RunGraph(graph Graph) {
 					out.Checkpoint = e.Checkpoint
 					context.Emit(out)
 				}
-			default:
-				t := reflect.TypeOf(fn)
-				if t.Kind() == reflect.Func && t.NumIn() == 1 && t.NumOut() == 1 {
-					//simple mapper function
-					v := reflect.ValueOf(fn)
-					for e := range context.up.Attach() {
-						context.Emit(&Element{
-							Stamp: e.Stamp,
-							Value: v.Call([]reflect.Value{reflect.ValueOf(e.Value)})[0].Interface(),
-						})
+			case FilterFn:
+				for e := range context.up.Attach() {
+					if fn.Pass(e) {
+						context.Emit(e)
 					}
-				} else {
-					panic(fmt.Errorf("Unsupported Stage Type %q", t))
 				}
+			default:
+				panic(fmt.Errorf("Unsupported Stage Type %q", reflect.TypeOf(fn)))
 			}
 			context.Close()
-			w.Done()
+			context.terminate <- true
 		}(ctx)
 	}
-	w.Wait()
 
 }

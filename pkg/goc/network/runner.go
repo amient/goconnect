@@ -12,12 +12,12 @@ func Runner(pipeline *goc.Pipeline, addrs ...string) {
 	localNodes := JoinCluster(addrs...)
 
 	graphs := make([]goc.Graph, len(localNodes))
-	for _, node := range localNodes {
-		graphs = append(graphs, goc.BuildGraph(node, pipeline))
+	for i, node := range localNodes {
+		graphs[i] = goc.BuildGraph(node, pipeline)
 	}
 
 	log.Println("Running all graphs")
-	goc.RunGraphs(graphs)
+	goc.RunGraphs(graphs...)
 
 	log.Println("Run graphs completed")
 	for _, node := range localNodes {
