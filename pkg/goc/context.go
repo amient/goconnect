@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"reflect"
 	"sync/atomic"
 	"time"
 )
@@ -117,10 +116,7 @@ func (c *Context) Attach() <-chan *Element {
 		return nil
 	}
 
-	if c.isPassthrough {
-		log.Printf("Initializing Passthru Stage %d %v\n", c.stage, reflect.TypeOf(c.fn))
-	} else {
-		log.Printf("Initializing Buffered Stage %d %v\n", c.stage, reflect.TypeOf(c.fn))
+	if !c.isPassthrough {
 		c.checkpointer(100000) //TODO configurable capacity
 	}
 
@@ -144,7 +140,7 @@ func (c *Context) Attach() <-chan *Element {
 				c.highestPending = element.Stamp.Hi
 			}
 			if !c.isPassthrough {
-				c.log("STAGE[%d] Incoming %d", c.stage, element.Stamp)
+				//c.log("STAGE[%d] Incoming %d", c.stage, element.Stamp)
 				c.pending <- element
 			}
 
@@ -275,7 +271,7 @@ func (c *Context) checkpointer(cap int) {
 
 				resolveAcks()
 
-				c.log("STAGE[%d] Pending: %v Checkpoints: %v\n", c.stage, pending, len(pendingCheckpoints))
+				//c.log("STAGE[%d] Pending: %v Checkpoints: %v\n", c.stage, pending, len(pendingCheckpoints))
 				if len(pendingCheckpoints) == cap {
 					//in order to apply backpressure this channel needs to be nilld but right now it hangs after second pendingSuspendable
 					pendingSuspendable = nil

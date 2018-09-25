@@ -15,9 +15,13 @@ func main() {
 
 	pipeline.
 		Root(io.From([]string{"aaa", "bbb", "ccc"})).
-		//Apply(new(network.NetRoundRobin)).
+		//coder
+		Apply(new(network.NetRoundRobin)).
+		//coder
 		Map(func(input string) string { return strings.ToUpper(input) }).
+		//coder
 		//Apply(new(network.NetMergeOrdered)).
+		//coder
 		Apply(new(std.Out))
 
 	network.Runner(pipeline, "127.0.0.1:19001")//, "127.0.0.1:19002")

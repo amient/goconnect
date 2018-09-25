@@ -61,6 +61,13 @@ func RunGraphs(graphs ...Graph) {
 
 func RunGraph(graph Graph) {
 	for _, ctx := range graph {
+		if ctx.isPassthrough {
+			log.Printf("Initializing Passthru Stage %d %v\n", ctx.stage, reflect.TypeOf(ctx.fn))
+		} else {
+			log.Printf("Initializing Buffered Stage %d %v\n", ctx.stage, reflect.TypeOf(ctx.fn))
+
+		}
+
 		go func(context *Context) {
 			switch fn := context.fn.(type) {
 			case Root:
