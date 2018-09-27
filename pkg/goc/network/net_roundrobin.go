@@ -24,9 +24,6 @@ func (n *NetRoundRobin) Run(input <-chan *goc.Element, context *goc.Context) {
 			senders[i].Send(e)
 			i = (i + 1) % len(senders)
 		}
-		for _, s := range senders {
-			s.Close()
-		}
 	}()
 
 	for e := range receiver.Elements() {

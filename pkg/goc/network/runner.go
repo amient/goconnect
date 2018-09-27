@@ -19,7 +19,7 @@ func Runner(pipeline *goc.Pipeline, addrs ...string) {
 	log.Println("Running all graphs")
 	goc.RunGraphs(graphs...)
 
-	log.Println("Run graphs completed")
+	log.Println("All stages completed")
 	for _, node := range localNodes {
 		node.server.Close()
 	}

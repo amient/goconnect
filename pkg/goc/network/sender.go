@@ -3,6 +3,7 @@ package network
 import (
 	"fmt"
 	"github.com/amient/goconnect/pkg/goc"
+	"log"
 	"net"
 )
 
@@ -29,6 +30,7 @@ func (sender *TCPSender) Acks() <-chan *goc.Stamp {
 }
 
 func (sender *TCPSender) Close() error {
+	log.Printf("NODE[%d] TCPSender.Close(%d)", sender.nodeId, sender.handlerId)
 	close(sender.acks)
 	return sender.duplex.Close()
 }
@@ -56,8 +58,7 @@ func (sender *TCPSender) Start() error {
 			case 1: //incoming ack from downstream
 				stamp := goc.Stamp{
 					Unix: int64(d.readUInt64()),
-					Lo:   d.readUInt64(),
-					Hi:   d.readUInt64(),
+					Uniq:   d.readUInt64(),
 				}
 				sender.acks <- &stamp
 			default:
@@ -71,8 +72,7 @@ func (sender *TCPSender) Start() error {
 func (sender *TCPSender) Send(e *goc.Element) {
 	sender.duplex.writeUInt16(2) //magic
 	sender.duplex.writeUInt64(uint64(e.Stamp.Unix))
-	sender.duplex.writeUInt64(e.Stamp.Lo)
-	sender.duplex.writeUInt64(e.Stamp.Hi)
+	sender.duplex.writeUInt64(e.Stamp.Uniq)
 	sender.duplex.writeUInt16(e.Stamp.TraceLen())
 	for _, nodeId := range e.Stamp.Trace {
 		sender.duplex.writeUInt16(nodeId)

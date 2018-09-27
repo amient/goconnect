@@ -55,7 +55,8 @@ type OrderedElementSet struct {
 }
 
 func (set *OrderedElementSet) AddElement(elementToAdd *Element, context *Context) {
-	set.elements[elementToAdd.Stamp.Hi] = elementToAdd
+	//FIXME ordered element set must have its own stamp
+	set.elements[elementToAdd.Stamp.Uniq] = elementToAdd
 	for ; set.elements[set.next + 1] != nil; {
 		set.next ++
 		context.Emit(set.elements[set.next])

@@ -25,37 +25,36 @@ import (
 
 type Stamp struct {
 	Unix  int64
-	Lo    uint64
-	Hi    uint64
+	Uniq  uint64
 	Trace []uint16
 }
 
 func (s *Stamp) Valid() bool {
-	return s.Lo != 0 && s.Hi != 0 && s.Lo <= s.Hi
+	return s.Uniq != 0
 }
 
-func (s *Stamp) Merge(other Stamp) Stamp {
-	if !s.Valid() {
-		s.Lo = other.Lo
-		s.Hi = other.Hi
-		s.Unix = other.Unix
-	} else {
-		if other.Lo < s.Lo {
-			s.Lo = other.Lo
-		}
-		if other.Hi > s.Hi {
-			s.Hi = other.Hi
-		}
-		if other.Unix > s.Unix {
-			s.Unix = other.Unix
-		}
-	}
-	return *s
-}
+//func (s *Stamp) Merge(other Stamp) Stamp {
+//	if !s.Valid() {
+//		s.Lo = other.Lo
+//		s.Hi = other.Hi
+//		s.Unix = other.Unix
+//	} else {
+//		if other.Lo < s.Lo {
+//			s.Lo = other.Lo
+//		}
+//		if other.Hi > s.Hi {
+//			s.Hi = other.Hi
+//		}
+//		if other.Unix > s.Unix {
+//			s.Unix = other.Unix
+//		}
+//	}
+//	return *s
+//}
 
 func (s *Stamp) String() string {
 	if s.Valid() {
-		return fmt.Sprintf("{%d:%d %v}", s.Lo, s.Hi, s.Trace)
+		return fmt.Sprintf("{%d ~ %v}", s.Uniq, s.Trace)
 	} else {
 		return "{-}"
 	}

@@ -20,17 +20,15 @@ func TestNetworkTools(t *testing.T) {
 	fixture := goc.Element{
 		Stamp: goc.Stamp{
 			Unix: time.Now().Unix(),
-			Lo:   1,
-			Hi:   10,
+			Uniq:   1,
 		},
 		Value: []byte("Hello World"),
 	}
 
 	sender.Send(&fixture)
 
-
 	received := <-handler.Elements()
-	if (*received).Stamp.Lo != fixture.Stamp.Lo || (*received).Stamp.Hi != fixture.Stamp.Hi || reflect.DeepEqual((*received).Stamp.Trace, fixture.Stamp.Trace) {
+	if (*received).Stamp.Uniq != fixture.Stamp.Uniq || reflect.DeepEqual((*received).Stamp.Trace, fixture.Stamp.Trace) {
 		log.Println(fixture.Stamp)
 		log.Println((*received).Stamp)
 		panic("Are not equal")

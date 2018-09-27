@@ -30,7 +30,6 @@ func (n *NetMergeOrdered) Run(input <-chan *goc.Element, context *goc.Context) {
 		for e := range input {
 			send.Send(e)
 		}
-		send.Close()
 	}()
 
 	if mergeOnThisNode {

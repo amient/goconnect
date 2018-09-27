@@ -1,7 +1,6 @@
 package goc
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -34,12 +33,16 @@ func RunGraphs(graphs ...Graph) {
 	runningStages := 0
 	for i, graph := range graphs {
 		sources[i] = graph[0]
-		for _, s := range graph {
-			cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(s.completed)})
+		for _, ctx := range graph {
+			if ctx.isPassthrough {
+				log.Printf("Context[%d] Passthru Stage %d %v\n", runningStages, ctx.stage, reflect.TypeOf(ctx.fn))
+			} else {
+				log.Printf("Context[%d] Buffered Stage %d %v\n", runningStages, ctx.stage, reflect.TypeOf(ctx.fn))
+			}
+			cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(ctx.completed)})
+			ctx.Start()
 			runningStages++
 		}
-		RunGraph(graph)
-
 	}
 
 	for {
@@ -61,50 +64,3 @@ func RunGraphs(graphs ...Graph) {
 	}
 }
 
-func RunGraph(graph Graph) {
-	for _, ctx := range graph {
-		if ctx.isPassthrough {
-			log.Printf("Initializing Passthru Stage %d %v\n", ctx.stage, reflect.TypeOf(ctx.fn))
-		} else {
-			log.Printf("Initializing Buffered Stage %d %v\n", ctx.stage, reflect.TypeOf(ctx.fn))
-
-		}
-
-		go func(context *Context) {
-			switch fn := context.fn.(type) {
-			case Root:
-				fn.Do(context)
-			case Transform:
-				fn.Run(context.up.Attach(), context)
-			case ForEach:
-				fn.Run(context.up.Attach(), context)
-
-			case ElementWiseFn:
-				for e := range context.up.Attach() {
-					fn.Process(e, context)
-				}
-			case ForEachFn:
-				for e := range context.up.Attach() {
-					fn.Process(e)
-				}
-			case MapFn:
-				for e := range context.up.Attach() {
-					out := fn.Process(e)
-					out.Stamp = e.Stamp
-					out.Checkpoint = e.Checkpoint
-					context.Emit(out)
-				}
-			case FilterFn:
-				for e := range context.up.Attach() {
-					if fn.Pass(e) {
-						context.Emit(e)
-					}
-				}
-			default:
-				panic(fmt.Errorf("unsupported Stage Type %q", reflect.TypeOf(fn)))
-			}
-			context.Terminate()
-		}(ctx)
-	}
-
-}

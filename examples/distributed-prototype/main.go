@@ -6,7 +6,6 @@ import (
 	"github.com/amient/goconnect/pkg/goc/io"
 	"github.com/amient/goconnect/pkg/goc/io/std"
 	"github.com/amient/goconnect/pkg/goc/network"
-	"strings"
 )
 
 func main() {
@@ -16,9 +15,9 @@ func main() {
 	pipeline.
 		Root(io.From([]string{"aaa", "bbb", "ccc"})).
 		//coder
-		Apply(new(network.NetRoundRobin)).
+		//Apply(new(network.NetRoundRobin)).
 		//coder
-		Map(func(input string) string { return strings.ToUpper(input) }).
+		//Map(func(input string) string { return strings.ToUpper(input) }).
 		//coder
 		//Apply(new(network.NetMergeOrdered)).
 		//coder

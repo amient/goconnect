@@ -36,7 +36,7 @@ type Server struct {
 }
 
 func (server *Server) Close() error {
-	log.Printf("CLOSE SERVER[%v]", server.addr)
+	log.Printf("CLOSE SERVER[%v] num.receivers = %d", server.addr, len(server.receivers))
 	server.quit <- true
 	<-server.quit
 	return nil
@@ -117,12 +117,11 @@ func (h *TCPReceiver) ID() uint16 {
 
 func (h *TCPReceiver) Ack(stamp goc.Stamp) error {
 	upstreamNode := stamp.Trace[int(h.ID()-2)]
-	log.Printf("TCP-ACK[%v/%d] upstream node =%d", h.server.addr, h.ID, upstreamNode)
+	log.Printf("TCP-ACK[%v/%d] upstream node =%d", h.server.addr, h.ID(), upstreamNode)
 	duplex := h.duplex[upstreamNode]
 	duplex.writeUInt16(1) //magic
 	duplex.writeUInt64(uint64(stamp.Unix))
-	duplex.writeUInt64(stamp.Lo)
-	duplex.writeUInt64(stamp.Hi)
+	duplex.writeUInt64(stamp.Uniq)
 	return duplex.Flush()
 
 }
@@ -135,6 +134,9 @@ func (h *TCPReceiver) handle(duplex *Duplex, conn net.Conn) {
 		defer h.Close()
 	}
 
+	if h.id > 0 {
+		defer println("Closing handler duplex", h.server.ID, h.id)
+	}
 	defer duplex.Close()
 	defer conn.Close()
 	for {
@@ -142,7 +144,7 @@ func (h *TCPReceiver) handle(duplex *Duplex, conn net.Conn) {
 		magic := duplex.readUInt16()
 		switch magic {
 		case 0: //eof
-			//log.Printf("EOF[%v/%d]", h.server.addr, h.NodeID)
+			log.Printf("NODE[%d] EOF HANDLER %d", h.server.ID, h.ID())
 			return
 		case 1: //node identification
 			id := duplex.readUInt16() + 1
@@ -158,13 +160,11 @@ func (h *TCPReceiver) handle(duplex *Duplex, conn net.Conn) {
 		case 2: //downstream element
 			//read stamp first
 			unix := int64(duplex.readUInt64())
-			lo := duplex.readUInt64()
-			hi := duplex.readUInt64()
+			uniq := duplex.readUInt64()
 			numTraceSteps := duplex.readUInt16()
 			stamp := goc.Stamp{
 				Unix:  unix,
-				Lo:    lo,
-				Hi:    hi,
+				Uniq:  uniq,
 				Trace: goc.NewTrace(numTraceSteps),
 			}
 			for i := uint16(0); i < numTraceSteps; i++ {
