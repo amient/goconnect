@@ -37,7 +37,7 @@ func (node *Node) GetNumPeers() uint16 {
 	return uint16(len(node.nodes))
 }
 
-func (node *Node) GetReceiver(stageId uint16) goc.Receiver {
+func (node *Node) MakeReceiver(stageId uint16) goc.Receiver {
 	return node.server.NewReceiver(stageId)
 }
 

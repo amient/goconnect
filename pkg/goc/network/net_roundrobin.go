@@ -16,7 +16,7 @@ func (n *NetRoundRobin) OutType() reflect.Type {
 }
 
 func (n *NetRoundRobin) Run(input <-chan *goc.Element, context *goc.Context) {
-	receiver := context.MakeReceiver()
+	receiver := context.GetReceiver()
 	senders := context.MakeSenders()
 	go func() {
 		i := 0
@@ -27,6 +27,7 @@ func (n *NetRoundRobin) Run(input <-chan *goc.Element, context *goc.Context) {
 	}()
 
 	for e := range receiver.Elements() {
+		//TODO built-in checkpoint behaviour for network receivers
 		fromNode := e.Stamp.Trace[context.GetStage()-2]
 		e.Checkpoint = goc.Checkpoint{
 			Part: int(fromNode),

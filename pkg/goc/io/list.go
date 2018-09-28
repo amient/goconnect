@@ -62,7 +62,7 @@ func (it *iterable) Do(context *goc.Context) {
 	}
 }
 
-func (it *iterable) Commit(checkpoint map[int]interface{}) error {
-	log.Println("ITERABLE COMMIT: ", checkpoint[0])
+func (it *iterable) Commit(watermark goc.Watermark) error {
+	log.Println("ITERABLE COMMIT: ", watermark[0])
 	return nil
 }

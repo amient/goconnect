@@ -42,6 +42,10 @@ type Checkpoint struct {
 	Data  interface{}
 }
 
+type Commitable interface {
+	Commit(watermark Watermark) error
+}
+
 
 func NewOrderedElementSet(cap int) *OrderedElementSet {
 	return &OrderedElementSet{
