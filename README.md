@@ -5,9 +5,10 @@ a lot more efficient and has a low package and memory footprint - it can run hap
 
 - it builds linear pipelines for similar to Kafka Connect so it's goal is data connectivity not general data processing 
 - it is more general than Kafka Connect and can build file-for-a-file pipelines
-- ~but it is a bit less general compared to Beam it only builds linear chains of transforms, not graphs~
-- like Beam, it has internal concept of parallelism and coders ~however here everything is statically typed~
-- it scales similarly to Kafka Connect by simply running mulitple instances of the same adapter
+- but it is a bit less general compared to Beam it only builds linear chains of transforms, not graphs
+- like Beam, it has internal concept of parallelism and coders
+- additionally it features vertical and horizontal parallelism out-of-the-box
+- it scales similarly to Kafka Connect by simply running mulitple identical instances 
 - it guarantees at-least-once processing and is capable of exactly-once 
   with a choice of optimistic and pessimistic checkpointing depending whether the source supports some notion of offsets or not
 - it has a concept of EventTime built in to the basic concept
@@ -15,7 +16,7 @@ a lot more efficient and has a low package and memory footprint - it can run hap
   if the input data is bounded the pipeline will terminate when all input elements are fully processed
   if the input data is unbounded the pipeline will run indefinitely 
 - it has a first-class support for Avro with Schema Registry
-- pipelines have a distinct declaration and materialization phases  
+- pipelines have a distinct declaration and materialization phases
 
 (NOTE: THE PROTOTYPE IN THIS CODEBASE DOESN'T HAVE ALL THE FEATURES LISTED ABOVE BUT THOSE ARE THE AIM AND WILL APPEAR SOON)
 
