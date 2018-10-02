@@ -128,7 +128,7 @@ func (c *Context) Terminate() {
 		//c.log("Terminate - closing")
 		c.close()
 	} else {
-		c.log("Terminate - await completion")
+		//c.log("Terminate - await completion")
 		c.terminate <- true
 	}
 }
@@ -155,11 +155,11 @@ func (c *Context) Start() {
 			}
 		}
 
-		//if element.Checkpoint.Data == nil {
+		if element.Checkpoint.Data == nil {
 		//	c.log("OUTPUT stamp: %v", element.Stamp)
-		//} else {
+		} else {
 		//	c.log("OUTPUT stamp: %v checkpoint: %v", element.Stamp, element.Checkpoint)
-		//}
+		}
 		element.ack = c.Ack
 		if element.Stamp.Uniq > c.highestPending {
 			c.highestPending = element.Stamp.Uniq
@@ -205,6 +205,15 @@ func (c *Context) runFn(starting *sync.WaitGroup) {
 		for e := range c.up.output {
 			fn.Process(e, c)
 		}
+	case GroupFn:
+		for e := range c.up.output {
+			fn.Process(e)
+			e.Ack() //FIXME elements should not be acked here but instead accumulated and acked all when triggered one is acked
+		}
+		for _, e := range fn.Trigger() {
+			c.Emit(e)
+		}
+
 	case ForEachFn:
 		for e := range c.up.output {
 			fn.Process(e)
@@ -219,6 +228,8 @@ func (c *Context) runFn(starting *sync.WaitGroup) {
 		for e := range c.up.output {
 			if fn.Pass(e) {
 				c.Emit(e)
+			} else {
+				e.Ack()
 			}
 		}
 	default:
@@ -249,7 +260,7 @@ func (c *Context) checkpointer(cap int, pending chan Pending, commitRequests cha
 			if len(watermark) == 0 && c.highestPending == c.highestAcked {
 				clean := (pendingCommitReuqest || !c.isCommitable) && len(pendingCheckpoints) == 0
 				if clean {
-					c.log("Completed - closing")
+					//c.log("Completed - closing")
 					close(pending)
 					close(c.acks)
 					c.acks = nil

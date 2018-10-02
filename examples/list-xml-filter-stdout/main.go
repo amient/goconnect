@@ -74,10 +74,8 @@ func main() {
 		return !strings.Contains(input, "B")
 	})
 
-	filtered.Apply(new(std.Out))
-
 	//output the aggregation result by applying a general StdOutSink transform
-	//filtered.Apply(new(customAggregator)).Apply(new(std.Out))
+	filtered.Apply(new(customAggregator)).Apply(new(std.Out))
 	//filtered.Apply(&kafka1.Sink{Bootstrap: "localhost:9092", Topic: "test"})
 
 	network.Runner(pipeline, "127.0.0.1:19001")
