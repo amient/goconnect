@@ -38,6 +38,10 @@ func JoinCluster(nodes ...string) []*Node {
 		}
 	}
 
+	if len(instances) == 0 {
+		panic("no instances assigned")
+	}
+
 	//join the cluster
 	log.Printf("Joining Cluser of %d nodes with %d running in this process", len(nodes), len(instances))
 	join := sync.WaitGroup{}

@@ -61,6 +61,6 @@ func main() {
 		Topic:     *kafkaSinkTopic,
 	})
 
-	network.Runner(pipeline, "127.0.0.1:8234")
+	network.Runner(pipeline, "127.0.0.1:7234")
 
 }

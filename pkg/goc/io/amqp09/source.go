@@ -115,7 +115,7 @@ func (source *Source) Do(context *goc.Context) {
 
 }
 
-func (source *Source) Commit(checkpoint map[int]interface{}) error {
+func (source *Source) Commit(checkpoint goc.Watermark) error {
 	if checkpoint[0] != nil {
 		deliverTag := checkpoint[0].(uint64)
 		if err := source.channel.Ack(deliverTag, true); err != nil {

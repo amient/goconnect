@@ -25,17 +25,15 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"log"
 	"reflect"
+	"sync"
 	"time"
 )
 
 type Sink struct {
-	Bootstrap   string
-	Topic       string
-	producer    *kafka.Producer
-	//deliveries  chan kafka.Event
-	numProduced uint64
-	numAcked 	uint64
-
+	Bootstrap  string
+	Topic      string
+	producer   *kafka.Producer
+	numPending sync.WaitGroup
 }
 
 func (sink *Sink) InType() reflect.Type {
@@ -47,10 +45,9 @@ func (sink *Sink) Process(input *goc.Element) {
 
 	if sink.producer == nil {
 		sink.producer, err = kafka.NewProducer(&kafka.ConfigMap{
-			"bootstrap.servers": sink.Bootstrap,
+			"bootstrap.servers":   sink.Bootstrap,
 			"go.delivery.reports": true,
 		})
-		//sink.deliveries = make(chan kafka.Event, 100)
 		if err != nil {
 			panic(err)
 		}
@@ -65,17 +62,17 @@ func (sink *Sink) Process(input *goc.Element) {
 
 	for {
 		select {
-			case sink.producer.ProduceChannel() <- &kafka.Message{
-				TopicPartition: kafka.TopicPartition{Topic: &sink.Topic, Partition: kafka.PartitionAny},
-				Key:            kv.Key,
-				Value:          kv.Value,
-				Timestamp:      time.Unix(input.Stamp.Unix, 0),
-				Opaque:         input,
-			}:
-				sink.numProduced++
-				return
-			case e := <- sink.producer.Events():
-				sink.processKafkaEvent(e)
+		case sink.producer.ProduceChannel() <- &kafka.Message{
+			TopicPartition: kafka.TopicPartition{Topic: &sink.Topic, Partition: kafka.PartitionAny},
+			Key:            kv.Key,
+			Value:          kv.Value,
+			Timestamp:      time.Unix(input.Stamp.Unix, 0),
+			Opaque:         input,
+		}:
+			sink.numPending.Add(1)
+			return
+		case e := <-sink.producer.Events():
+			sink.processKafkaEvent(e)
 		}
 	}
 }
@@ -87,20 +84,16 @@ func (sink *Sink) processKafkaEvent(e kafka.Event) {
 			panic(fmt.Errorf("Delivery failed: %v\n", ev.TopicPartition))
 		} else {
 			ev.Opaque.(*goc.Element).Ack()
-			sink.numAcked++
-			if sink.numAcked == sink.numProduced {
-				log.Println("Kafka Producer in a clean state")
-			}
+			sink.numPending.Done()
 		}
 	}
 }
 
 func (sink *Sink) Close() error {
 	if sink.producer != nil {
-		defer log.Println("Closed Kafka Sink - Number of Produced Messages", sink.numProduced)
+		sink.numPending.Wait()
+		defer log.Println("Closed Kafka Sink in a clean state")
 		sink.producer.Close()
-		//close(sink.deliveries)
 	}
 	return nil
 }
-

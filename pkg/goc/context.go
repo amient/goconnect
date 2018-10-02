@@ -36,7 +36,6 @@ func NewContext(connector Connector, fn Fn) *Context {
 		connector:  connector,
 		fn:         fn,
 		output:     make(chan *Element),
-		stopSignal: make(chan bool, 1),
 		terminate:  make(chan bool),
 		completed:  make(chan bool),
 	}
@@ -47,8 +46,12 @@ func NewContext(connector Connector, fn Fn) *Context {
 		_, isMapFn := fn.(MapFn)
 		_, isTransform := fn.(Transform)
 		_, isForEach := fn.(ForEach)
+		_, isFilterFn := fn.(FilterFn)
 		_, isForEachFn := fn.(ForEachFn)
-		context.isPassthrough = !isTransform && (isMapFn || isForEachFn || isForEach)
+		context.isPassthrough = !isTransform && (isMapFn || isForEachFn || isForEach || isFilterFn)
+	}
+	if !context.isPassthrough {
+		context.acks = make(chan uint64, 10000) //TODO configurable ack capacity
 	}
 	return &context
 }
@@ -69,15 +72,11 @@ type Context struct {
 	highestAcked   uint64
 	acks           chan uint64
 	terminate      chan bool
-	stopSignal     chan bool
 	terminating    bool
 	closed         bool
 	completed      chan bool
 }
 
-func (c *Context) Closed() bool {
-	return c.closed
-}
 func (c *Context) GetNodeID() uint16 {
 	return c.connector.GetNodeID()
 }
@@ -118,19 +117,15 @@ func (c *Context) Ack(uniq uint64) {
 	if c.isPassthrough {
 		c.up.Ack(uniq)
 	} else {
+		if c.acks == nil {
+			panic("acks already closed")
+		}
 		c.acks <- uniq
 	}
 }
 
 func (c *Context) Terminate() {
-	c.stopSignal <- true
-	if c.isPassthrough {
-		//c.log("Terminate - closing")
-		c.close()
-	} else {
-		//c.log("Terminate - await completion")
-		c.terminate <- true
-	}
+	c.terminate <- true
 }
 
 func (c *Context) Start() {
@@ -175,7 +170,6 @@ func (c *Context) Start() {
 	verticalGroup.Wait()
 
 	if !c.isPassthrough {
-		c.acks = make(chan uint64, 10000) //TODO configurable ack capacity
 		var commits chan Watermark
 		var commitRequests chan bool
 		//c.log("COMMITABLE=%v", c.isCommitable)
@@ -190,8 +184,6 @@ func (c *Context) Start() {
 }
 
 func (c *Context) runFn(starting *sync.WaitGroup) {
-	defer c.Terminate()
-	defer close(c.output)
 	starting.Done()
 	switch fn := c.fn.(type) {
 	case Root:
@@ -235,6 +227,15 @@ func (c *Context) runFn(starting *sync.WaitGroup) {
 	default:
 		panic(fmt.Errorf("unsupported Stage Type %q", reflect.TypeOf(fn)))
 	}
+
+	close(c.output)
+	if c.isPassthrough {
+		c.close()
+	} else {
+		//c.log("Terminate - await completion")
+		c.Terminate()
+	}
+
 }
 
 func (c *Context) checkpointer(cap int, pending chan Pending, commitRequests chan bool, commits chan Watermark) {
@@ -248,7 +249,7 @@ func (c *Context) checkpointer(cap int, pending chan Pending, commitRequests cha
 		if len(watermark) > 0 {
 			pendingCommitReuqest = false
 			if c.isCommitable {
-				c.log("Commit Checkpoint: %v", watermark)
+				//c.log("Commit Checkpoint: %v", watermark)
 				commits <- watermark
 			}
 			watermark = make(map[int]interface{})
@@ -320,10 +321,6 @@ func (c *Context) checkpointer(cap int, pending chan Pending, commitRequests cha
 			resolveAcks(uniq, "ACK")
 
 		case p := <-pendingSuspendable:
-			if c.closed {
-				panic(fmt.Errorf("STAGE[%d] Illegal Pending %v", c.stage, p))
-			}
-
 			pendingCheckpoints[p.Uniq] = &p
 
 			resolveAcks(p.Uniq, "EMIT")
@@ -380,9 +377,4 @@ func (c *Context) log(f string, args ... interface{}) {
 	if c.stage > 0 {
 		log.Printf("NODE[%d] STAGE[%d] "+f, args2...)
 	}
-}
-
-func (c *Context) StopSignal() chan bool {
-	println("!")
-	return c.stopSignal
 }

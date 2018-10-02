@@ -31,7 +31,7 @@ func (sender *TCPSender) Acks() <-chan uint64 {
 }
 
 func (sender *TCPSender) Close() error {
-	log.Printf("NODE[%d] TCPSender.Close(%d)", sender.nodeId, sender.handlerId)
+	//log.Printf("NODE[%d] TCPSender.Close(%d)", sender.nodeId, sender.handlerId)
 	close(sender.acks)
 	return sender.duplex.Close()
 }

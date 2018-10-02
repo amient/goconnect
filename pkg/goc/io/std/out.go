@@ -28,7 +28,7 @@ import (
 	"time"
 )
 
-type Out struct {}
+type Out struct{}
 
 func (sink *Out) InType() reflect.Type {
 	return goc.AnyType
@@ -36,29 +36,22 @@ func (sink *Out) InType() reflect.Type {
 
 func (sink *Out) Run(input <-chan *goc.Element, context *goc.Context) {
 	buffer := make([]*goc.Element, 0, 100)
-	closed := make(chan bool, 1)
 	ticker := time.NewTicker(3000 * time.Millisecond).C
 	stdout := bufio.NewWriter(os.Stdout)
-
-	go func() {
-		for {
-			select {
-			case <-ticker:
-				buffer = sink.flush(stdout, buffer)
-			case <-closed:
+	for {
+		select {
+		case element, ok := <-input:
+			if !ok {
 				buffer = sink.flush(stdout, buffer)
 				return
+			} else {
+				sink.process(stdout, element.Value)
+				buffer = append(buffer, element)
 			}
+		case <-ticker:
+			buffer = sink.flush(stdout, buffer)
 		}
-	}()
-
-	for element := range input {
-		sink.process(stdout, element.Value)
-		buffer = append(buffer, element)
 	}
-
-	closed <- true
-
 }
 
 func (sink *Out) flush(stdout *bufio.Writer, buffer []*goc.Element) []*goc.Element {
@@ -88,4 +81,3 @@ func (sink *Out) process(stdout *bufio.Writer, element interface{}) {
 	}
 	stdout.WriteByte('\n')
 }
-
