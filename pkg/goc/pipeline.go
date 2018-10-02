@@ -74,6 +74,7 @@ func (p *Pipeline) Filter(that *Stream, fn FilterFn) *Stream {
 	if !that.Type.AssignableTo(fn.Type()) {
 		return p.Filter(p.injectCoder(that, fn.Type()), fn)
 	}
+
 	return p.register(&Stream{Type: that.Type, Fn: fn, Up: that})
 }
 

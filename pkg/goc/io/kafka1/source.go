@@ -73,42 +73,50 @@ func (source *Source) Do(context *goc.Context) {
 		panic(err)
 	}
 
-	for event := range source.consumer.Events() {
-		switch e := event.(type) {
-		case kafka.AssignedPartitions: //not used
-		case kafka.RevokedPartitions: //not used
-		case *kafka.Message:
-			if len(source.counter) == 0 {
-				source.start = time.Now()
+	for {
+		select {
+		//case <-context.StopSignal():
+		//	println("!!!")
+		//	return
+		case event, ok := <-source.consumer.Events():
+			if !ok {
+				return
 			}
-			if _, contains := source.counter[e.TopicPartition.Partition]; !contains {
-				source.counter[e.TopicPartition.Partition] = 0
-			}
-			source.counter[e.TopicPartition.Partition]++
-			context.Emit(&goc.Element{
-				Stamp: goc.Stamp{Unix: e.Timestamp.Unix()},
-				Checkpoint: goc.Checkpoint{
-					Part: int(e.TopicPartition.Partition),
-					Data: e.TopicPartition.Offset,
-				},
-				Value: goc.KVBytes{
-					Key:   e.Key,
-					Value: e.Value,
-				},
-			})
-		case kafka.PartitionEOF:
-			source.total += source.counter[e.Partition]
-			delete(source.counter, e.Partition)
-			if len(source.counter) == 0 && source.total > 0 {
-				log.Printf("EOF: Consumed %d in %f ms\n", source.total, time.Now().Sub(source.start).Seconds())
-				source.total = 0
-			}
+			switch e := event.(type) {
+			case kafka.AssignedPartitions: //not used
+			case kafka.RevokedPartitions: //not used
+			case *kafka.Message:
+				if len(source.counter) == 0 {
+					source.start = time.Now()
+				}
+				if _, contains := source.counter[e.TopicPartition.Partition]; !contains {
+					source.counter[e.TopicPartition.Partition] = 0
+				}
+				source.counter[e.TopicPartition.Partition]++
+				context.Emit(&goc.Element{
+					Stamp: goc.Stamp{Unix: e.Timestamp.Unix()},
+					Checkpoint: goc.Checkpoint{
+						Part: int(e.TopicPartition.Partition),
+						Data: e.TopicPartition.Offset,
+					},
+					Value: goc.KVBytes{
+						Key:   e.Key,
+						Value: e.Value,
+					},
+				})
+			case kafka.PartitionEOF:
+				source.total += source.counter[e.Partition]
+				delete(source.counter, e.Partition)
+				if len(source.counter) == 0 && source.total > 0 {
+					log.Printf("EOF: Consumed %d in %f ms\n", source.total, time.Now().Sub(source.start).Seconds())
+					source.total = 0
+				}
 
-		case kafka.Error:
-			panic(e)
+			case kafka.Error:
+				panic(e)
+			}
 		}
 	}
-
 }
 
 func (source *Source) Commit(checkpoint map[int]interface{}) error {
@@ -124,7 +132,7 @@ func (source *Source) Commit(checkpoint map[int]interface{}) error {
 		if _, err := source.consumer.CommitOffsets(offsets); err != nil {
 			return err
 		} else {
-			//log.Printf("Kafka Commit Successful: %v", offsets)
+			log.Printf("Kafka Commit Successful: %v", offsets)
 		}
 	}
 	return nil

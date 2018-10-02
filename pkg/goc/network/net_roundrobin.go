@@ -24,15 +24,14 @@ func (n *NetRoundRobin) Run(input <-chan *goc.Element, context *goc.Context) {
 			senders[i].Send(e)
 			i = (i + 1) % len(senders)
 		}
+		for _, s := range senders {
+			s.Eos()
+		}
 	}()
 
+
 	for e := range receiver.Elements() {
-		//TODO built-in checkpoint behaviour for network receivers
-		fromNode := e.Stamp.Trace[context.GetStage()-2]
-		e.Checkpoint = goc.Checkpoint{
-			Part: int(fromNode),
-			Data: e.Stamp,
-		}
 		context.Emit(e)
 	}
+
 }

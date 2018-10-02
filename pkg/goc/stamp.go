@@ -23,50 +23,41 @@ import (
 	"fmt"
 )
 
+type Watermark map[int]interface{}
+
+/**
+	Checkpoint is a map of int identifiers and values. The identifiers are specific to each transform, some
+	may have only one identifier, e.g. AMQP Source, others may have multiple, e.g. Kafka Source
+ */
+
+type Checkpoint struct {
+	Part int
+	Data interface{}
+}
+
+type Commitable interface {
+	Commit(watermark Watermark) error
+}
+
 type Stamp struct {
-	Unix  int64
-	Uniq  uint64
-	Trace []uint16
+	Unix int64
+	Uniq uint64
+}
+
+type Pending struct {
+	Uniq           uint64
+	UpstreamNodeId uint16
+	Checkpoint     *Checkpoint
 }
 
 func (s *Stamp) Valid() bool {
 	return s.Uniq != 0
 }
 
-//func (s *Stamp) Merge(other Stamp) Stamp {
-//	if !s.Valid() {
-//		s.Lo = other.Lo
-//		s.Hi = other.Hi
-//		s.Unix = other.Unix
-//	} else {
-//		if other.Lo < s.Lo {
-//			s.Lo = other.Lo
-//		}
-//		if other.Hi > s.Hi {
-//			s.Hi = other.Hi
-//		}
-//		if other.Unix > s.Unix {
-//			s.Unix = other.Unix
-//		}
-//	}
-//	return *s
-//}
-
 func (s *Stamp) String() string {
 	if s.Valid() {
-		return fmt.Sprintf("{%d ~ %v}", s.Uniq, s.Trace)
+		return fmt.Sprintf("{%d}", s.Uniq)
 	} else {
 		return "{-}"
 	}
-}
-
-func NewTrace(minNumTraceSteps uint16) []uint16 {
-	return make([]uint16, 0, (minNumTraceSteps/16+1)*16)
-}
-func (s *Stamp) AddTrace(id uint16) {
-	s.Trace = append(s.Trace, id)
-}
-
-func (s *Stamp) TraceLen() uint16 {
-	return uint16(len(s.Trace))
 }

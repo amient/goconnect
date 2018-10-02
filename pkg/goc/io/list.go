@@ -21,7 +21,6 @@ package io
 
 import (
 	"github.com/amient/goconnect/pkg/goc"
-	"log"
 	"reflect"
 )
 
@@ -40,9 +39,10 @@ func RoundRobin(n int, list interface{}) *iterable {
 }
 
 type iterable struct {
-	n   int
-	val reflect.Value
-	typ reflect.Type
+	n      int
+	offset int
+	val    reflect.Value
+	typ    reflect.Type
 }
 
 func (it *iterable) OutType() reflect.Type {
@@ -63,6 +63,7 @@ func (it *iterable) Do(context *goc.Context) {
 }
 
 func (it *iterable) Commit(watermark goc.Watermark) error {
-	log.Println("ITERABLE COMMIT: ", watermark[0])
+	it.offset = watermark[0].(int)
+	//log.Println("ITERABLE COMMIT: ", watermark[0])
 	return nil
 }

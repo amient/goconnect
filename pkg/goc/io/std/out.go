@@ -37,7 +37,7 @@ func (sink *Out) InType() reflect.Type {
 func (sink *Out) Run(input <-chan *goc.Element, context *goc.Context) {
 	buffer := make([]*goc.Element, 0, 100)
 	closed := make(chan bool, 1)
-	ticker := time.NewTicker(300 * time.Millisecond).C
+	ticker := time.NewTicker(3000 * time.Millisecond).C
 	stdout := bufio.NewWriter(os.Stdout)
 
 	go func() {

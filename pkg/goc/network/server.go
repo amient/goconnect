@@ -28,6 +28,7 @@ type Server struct {
 	Addr      net.Addr
 	Rand      int64
 	Assigned  chan bool
+	numNodes  uint32
 	ln        *net.TCPListener
 	addr      string
 	quit      chan bool
@@ -72,7 +73,9 @@ func (server *Server) Start() error {
 						receiver, exists := server.receivers[handlerId]
 						server.lock.Unlock()
 						if !exists {
-							panic(fmt.Errorf("ERROR[%v] TCPReceiver not registered %d", server.addr, handlerId))
+							duplex.writeUInt16(0)
+							duplex.Flush()
+							duplex.Close()
 						} else {
 							//reply that the channel has been setup
 							duplex.writeUInt16(handlerId)
@@ -93,6 +96,7 @@ func (server *Server) NewReceiver(handlerId uint16) *TCPReceiver {
 	server.receivers[handlerId] = &TCPReceiver{
 		id:     handlerId,
 		server: server,
+		eosCount: int32(server.numNodes),
 		duplex: make(map[uint16]*Duplex),
 		down:   make(chan *goc.Element, 100), //TODO the capacity should be the number of nodes
 	}
@@ -107,6 +111,7 @@ type TCPReceiver struct {
 	id       uint16
 	server   *Server
 	down     chan *goc.Element
+	eosCount int32
 	refCount int32
 	duplex   map[uint16]*Duplex
 }
@@ -115,27 +120,20 @@ func (h *TCPReceiver) ID() uint16 {
 	return h.id
 }
 
-func (h *TCPReceiver) Ack(stamp goc.Stamp) error {
-	upstreamNode := stamp.Trace[int(h.ID()-2)]
-	log.Printf("TCP-ACK[%v/%d] upstream node =%d", h.server.addr, h.ID(), upstreamNode)
-	duplex := h.duplex[upstreamNode]
+func (h *TCPReceiver) Ack(upstreamNodeId uint16, uniq uint64) error {
+	//log.Printf("NODE[%d] STAGE[%d] upstream  ACK(%d) >> NODE[%d]", h.server.ID, h.ID(), uniq, upstreamNodeId)
+	duplex := h.duplex[upstreamNodeId]
 	duplex.writeUInt16(1) //magic
-	duplex.writeUInt64(uint64(stamp.Unix))
-	duplex.writeUInt64(stamp.Uniq)
+	duplex.writeUInt64(uniq)
 	return duplex.Flush()
 
 }
 
 func (h *TCPReceiver) handle(duplex *Duplex, conn net.Conn) {
-	//refCount :=
 	atomic.AddInt32(&h.refCount, 1)
 	if h.id > 0 {
 		//log.Printf("OPEN[%v/%d] refCount=%d", h.server.addr, h.ID, refCount)
 		defer h.Close()
-	}
-
-	if h.id > 0 {
-		defer println("Closing handler duplex", h.server.ID, h.id)
 	}
 	defer duplex.Close()
 	defer conn.Close()
@@ -149,6 +147,7 @@ func (h *TCPReceiver) handle(duplex *Duplex, conn net.Conn) {
 		case 1: //node identification
 			id := duplex.readUInt16() + 1
 			rand := int64(duplex.readUInt64())
+			h.server.numNodes = duplex.readUInt32()
 			if rand == h.server.Rand {
 				log.Printf("Assignment: Node ID %d is listening on %v", id, conn.LocalAddr().String())
 				if h.server.ID != id {
@@ -159,24 +158,29 @@ func (h *TCPReceiver) handle(duplex *Duplex, conn net.Conn) {
 			return
 		case 2: //downstream element
 			//read stamp first
+			fromNodeId := duplex.readUInt16()
 			unix := int64(duplex.readUInt64())
 			uniq := duplex.readUInt64()
-			numTraceSteps := duplex.readUInt16()
 			stamp := goc.Stamp{
-				Unix:  unix,
-				Uniq:  uniq,
-				Trace: goc.NewTrace(numTraceSteps),
-			}
-			for i := uint16(0); i < numTraceSteps; i++ {
-				stamp.AddTrace(duplex.readUInt16())
+				Unix: unix,
+				Uniq: uniq,
 			}
 			//element value second
 			value := duplex.readSlice()
 			h.down <- &goc.Element{
-				Stamp: stamp,
-				Value: value,
+				Stamp:      stamp,
+				Value:      value,
+				FromNodeId: fromNodeId,
 			}
 			//log.Printf("RECEIVED[%v/%d] %v element: %v", h.server.addr, h.NodeID, stamp, value)
+		case 3: //eos
+			/*fromNodeId := */ duplex.readUInt16()
+			if atomic.AddInt32(&h.eosCount, -1) == 0 {
+				//log.Printf("NODE[%d] STAGE[%d] NETWORK EOS ", h.server.ID, h.id)
+				close(h.down)
+			} else {
+				//log.Printf("NODE[%d] STAGE[%d] NETWORK STILL ACTIVE %d", h.server.ID, h.id, h.eosCount)
+			}
 		default:
 			panic(fmt.Errorf("unknown magic byte %d", magic))
 		}
@@ -190,11 +194,9 @@ func (h *TCPReceiver) Elements() <-chan *goc.Element {
 
 func (h *TCPReceiver) Close() error {
 	refCount := atomic.AddInt32(&h.refCount, -1)
-	//log.Printf("CLOSE[%v/%d] refCount=%d", h.server.addr, h.ID, refCount)
+	log.Printf("CLOSE[%v/%d] refCount=%d", h.server.addr, h.ID(), refCount)
 	if refCount == 0 {
 		delete(h.server.receivers, h.id)
-		close(h.down)
-		h.down = nil
 	}
 	return nil
 }

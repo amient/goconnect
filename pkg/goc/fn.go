@@ -19,7 +19,9 @@
 
 package goc
 
-import "reflect"
+import (
+	"reflect"
+)
 
 type Fn interface{}
 
@@ -97,7 +99,7 @@ func (fn *userMapFn) InType() reflect.Type {
 }
 
 func (fn *userMapFn) OutType() reflect.Type {
-	return fn.inType
+	return fn.outType
 }
 
 func (fn *userMapFn) Process(input *Element) *Element {

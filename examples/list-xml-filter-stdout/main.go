@@ -25,6 +25,7 @@ import (
 	"github.com/amient/goconnect/pkg/goc/coder/gocxml"
 	"github.com/amient/goconnect/pkg/goc/io"
 	"github.com/amient/goconnect/pkg/goc/io/std"
+	"github.com/amient/goconnect/pkg/goc/network"
 	"reflect"
 	"strings"
 )
@@ -73,10 +74,12 @@ func main() {
 		return !strings.Contains(input, "B")
 	})
 
+	filtered.Apply(new(std.Out))
+
 	//output the aggregation result by applying a general StdOutSink transform
-	filtered.Apply(new(customAggregator)).Apply(new(std.Out))
+	//filtered.Apply(new(customAggregator)).Apply(new(std.Out))
 	//filtered.Apply(&kafka1.Sink{Bootstrap: "localhost:9092", Topic: "test"})
 
-	pipeline.Run()
+	network.Runner(pipeline, "127.0.0.1:19001")
 
 }

@@ -23,29 +23,13 @@ type Element struct {
 	Checkpoint Checkpoint //TODO make private and make sure it never leaves the stage Fn
 	Value      interface{}
 	Stamp 	   Stamp
-	ack        func(stamp *Stamp)
+	FromNodeId uint16
+	ack        func(uniq uint64)
 }
 
 func (e *Element) Ack() {
-	e.ack(&e.Stamp)
+	e.ack(e.Stamp.Uniq)
 }
-
-/**
-	Checkpoint is a map of int identifiers and values. The identifiers are specific to each transform, some
-	may have only one identifier, e.g. AMQP Source, others may have multiple, e.g. Kafka Source
- */
-
-type Watermark map[int]interface{}
-
-type Checkpoint struct {
-	Part  int
-	Data  interface{}
-}
-
-type Commitable interface {
-	Commit(watermark Watermark) error
-}
-
 
 func NewOrderedElementSet(cap int) *OrderedElementSet {
 	return &OrderedElementSet{

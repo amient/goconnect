@@ -6,6 +6,7 @@ import (
 	"github.com/amient/goconnect/pkg/goc/io"
 	"github.com/amient/goconnect/pkg/goc/io/std"
 	"github.com/amient/goconnect/pkg/goc/network"
+	"strings"
 )
 
 func main() {
@@ -14,15 +15,14 @@ func main() {
 
 	pipeline.
 		Root(io.From([]string{"aaa", "bbb", "ccc"})).
-		//coder
-		//Apply(new(network.NetRoundRobin)).
-		//coder
-		//Map(func(input string) string { return strings.ToUpper(input) }).
-		//coder
-		//Apply(new(network.NetMergeOrdered)).
-		//coder
+		//coder: string -> []uint8
+		Apply(new(network.NetRoundRobin)).
+		//coder: []uint8 -> string
+		Map(func(input string) string { return strings.ToUpper(input) }).
+		//coder: string -> []uint8
+		Apply(new(network.NetMergeOrdered)).
 		Apply(new(std.Out))
 
-	network.Runner(pipeline, "127.0.0.1:19001")//, "127.0.0.1:19002")
+	network.Runner(pipeline, "127.0.0.1:19001", "127.0.0.1:19002")
 
 }

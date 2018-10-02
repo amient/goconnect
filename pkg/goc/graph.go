@@ -47,15 +47,15 @@ func RunGraphs(graphs ...Graph) {
 
 	for {
 		if chosen, value, _ := reflect.Select(cases); chosen == 0 {
-			log.Printf("Caught signal %v: Cancelling\n", value.Interface())
 			for _, source := range sources {
+				log.Printf("Caught signal %v: Cancelling\n", value.Interface())
 				if !source.closed {
 					source.Terminate()
 				}
 			}
 		} else {
 			runningStages--
-			log.Printf("A Stage Completed [%v], num running stages: %v", chosen, runningStages)
+			//log.Printf("Graph Finished Stage[%v], num running stages: %v", chosen, runningStages)
 			if runningStages == 0 {
 				return
 			}

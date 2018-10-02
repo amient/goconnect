@@ -43,8 +43,8 @@ func JoinCluster(nodes ...string) []*Node {
 	join := sync.WaitGroup{}
 	for _, instance := range instances {
 		join.Add(1)
-		go func(node *Node) {
-			node.Join(nodes)
+		go func(instance *Node) {
+			instance.Join(nodes)
 			join.Done()
 		}(instance)
 	}

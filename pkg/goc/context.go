@@ -5,18 +5,20 @@ import (
 	"io"
 	"log"
 	"reflect"
+	"sync"
 	"sync/atomic"
 	"time"
 )
 
 type Receiver interface {
 	Elements() <-chan *Element
-	Ack(Stamp) error
+	Ack(upstreamNodeId uint16, uniq uint64) error
 }
 
 type Sender interface {
-	Acks() <-chan *Stamp
+	Acks() <-chan uint64
 	Send(element *Element)
+	Eos()
 	Close() error
 }
 
@@ -30,11 +32,13 @@ type Connector interface {
 
 func NewContext(connector Connector, fn Fn) *Context {
 	context := Context{
-		stage:          connector.GenerateStageID(),
-		connector:      connector,
-		fn:             fn,
-		terminate:      make(chan bool),
-		completed:      make(chan bool),
+		stage:      connector.GenerateStageID(),
+		connector:  connector,
+		fn:         fn,
+		output:     make(chan *Element),
+		stopSignal: make(chan bool, 1),
+		terminate:  make(chan bool),
+		completed:  make(chan bool),
 	}
 	if fn == nil {
 		context.isPassthrough = true
@@ -63,8 +67,9 @@ type Context struct {
 	autoi          uint64
 	highestPending uint64
 	highestAcked   uint64
-	acks           chan *Stamp
+	acks           chan uint64
 	terminate      chan bool
+	stopSignal     chan bool
 	terminating    bool
 	closed         bool
 	completed      chan bool
@@ -86,7 +91,6 @@ func (c *Context) GetNumPeers() uint16 {
 }
 
 func (c *Context) GetReceiver() Receiver {
-	c.isCommitable = true
 	if c.receiver == nil {
 		c.receiver = c.connector.MakeReceiver(c.stage)
 	}
@@ -110,17 +114,18 @@ func (c *Context) MakeSenders() []Sender {
 	}
 	return senders
 }
-func (c *Context) Ack(stamp *Stamp) {
+func (c *Context) Ack(uniq uint64) {
 	if c.isPassthrough {
-		c.up.Ack(stamp)
+		c.up.Ack(uniq)
 	} else {
-		c.acks <- stamp
+		c.acks <- uniq
 	}
 }
 
 func (c *Context) Terminate() {
+	c.stopSignal <- true
 	if c.isPassthrough {
-		c.log("Terminate - closing")
+		//c.log("Terminate - closing")
 		c.close()
 	} else {
 		c.log("Terminate - await completion")
@@ -130,76 +135,64 @@ func (c *Context) Terminate() {
 
 func (c *Context) Start() {
 
-	c.output = make(chan *Element)
-	pending := make(chan *Element)
+	pending := make(chan Pending)
 
 	c.Emit = func(element *Element) {
-		element.Stamp.AddTrace(c.GetNodeID())
-		//initial stamping of elements
-		if !element.Stamp.Valid() {
-			element.Stamp.Uniq = atomic.AddUint64(&c.autoi, 1)
-		}
+
 		if element.Stamp.Unix == 0 {
 			element.Stamp.Unix = time.Now().Unix()
 		}
-		//checkpointing
+
+		if c.up == nil {
+			element.Stamp.Uniq = atomic.AddUint64(&c.autoi, 1)
+		}
+
+		if !c.isPassthrough {
+			pending <- Pending{
+				Uniq:           element.Stamp.Uniq,
+				Checkpoint:     &element.Checkpoint,
+				UpstreamNodeId: element.FromNodeId,
+			}
+		}
+
+		//if element.Checkpoint.Data == nil {
+		//	c.log("OUTPUT stamp: %v", element.Stamp)
+		//} else {
+		//	c.log("OUTPUT stamp: %v checkpoint: %v", element.Stamp, element.Checkpoint)
+		//}
 		element.ack = c.Ack
 		if element.Stamp.Uniq > c.highestPending {
 			c.highestPending = element.Stamp.Uniq
 		}
-
-		c.log("OUTPUT stamp: %v checkpoint: %v", element.Stamp, element.Checkpoint)
-
-		if !c.isPassthrough {
-			pending <- element
-		}
-
 		c.output <- element
 
 	}
 
-	go c.runFn()
+	verticalGroup := sync.WaitGroup{}
+	//TODO for i := 1; i <= verticalParallelism; i++
+	verticalGroup.Add(1)
+	go c.runFn(&verticalGroup)
+	verticalGroup.Wait()
 
 	if !c.isPassthrough {
-		c.acks = make(chan *Stamp, 10000) //TODO configurable ack capacity
+		c.acks = make(chan uint64, 10000) //TODO configurable ack capacity
 		var commits chan Watermark
 		var commitRequests chan bool
+		//c.log("COMMITABLE=%v", c.isCommitable)
 		if c.isCommitable {
 			commits = make(chan Watermark)
 			commitRequests = make(chan bool)
-			go func() {
-				commitRequests <- true
-				defer close(commits)
-				defer close(commitRequests)
-				for !c.closed {
-					select {
-					case checkpoint, ok := <-commits:
-						if ok {
-							if c.receiver != nil {
-								//TODO built-in checkpoint behaviour for network receivers
-								for _, stamp := range checkpoint {
-									c.receiver.Ack(stamp.(Stamp))
-								}
-							}
-							if c.commitable != nil {
-								c.commitable.Commit(checkpoint)
-							}
-							commitRequests <- true
-						}
-					}
-				}
-			}()
+			go c.committer(commitRequests, commits)
 		}
-
 		go c.checkpointer(100000, pending, commitRequests, commits) //TODO configurable capacity
-
 	}
 
 }
 
-func (c *Context) runFn() {
-	defer close(c.output)
+func (c *Context) runFn(starting *sync.WaitGroup) {
 	defer c.Terminate()
+	defer close(c.output)
+	starting.Done()
 	switch fn := c.fn.(type) {
 	case Root:
 		fn.Do(c)
@@ -220,7 +213,6 @@ func (c *Context) runFn() {
 		for e := range c.up.output {
 			out := fn.Process(e)
 			out.Stamp = e.Stamp
-			out.Checkpoint = e.Checkpoint
 			c.Emit(out)
 		}
 	case FilterFn:
@@ -234,9 +226,9 @@ func (c *Context) runFn() {
 	}
 }
 
-func (c *Context) checkpointer(cap int, pending chan *Element, commitRequests chan bool, commits chan Watermark) {
+func (c *Context) checkpointer(cap int, pending chan Pending, commitRequests chan bool, commits chan Watermark) {
 	pendingSuspendable := pending
-	pendingCheckpoints := make(map[uint64]*Checkpoint, cap)
+	pendingCheckpoints := make(map[uint64]*Pending, cap)
 	acked := make(map[uint64]bool, cap)
 	watermark := make(Watermark)
 	pendingCommitReuqest := false
@@ -263,6 +255,8 @@ func (c *Context) checkpointer(cap int, pending chan *Element, commitRequests ch
 					c.acks = nil
 					c.close()
 				}
+			} else {
+				//c.log("Awaiting Completion highestPending: %d, highestAcked: %d", c.highestPending, c.highestAcked)
 			}
 		}
 	}
@@ -273,8 +267,15 @@ func (c *Context) checkpointer(cap int, pending chan *Element, commitRequests ch
 			if _, alsoExists := acked[uniq]; alsoExists {
 				delete(pendingCheckpoints, uniq)
 				delete(acked, uniq)
-				watermark[p.Part] = p.Data
-				c.log(action+"(%v) RESOLVED PART %d DATA %v PENDING %d pendingCommitReuqest = %v\n", uniq, p.Part, p.Data, len(pendingCheckpoints), pendingCommitReuqest)
+				watermark[p.Checkpoint.Part] = p.Checkpoint.Data
+				if p.UpstreamNodeId > 0 {
+					c.receiver.Ack(p.UpstreamNodeId, p.Uniq)
+				} else if c.up != nil && !c.isCommitable {
+					//commitables have to ack their upstream manually
+					c.up.Ack(uniq)
+				}
+
+				//c.log(action+"(%v) RESOLVED PART %d DATA %v PENDING %d pendingCommitReuqest = %v\n", uniq, p.Checkpoint.Part, p.Checkpoint.Data, len(pendingCheckpoints), pendingCommitReuqest)
 			}
 		}
 
@@ -288,8 +289,6 @@ func (c *Context) checkpointer(cap int, pending chan *Element, commitRequests ch
 			doCommit()
 		}
 
-		//c.log("%s(%d) Pending: %v Acked: %v isCommitable=%v, commitRequested=%v\n", action, uniq, len(pendingCheckpoints), acked, c.isCommitable, pendingCommitReuqest)
-
 		maybeTerminate()
 	}
 
@@ -302,26 +301,21 @@ func (c *Context) checkpointer(cap int, pending chan *Element, commitRequests ch
 			pendingCommitReuqest = true
 			doCommit()
 			maybeTerminate()
-		case stamp := <-c.acks:
-			if stamp.Uniq > c.highestAcked {
-				c.highestAcked = stamp.Uniq
+		case uniq := <-c.acks:
+			if uniq > c.highestAcked {
+				c.highestAcked = uniq
 			}
-			acked[stamp.Uniq] = true
-			resolveAcks(stamp.Uniq, "ACK")
+			acked[uniq] = true
+			resolveAcks(uniq, "ACK")
 
-			if c.up != nil && !c.isCommitable {
-				//commitables have to ack their upstream manually
-				c.up.Ack(stamp)
-			}
-
-		case e := <-pendingSuspendable:
+		case p := <-pendingSuspendable:
 			if c.closed {
-				panic(fmt.Errorf("STAGE[%d] Illegal Pending %v", c.stage, e))
+				panic(fmt.Errorf("STAGE[%d] Illegal Pending %v", c.stage, p))
 			}
 
-			pendingCheckpoints[e.Stamp.Uniq] = &e.Checkpoint
+			pendingCheckpoints[p.Uniq] = &p
 
-			resolveAcks(e.Stamp.Uniq, "EMIT")
+			resolveAcks(p.Uniq, "EMIT")
 
 			if len(pendingCheckpoints) == cap {
 				//in order to apply backpressure this channel needs to be nilld but right now it hangs after second pendingSuspendable
@@ -331,6 +325,23 @@ func (c *Context) checkpointer(cap int, pending chan *Element, commitRequests ch
 				panic(fmt.Errorf("illegal accumulator state, buffer size higher than %d", cap))
 			}
 
+		}
+	}
+}
+
+func (c *Context) committer(commitRequests chan bool, commits chan Watermark) {
+	commitRequests <- true
+	defer close(commits)
+	defer close(commitRequests)
+	for !c.closed {
+		select {
+		case checkpoint, ok := <-commits:
+			if ok {
+				if c.commitable != nil {
+					c.commitable.Commit(checkpoint)
+				}
+				commitRequests <- true
+			}
 		}
 	}
 }
@@ -358,4 +369,9 @@ func (c *Context) log(f string, args ... interface{}) {
 	if c.stage > 0 {
 		log.Printf("NODE[%d] STAGE[%d] "+f, args2...)
 	}
+}
+
+func (c *Context) StopSignal() chan bool {
+	println("!")
+	return c.stopSignal
 }

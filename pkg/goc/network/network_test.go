@@ -28,7 +28,7 @@ func TestNetworkTools(t *testing.T) {
 	sender.Send(&fixture)
 
 	received := <-handler.Elements()
-	if (*received).Stamp.Uniq != fixture.Stamp.Uniq || reflect.DeepEqual((*received).Stamp.Trace, fixture.Stamp.Trace) {
+	if (*received).Stamp.Uniq != fixture.Stamp.Uniq {
 		log.Println(fixture.Stamp)
 		log.Println((*received).Stamp)
 		panic("Are not equal")
