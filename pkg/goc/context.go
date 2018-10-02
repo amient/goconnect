@@ -198,13 +198,28 @@ func (c *Context) runFn(starting *sync.WaitGroup) {
 			fn.Process(e, c)
 		}
 	case GroupFn:
+		maxNumElements := 5 //TODO this is only one king of trigger - defined by max num elements
+		buffer := make([]uint64, 0, maxNumElements)
+		trigger := func() {
+			swap := buffer
+			buffer = make([]uint64, 0, maxNumElements)
+			for _, e := range fn.Trigger() {
+				e.ack = func(uniq uint64) {
+					for _, u := range swap {
+						c.Ack(u)
+					}
+				}
+				c.output <- e
+			}
+		}
 		for e := range c.up.output {
 			fn.Process(e)
-			e.Ack() //FIXME elements should not be acked here but instead accumulated and acked all when triggered one is acked
+			buffer = append(buffer, e.Stamp.Uniq)
+			if len(buffer) == cap(buffer) {
+				trigger()
+			}
 		}
-		for _, e := range fn.Trigger() {
-			c.Emit(e)
-		}
+		trigger()
 
 	case ForEachFn:
 		for e := range c.up.output {
