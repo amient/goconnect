@@ -45,7 +45,7 @@ func main() {
 
 	flag.Parse()
 
-	pipeline := goc.NewPipeline(coder.Registry())
+	pipeline := goc.NewPipeline().WithCoders(coder.Registry(), 1)
 
 	messages := pipeline.Root(&amqp09.Source{
 		Uri:          *uri,

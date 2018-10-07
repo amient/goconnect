@@ -38,7 +38,7 @@ var (
 
 func main() {
 
-	pipeline := goc.NewPipeline(coder.Registry())
+	pipeline := goc.NewPipeline().WithCoders(coder.Registry(), 1)
 
 	source := pipeline.Root(&kafka1.Source{
 		Bootstrap: *kafkaSourceBootstrap,

@@ -11,7 +11,7 @@ import (
 
 func main() {
 
-	pipeline := goc.NewPipeline(coder.Registry())
+	pipeline := goc.NewPipeline().WithCoders(coder.Registry(), 1)
 
 	pipeline.
 		Root(io.From([]string{"aaa", "bbb", "ccc"})).

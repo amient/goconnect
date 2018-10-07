@@ -32,11 +32,16 @@ type Pipeline struct {
 	coders          []MapFn
 }
 
-func NewPipeline(coders []MapFn) *Pipeline {
+func NewPipeline() *Pipeline {
 	return &Pipeline{
 		Defs:   []*Def{},
-		coders: coders,
 	}
+}
+
+func (p *Pipeline) WithCoders(coders []MapFn, defaultPar int) *Pipeline {
+	p.coders = coders
+	p.defaultCoderPar = defaultPar
+	return p
 }
 
 func (p *Pipeline) Root(source Root) *Def {
@@ -182,8 +187,4 @@ func (p *Pipeline) Apply(def *Def, f Fn) *Def {
 
 	}
 
-}
-func (p *Pipeline) CoderPar(coderPar int) *Pipeline {
-	p.defaultCoderPar = coderPar
-	return p
 }
