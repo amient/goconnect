@@ -25,9 +25,12 @@ import (
 
 type Fn interface{}
 
+type Watermark map[int]interface{}
+
 type Root interface {
 	OutType() reflect.Type
-	Do(*Context)
+	Run(*Context)
+	Commit(watermark Watermark) error
 }
 
 type Transform interface {
@@ -36,44 +39,34 @@ type Transform interface {
 	Run(<-chan *Element, *Context)
 }
 
-type ElementWiseFn interface {
+type ElementWise interface {
 	InType() reflect.Type
 	OutType() reflect.Type
-	Process(*Element, *Context)
+	Process(*Element, ProcessContext)
 }
 
-type ForEach interface {
+type Sink interface {
 	InType() reflect.Type
-	Run(<-chan *Element, *Context)
-}
-
-type ForEachFn interface {
-	InType() reflect.Type
-	Process(input *Element)
+	Process(*Element)
+	Flush() error
 }
 
 type MapFn interface {
 	InType() reflect.Type
 	OutType() reflect.Type
-	Process(input *Element) *Element
+	Process(interface{}) interface{}
 }
 
 type FilterFn interface {
 	Type() reflect.Type
-	Pass(input *Element) bool
+	Pass(value interface{}) bool
 }
 
-type FlatMapFn interface {
+type FoldFn interface {
 	InType() reflect.Type
 	OutType() reflect.Type
-	Process(input *Element) []*Element
-}
-
-type GroupFn interface {
-	InType() reflect.Type
-	OutType() reflect.Type
-	Process(input *Element)
-	Trigger() []*Element
+	Process(interface{})
+	Collect() Element
 }
 
 func UserMapFn(f interface{}) MapFn {
@@ -102,16 +95,13 @@ func (fn *userMapFn) OutType() reflect.Type {
 	return fn.outType
 }
 
-func (fn *userMapFn) Process(input *Element) *Element {
-	return &Element{
-		Stamp: input.Stamp,
-		Value: fn.f.Call([]reflect.Value{reflect.ValueOf(input.Value)})[0].Interface(),
-	}
+func (fn *userMapFn) Process(input interface{}) interface{} {
+	return fn.f.Call([]reflect.Value{reflect.ValueOf(input)})[0].Interface()
 }
 
 func UserFilterFn(f interface{}) FilterFn {
 	t := reflect.TypeOf(f)
-	if t.Kind() != reflect.Func || t.NumIn() != 1 || t.NumOut() != 1 || t.Out(0).Kind() != reflect.Bool{
+	if t.Kind() != reflect.Func || t.NumIn() != 1 || t.NumOut() != 1 || t.Out(0).Kind() != reflect.Bool {
 		panic("Filter function must have exactly 1 input and 1 bool output argument")
 	}
 	return &userFilterFn{
@@ -129,6 +119,87 @@ func (fn *userFilterFn) Type() reflect.Type {
 	return fn.t
 }
 
-func (fn *userFilterFn) Pass(input *Element) bool {
-	return fn.f.Call([]reflect.Value{reflect.ValueOf(input.Value)})[0].Interface().(bool)
+func (fn *userFilterFn) Pass(input interface{}) bool {
+	return fn.f.Call([]reflect.Value{reflect.ValueOf(input)})[0].Interface().(bool)
+}
+
+func UserFoldFn(initial interface{}, f interface{}) FoldFn {
+	t := reflect.TypeOf(f)
+	if t.Kind() != reflect.Func || t.NumIn() != 2 || t.NumOut() != 1 {
+		panic("Fold function must have exactly 2 inputs and 0 outputs")
+	}
+	if t.In(0) != reflect.TypeOf(initial) {
+		panic("Fold initial value must have same type as the first argument of its function")
+	}
+
+	return &userFoldFn{
+		f:       reflect.ValueOf(f),
+		inType:  t.In(1),
+		outType: t.In(0),
+		value:   reflect.ValueOf(initial),
+	}
+}
+
+type userFoldFn struct {
+	inType  reflect.Type
+	outType reflect.Type
+	f       reflect.Value
+	value   reflect.Value
+}
+
+func (fn *userFoldFn) InType() reflect.Type {
+	return fn.inType
+}
+
+func (fn *userFoldFn) OutType() reflect.Type {
+	return fn.outType
+}
+
+func (fn *userFoldFn) Process(input interface{}) {
+	fn.value = fn.f.Call([]reflect.Value{fn.value, reflect.ValueOf(input)})[0]
+}
+
+func (fn *userFoldFn) Collect() Element {
+	return Element{Value: fn.value.Interface()}
+}
+
+func UserFlatMapFn(f interface{}) ElementWise {
+	t := reflect.TypeOf(f)
+	if t.Kind() != reflect.Func || t.NumIn() != 2 || t.NumOut() != 0 || t.In(1).Kind() != reflect.Chan {
+		panic("FlatMap function must have 2 arguments and no return type")
+	}
+	return &userFlatMapFn{
+		f:           reflect.ValueOf(f),
+		inType:      t.In(0),
+		outChanType: t.In(1),
+	}
+}
+
+type userFlatMapFn struct {
+	inType      reflect.Type
+	outChanType reflect.Type
+	f           reflect.Value
+}
+
+func (fn *userFlatMapFn) InType() reflect.Type {
+	return fn.inType
+}
+
+func (fn *userFlatMapFn) OutType() reflect.Type {
+	return fn.outChanType.Elem()
+}
+
+func (fn *userFlatMapFn) Process(input *Element, ctx ProcessContext) {
+	inter := reflect.MakeChan(fn.outChanType, 0)
+	go func() {
+		fn.f.Call([]reflect.Value{reflect.ValueOf(input.Value), inter})
+		inter.Close()
+	}()
+	for {
+		if x, ok := inter.Recv(); !ok {
+			break
+		} else {
+			ctx.Emit(x.Interface())
+		}
+	}
 }

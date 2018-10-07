@@ -4,8 +4,8 @@ import (
 	"github.com/amient/goconnect/pkg/goc"
 	"log"
 	"sync"
+	"time"
 )
-
 
 func Runner(pipeline *goc.Pipeline, addrs ...string) {
 
@@ -16,14 +16,14 @@ func Runner(pipeline *goc.Pipeline, addrs ...string) {
 		graphs[i] = goc.ConnectStages(node, pipeline)
 	}
 
+	start := time.Now()
 	log.Println("Running all graphs")
 	goc.RunGraphs(graphs...)
 
-	log.Println("All stages completed")
+	log.Printf("All stages completed in %f0.0 s", time.Now().Sub(start).Seconds())
 	for _, node := range localNodes {
 		node.server.Close()
 	}
-
 
 }
 
@@ -56,4 +56,3 @@ func JoinCluster(nodes ...string) []*Node {
 
 	return instances
 }
-

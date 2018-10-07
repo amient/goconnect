@@ -8,7 +8,7 @@ a lot more efficient and has a low package and memory footprint - it can run hap
 - but it is a bit less general compared to Beam it only builds linear chains of transforms, not graphs
 - like Beam, it has internal concept of parallelism and coders
 - additionally it features vertical and horizontal parallelism out-of-the-box
-- it scales similarly to Kafka Connect by simply running mulitple identical instances 
+- it scales similarly to Kafka Connect by simply running multiple identical instances 
 - it guarantees at-least-once processing and is capable of exactly-once 
   with a choice of optimistic and pessimistic checkpointing depending whether the source supports some notion of offsets or not
 - it has a concept of EventTime built in to the basic concept
@@ -67,9 +67,9 @@ Final Pipeline with injected type coders
 Say 3 instances of this pipelines are executed then this is what has to happen in terms of network
     
     
-(1) AMQP Source - can be executed symetrically without coordination but only one of the instances will be active
- -  Net-Split - stamps the input elements and distributes them among the instances usinng round robin strategy 
-(2) XML Filter is a pure map tranform so can also be executed symetrically and run in parallel without coordination
+(1) AMQP Source - can be executed symmetrically without coordination but only one of the instances will be active
+ -  Net-Split - stamps the input elements and distributes them among the instances using round robin strategy 
+(2) XML Filter is a pure map transform so can also be executed symmetrically and run in parallel without coordination
  -  Net-Merge-Sort - receives all the outputs and ensures the ordering per source instance
     - it runs only one node - which one is informed by the logical stage, for STD-OUT sink it wouuld make
       sense to run it on the one that joined the group last, as that's where the user will prefer to see the output
@@ -78,13 +78,13 @@ Say 3 instances of this pipelines are executed then this is what has to happen i
 So there are several implications of this:
 - the default mode of coordination is no coordination - the stage runs everywhere unless constrained otherwise
 - Network coders are informed by their surrounding logical stages
-- all records must be stamed to:
+- all records must be stamped to:
     a) preserve absolute ordering if required by a network merge stage
     b) provide a means for optimistic checkpointing 
-- Nework In Coders are informed by the succeeding stage but there are many subteties to consider e.g.:
+- Network In Coders are informed by the succeeding stage but there are many subtleties to consider e.g.:
     - JMS SOURCE - runs on all and fan-out to all but has to use pessimistic checkpointing becuase in some implementations it is not possible to ack "up to a point"
     - AMQP QUEUE SOURCE - run on all and fan-out to all - it will have only one active instance by the protocol with optimistic checkpoitning as it support delivery tagging
-    - KAFKA SOURCE - run on all with no coordiation - kafka consumer is partitioned
+    - KAFKA SOURCE - run on all with no coordination - kafka consumer is partitioned
     - LOCAL FILE SOURCE - runs on one specific node and does fan-out to all of the file contents  
     - REMOTE FILE SOURCE - will be divided into 2 sub-stages (either explicitly or implicitly)
         - a) list of URLs runs on any one node and fan-out to all

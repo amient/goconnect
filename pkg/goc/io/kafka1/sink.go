@@ -25,15 +25,15 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"log"
 	"reflect"
-	"sync"
+	"sync/atomic"
 	"time"
 )
 
 type Sink struct {
-	Bootstrap  string
-	Topic      string
-	producer   *kafka.Producer
-	numPending sync.WaitGroup
+	Bootstrap string
+	Topic     string
+	producer  *kafka.Producer
+	numProduced int32
 }
 
 func (sink *Sink) InType() reflect.Type {
@@ -69,12 +69,26 @@ func (sink *Sink) Process(input *goc.Element) {
 			Timestamp:      time.Unix(input.Stamp.Unix, 0),
 			Opaque:         input,
 		}:
-			sink.numPending.Add(1)
+			atomic.AddInt32(&sink.numProduced, 1)
 			return
 		case e := <-sink.producer.Events():
 			sink.processKafkaEvent(e)
 		}
 	}
+}
+
+func (sink *Sink) Flush() error {
+	log.Println("Kafka Sink Flush")
+	if sink.producer != nil {
+		numFlushed := atomic.SwapInt32(&sink.numProduced, 0)
+		if sink.producer.Flush(30000) == 0 {
+			log.Println("Kafka Sink Flushed ", numFlushed)
+			sink.numProduced = 0
+		} else {
+			return fmt.Errorf("failed to flush all produced messages")
+		}
+	}
+	return nil
 }
 
 func (sink *Sink) processKafkaEvent(e kafka.Event) {
@@ -84,15 +98,15 @@ func (sink *Sink) processKafkaEvent(e kafka.Event) {
 			panic(fmt.Errorf("Delivery failed: %v\n", ev.TopicPartition))
 		} else {
 			ev.Opaque.(*goc.Element).Ack()
-			sink.numPending.Done()
+			if atomic.AddInt32(&sink.numProduced, -1) == 0 {
+				log.Println("Kafka Sink in a clean state")
+			}
 		}
 	}
 }
 
 func (sink *Sink) Close() error {
 	if sink.producer != nil {
-		sink.numPending.Wait()
-		defer log.Println("Closed Kafka Sink in a clean state")
 		sink.producer.Close()
 	}
 	return nil

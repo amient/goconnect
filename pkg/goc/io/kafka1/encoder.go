@@ -34,9 +34,9 @@ func (d *NilKeyEncoder) OutType() reflect.Type {
 	return reflect.TypeOf(goc.KVBytes{})
 }
 
-func (d *NilKeyEncoder) Process(input *goc.Element) *goc.Element {
-	return &goc.Element{Value: goc.KVBytes{
+func (d *NilKeyEncoder) Process(input interface{}) interface{} {
+	return goc.KVBytes{
 		Key:   nil,
-		Value: input.Value.([]byte),
-	}}
+		Value: input.([]byte),
+	}
 }

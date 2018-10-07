@@ -36,14 +36,14 @@ func (d *Encoder) OutType() reflect.Type {
 	return goc.ByteArrayType
 }
 
-func (d *Encoder) Process(input *goc.Element) *goc.Element {
+func (d *Encoder) Process(input interface{}) interface{} {
 	var b bytes.Buffer
 	w := bufio.NewWriter(&b)
-	_, err := WriteNode(w, input.Value.(Node))
+	_, err := WriteNode(w, input.(Node))
 	w.Flush()
 	if err != nil {
 		panic(err)
 	} else {
-		return &goc.Element{Value: b.Bytes()}
+		return b.Bytes()
 	}
 }

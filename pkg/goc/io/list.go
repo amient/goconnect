@@ -49,7 +49,7 @@ func (it *iterable) OutType() reflect.Type {
 	return it.typ.Elem()
 }
 
-func (it *iterable) Do(context *goc.Context) {
+func (it *iterable) Run(context *goc.Context) {
 	if context.GetNodeID() == 1 {
 		limit := it.val.Len()
 		for l := 0; l < it.n; l++ {

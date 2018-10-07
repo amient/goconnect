@@ -51,7 +51,7 @@ func (source *Source) OutType() reflect.Type {
 	return reflect.TypeOf(goc.KVBytes{})
 }
 
-func (source *Source) Do(context *goc.Context) {
+func (source *Source) Run(context *goc.Context) {
 	var err error
 	source.counter = make(map[int32]uint64)
 	source.consumer, err = kafka.NewConsumer(&kafka.ConfigMap{
@@ -73,6 +73,7 @@ func (source *Source) Do(context *goc.Context) {
 		panic(err)
 	}
 
+
 	for event := range source.consumer.Events() {
 
 		switch e := event.(type) {
@@ -80,6 +81,7 @@ func (source *Source) Do(context *goc.Context) {
 		case kafka.RevokedPartitions: //not used
 		case *kafka.Message:
 			if len(source.counter) == 0 {
+				log.Printf("Consuming kafka topic %s", source.Topic)
 				source.start = time.Now()
 			}
 			if _, contains := source.counter[e.TopicPartition.Partition]; !contains {
@@ -101,7 +103,7 @@ func (source *Source) Do(context *goc.Context) {
 			source.total += source.counter[e.Partition]
 			delete(source.counter, e.Partition)
 			if len(source.counter) == 0 && source.total > 0 {
-				log.Printf("EOF: Consumed %d in %f ms\n", source.total, time.Now().Sub(source.start).Seconds())
+				log.Printf("EOF: Consumed %d in %f s\n", source.total, time.Now().Sub(source.start).Seconds())
 				source.total = 0
 			}
 
@@ -124,7 +126,7 @@ func (source *Source) Commit(checkpoint goc.Watermark) error {
 		if _, err := source.consumer.CommitOffsets(offsets); err != nil {
 			return err
 		} else {
-			log.Printf("Kafka Commit Successful: %v", offsets)
+			//log.Printf("Kafka Commit Successful: %v", offsets)
 		}
 	}
 	return nil

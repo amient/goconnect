@@ -19,10 +19,20 @@
 
 package goc
 
+/**
+	Checkpoint is a map of int identifiers and values. The identifiers are specific to each transform, some
+	may have only one identifier, e.g. AMQP Source, others may have multiple, e.g. Kafka Source
+ */
+
+type Checkpoint struct {
+	Part int
+	Data interface{}
+}
+
 type Element struct {
 	Checkpoint Checkpoint //TODO make private and make sure it never leaves the stage Fn
 	Value      interface{}
-	Stamp 	   Stamp
+	Stamp      Stamp
 	FromNodeId uint16
 	ack        func(uniq uint64)
 }
@@ -45,15 +55,9 @@ type OrderedElementSet struct {
 func (set *OrderedElementSet) AddElement(elementToAdd *Element, context *Context) {
 	//FIXME ordered element set must have its own stamp
 	set.elements[elementToAdd.Stamp.Uniq] = elementToAdd
-	for ; set.elements[set.next + 1] != nil; {
+	for ; set.elements[set.next+1] != nil; {
 		set.next ++
 		context.Emit(set.elements[set.next])
 		delete(set.elements, set.next)
 	}
 }
-
-
-
-
-
-

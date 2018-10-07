@@ -48,6 +48,26 @@ func (p *Pipeline) Root(source Root) *Def {
 	return p.register(&Def{Type: source.OutType(), Fn: source})
 }
 
+
+func (p *Pipeline) Apply(def *Def, f Fn) *Def {
+	switch fn := f.(type) {
+	case Transform:
+		return p.Transform(def, fn)
+	case ElementWise:
+		return p.ElementWise(def, fn)
+	case Sink:
+		return p.Sink(def, fn)
+	case FoldFn:
+		return p.Fold(def, fn)
+	case MapFn:
+		return p.Map(def, fn)
+	case FilterFn:
+		return p.Filter(def, fn)
+	default:
+		panic(fmt.Errorf("only one of the interfaces defined in goc/Fn.go can be applied"))
+	}
+}
+
 func (p *Pipeline) Transform(that *Def, fn Transform) *Def {
 	if !that.Type.AssignableTo(fn.InType()) {
 		return p.Transform(p.injectCoder(that, fn.InType()), fn)
@@ -55,16 +75,9 @@ func (p *Pipeline) Transform(that *Def, fn Transform) *Def {
 	return p.register(&Def{Up: that, Type: fn.OutType(), Fn: fn})
 }
 
-func (p *Pipeline) ForEach(that *Def, fn ForEach) *Def {
+func (p *Pipeline) ElementWise(that *Def, fn ElementWise) *Def {
 	if !that.Type.AssignableTo(fn.InType()) {
-		return p.ForEach(p.injectCoder(that, fn.InType()), fn)
-	}
-	return p.register(&Def{Up: that, Type: ErrorType, Fn: fn})
-}
-
-func (p *Pipeline) FlatMap(that *Def, fn FlatMapFn) *Def {
-	if !that.Type.AssignableTo(fn.InType()) {
-		return p.FlatMap(p.injectCoder(that, fn.InType()), fn)
+		return p.ElementWise(p.injectCoder(that, fn.InType()), fn)
 	}
 	return p.register(&Def{Type: fn.OutType(), Fn: fn, Up: that})
 }
@@ -84,24 +97,28 @@ func (p *Pipeline) Filter(that *Def, fn FilterFn) *Def {
 	return p.register(&Def{Type: that.Type, Fn: fn, Up: that})
 }
 
-func (p *Pipeline) ForEachFn(that *Def, fn ForEachFn) *Def {
+func (p *Pipeline) Fold(that *Def, fn FoldFn) *Def {
 	if !that.Type.AssignableTo(fn.InType()) {
-		return p.ForEachFn(p.injectCoder(that, fn.InType()), fn)
-	}
-	return p.register(&Def{Type: ErrorType, Fn: fn, Up: that})
-}
-
-func (p *Pipeline) Group(that *Def, fn GroupFn) *Def {
-	if !that.Type.AssignableTo(fn.InType()) {
-		return p.Group(p.injectCoder(that, fn.InType()), fn)
+		return p.Fold(p.injectCoder(that, fn.InType()), fn)
 	}
 	return p.register(&Def{Type: fn.OutType(), Fn: fn, Up: that})
 }
 
+func (p *Pipeline) Sink(that *Def, fn Sink) *Def {
+	if !that.Type.AssignableTo(fn.InType()) {
+		return p.Sink(p.injectCoder(that, fn.InType()), fn)
+	}
+	return p.register(&Def{Type: ErrorType, Fn: fn, Up: that})
+}
+
+
 func (p *Pipeline) register(def *Def) *Def {
 	def.pipeline = p
 	def.Id = len(p.Defs)
+	//defaults:
 	def.maxVerticalParallelism = 1
+	def.triggerEach = 1
+	def.triggerEvery = 0
 	p.Defs = append(p.Defs, def)
 	return def
 }
@@ -137,54 +154,3 @@ func (p *Pipeline) injectCoder(that *Def, to reflect.Type) *Def {
 	return that
 }
 
-func (p *Pipeline) Apply(def *Def, f Fn) *Def {
-	switch fn := f.(type) {
-	case GroupFn:
-		return p.Group(def, fn)
-	case ForEachFn:
-		return p.ForEachFn(def, fn)
-	case MapFn:
-		return p.Map(def, fn)
-	case FilterFn:
-		return p.Filter(def, fn)
-	case FlatMapFn:
-		return p.FlatMap(def, fn)
-	case Transform:
-		return p.Transform(def, fn)
-	case ForEach:
-		return p.ForEach(def, fn)
-	default:
-		panic(fmt.Errorf("only on of the interfaces defined in goc/Fn.go can be applied"))
-		panic(fmt.Errorf("reflective transforms need: a) def.Group to have guaranteees and b) perf-tested, %v", reflect.TypeOf(f)))
-		//if method, exists := reflect.TypeOf(f).MethodByName("process"); !exists {
-		//	panic(fmt.Errorf("transform must provide process method"))
-		//} else {
-		//	v := reflect.ValueOf(f)
-		//	args := make([]reflect.Type, method.Type.NumIn()-1)
-		//	for i := 1; i < method.Type.NumIn(); i++ {
-		//		args[i-1] = method.Type.In(i)
-		//	}
-		//	ret := make([]reflect.Type, method.Type.NumOut())
-		//	for i := 0; i < method.Type.NumOut(); i++ {
-		//		ret[i] = method.Type.Out(i)
-		//	}
-		//	Fn := reflect.MakeFunc(reflect.FuncOf(args, ret, false), func(args []reflect.Data) (results []reflect.Data) {
-		//		methodArgs := append([]reflect.Data{v}, args...)
-		//		return method.Func.Call(methodArgs)
-		//	})
-		//
-		//	var output *Def
-		//	if len(ret) > 1 {
-		//		panic(fmt.Errorf("transform must have 0 or 1 return value"))
-		//	} else if len(ret) == 0 {
-		//		output = def.Group(Fn)
-		//	} else {
-		//		output = def.Map(Fn.Interface())
-		//	}
-		//	output.Fn = f
-		//	return output
-		//}
-
-	}
-
-}

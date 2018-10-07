@@ -34,6 +34,6 @@ func (d *Encoder) OutType() reflect.Type {
 	return goc.ByteArrayType
 }
 
-func (d *Encoder) Process(input *goc.Element) *goc.Element {
-	return &goc.Element{Value: []byte(input.Value.(string))}
+func (d *Encoder) Process(input interface{}) interface{} {
+	return []byte(input.(string))
 }

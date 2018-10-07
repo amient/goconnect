@@ -25,7 +25,6 @@ import (
 	"reflect"
 )
 
-
 type Decoder struct{}
 
 func (d *Decoder) InType() reflect.Type {
@@ -36,11 +35,11 @@ func (d *Decoder) OutType() reflect.Type {
 	return NodeType
 }
 
-func (d *Decoder) Process(input *goc.Element) *goc.Element {
-	if node, err := ReadNode(bytes.NewReader(input.Value.([]byte))); err != nil {
+func (d *Decoder) Process(input interface{}) interface{} {
+	if node, err := ReadNode(bytes.NewReader(input.([]byte))); err != nil {
 		panic(err)
 	} else {
-		return &goc.Element{Value: node}
+		return node
 	}
 
 }

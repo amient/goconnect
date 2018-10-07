@@ -26,7 +26,6 @@ import (
 	"github.com/amient/goconnect/pkg/goc/io"
 	"github.com/amient/goconnect/pkg/goc/io/std"
 	"github.com/amient/goconnect/pkg/goc/network"
-	"reflect"
 	"strings"
 )
 
@@ -36,33 +35,12 @@ var data = []string{
 	"<name>Cecilia</name>", "<name>Chad</name>", "<name>Elliot</name>", "<name>Wojtek</name>",
 }
 
-type customAggregator struct {
-	total int
-}
-
-func (c *customAggregator) InType() reflect.Type {
-	return goc.StringType
-}
-
-func (c *customAggregator) OutType() reflect.Type {
-	return goc.IntType
-}
-
-func (c *customAggregator) Process(input *goc.Element) {
-	c.total += len(input.Value.(string))
-}
-
-func (c *customAggregator) Trigger() []*goc.Element {
-	return []*goc.Element{{Value: c.total}}
-}
-
 func main() {
 
 	pipeline := goc.NewPipeline().WithCoders(coder.Registry(), 4)
 
 	//root source of text elements
-	//FIXME setting n=20 sometimes hangs because the iteration ends on a filtered-out element
-	messages := pipeline.Root(io.From(data))//.Apply(new(network.NetRoundRobin))
+	messages := pipeline.Root(io.RoundRobin(500000, data))
 
 	//extract names with custom Map fn (coders satisfying []byte => xml are injected by the pipeline)
 	extracted := messages.Map(func(in gocxml.Node) string { return in.Children()[0].Children()[0].Text() }).Par(2)
@@ -73,12 +51,10 @@ func main() {
 	})
 
 	//output the aggregation result by applying a general StdOutSink transform
-	filtered.Apply(new(customAggregator)).Apply(new(std.Out))
-	/*
-	filtered.Accumulate(func(input string, accumulator int) int {
-		//TODO reflect.Zero(fnType.In(1)).Interface() and then if return value is different from accumulator emit it
-	})
-	*/
+	filtered.Fold(0, func(acc int, in string) int { return acc + len(in) }).TriggerEach(100000).
+		Filter(func(x int) bool { return x > 40 }).
+		Apply(new(std.Out))
+
 	//filtered.Apply(&kafka1.Sink{Bootstrap: "localhost:9092", Topic: "test"})
 
 	network.Runner(pipeline, "127.0.0.1:19001")

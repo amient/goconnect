@@ -25,41 +25,35 @@ import (
 	"github.com/amient/goconnect/pkg/goc"
 	"os"
 	"reflect"
-	"time"
 )
 
-type Out struct{}
+type Out struct {
+	buffer []*goc.Element
+	stdout *bufio.Writer
+}
 
 func (sink *Out) InType() reflect.Type {
 	return goc.AnyType
 }
 
-func (sink *Out) Run(input <-chan *goc.Element, context *goc.Context) {
-	buffer := make([]*goc.Element, 0, 100)
-	ticker := time.NewTicker(3000 * time.Millisecond).C
-	stdout := bufio.NewWriter(os.Stdout)
-	for {
-		select {
-		case element, ok := <-input:
-			if !ok {
-				buffer = sink.flush(stdout, buffer)
-				return
-			} else {
-				sink.process(stdout, element.Value)
-				buffer = append(buffer, element)
-			}
-		case <-ticker:
-			buffer = sink.flush(stdout, buffer)
-		}
+func (sink *Out) Process(input *goc.Element) {
+	if sink.stdout == nil {
+		sink.stdout = bufio.NewWriter(os.Stdout)
 	}
+	sink.process(sink.stdout, input.Value)
+	sink.buffer = append(sink.buffer, input)
 }
 
-func (sink *Out) flush(stdout *bufio.Writer, buffer []*goc.Element) []*goc.Element {
-	stdout.Flush()
-	for _, e := range buffer {
-		e.Ack()
+func (sink *Out) Flush() error {
+	var result error
+	if len(sink.buffer) > 0 {
+		result = sink.stdout.Flush()
+		for _, e := range sink.buffer {
+			e.Ack()
+		}
+		sink.buffer = make([]*goc.Element, 0, 100)
 	}
-	return make([]*goc.Element, 0, 100)
+	return result
 }
 
 func (sink *Out) process(stdout *bufio.Writer, element interface{}) {
