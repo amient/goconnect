@@ -18,7 +18,7 @@ func main() {
 		//coder: string -> []uint8
 		Apply(new(network.NetRoundRobin)).
 		//coder: []uint8 -> string
-		Map(func(in string) string { return strings.ToUpper(in) }).MaxVerticalParallelism(2).
+		Map(func(in string) string { return strings.ToUpper(in) }).Par(2).
 		//coder: string -> []uint8
 		Apply(new(network.NetMergeOrdered)).
 		Apply(new(std.Out))

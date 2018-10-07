@@ -26,9 +26,10 @@ import (
 )
 
 type Pipeline struct {
-	Defs   []*Def
-	stamp  uint64
-	coders []MapFn
+	Defs            []*Def
+	defaultCoderPar int
+	stamp           uint64
+	coders          []MapFn
 }
 
 func NewPipeline(coders []MapFn) *Pipeline {
@@ -125,8 +126,8 @@ func (p *Pipeline) injectCoder(that *Def, to reflect.Type) *Def {
 	}
 	//log.Printf("Injecting coders to satisfy: %v => %v ", that.Type, to)
 	for _, mapper := range scan(that.Type, to, 1, []MapFn{}) {
-		log.Printf("Injecting coder: %v => %v ", that.Type, mapper.OutType())
-		that = that.Apply(mapper)
+		log.Printf("Injecting coder: %v => %v using default parallelism %d", that.Type, mapper.OutType(), p.defaultCoderPar)
+		that = that.Apply(mapper).Par(p.defaultCoderPar)
 	}
 	return that
 }
@@ -181,4 +182,8 @@ func (p *Pipeline) Apply(def *Def, f Fn) *Def {
 
 	}
 
+}
+func (p *Pipeline) CoderPar(coderPar int) *Pipeline {
+	p.defaultCoderPar = coderPar
+	return p
 }

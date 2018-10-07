@@ -44,7 +44,7 @@ func (def *Def) Filter(f interface{}) *Def {
 	return def.pipeline.Filter(def, UserFilterFn(f))
 }
 
-func (def *Def) MaxVerticalParallelism(i int) *Def {
+func (def *Def) Par(i int) *Def {
 	def.maxVerticalParallelism = i
 	return def
 }

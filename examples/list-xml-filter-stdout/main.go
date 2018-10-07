@@ -58,14 +58,14 @@ func (c *customAggregator) Trigger() []*goc.Element {
 
 func main() {
 
-	pipeline := goc.NewPipeline(coder.Registry())
+	pipeline := goc.NewPipeline(coder.Registry()).CoderPar(3)
 
 	//root source of text elements
 	//FIXME setting n=20 sometimes hangs because the iteration ends on a filtered-out element
 	messages := pipeline.Root(io.From(data))//.Apply(new(network.NetRoundRobin))
 
 	//extract names with custom Map fn (coders satisfying []byte => xml are injected by the pipeline)
-	extracted := messages.Map(func(in gocxml.Node) string { return in.Children()[0].Children()[0].Text() }).MaxVerticalParallelism(4)
+	extracted := messages.Map(func(in gocxml.Node) string { return in.Children()[0].Children()[0].Text() }).Par(4)
 
 	//remove all names containing letter 'B' with custom Filter fn
 	filtered := extracted.Filter(func(input string) bool {
