@@ -8,11 +8,11 @@ import (
 type NetRoundRobin struct{}
 
 func (n *NetRoundRobin) InType() reflect.Type {
-	return goc.ByteArrayType
+	return goc.BinaryType
 }
 
 func (n *NetRoundRobin) OutType() reflect.Type {
-	return goc.ByteArrayType
+	return goc.BinaryType
 }
 
 func (n *NetRoundRobin) Run(input <-chan *goc.Element, context *goc.Context) {

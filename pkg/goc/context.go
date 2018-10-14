@@ -21,15 +21,12 @@ package goc
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
 )
-
-var minBufSize = 32
 
 type PC struct {
 	Uniq           uint64
@@ -64,16 +61,16 @@ type Connector interface {
 	MakeReceiver(stage uint16) Receiver
 	GetNumPeers() uint16
 	NewSender(nodeId uint16, stage uint16) Sender
-	GenerateStageID() uint16
 }
 
-func NewContext(connector Connector, def *Def) *Context {
+func NewContext(connector Connector, stageId uint16, def *Def) *Context {
 	context := Context{
-		stage:     connector.GenerateStageID(),
+		stage:     stageId,
 		connector: connector,
 		def:       def,
-		output:    make(chan *Element, minBufSize),
+		output:    make(chan *Element, def.maxVerticalParallelism*4),
 		completed: make(chan bool),
+		data:      make(map[int]interface{}),
 	}
 	return &context
 }
@@ -82,6 +79,7 @@ type Context struct {
 	Emit           func(element *Element)
 	Ack            func(uniq uint64)
 	Close          func()
+	data           map[int]interface{}
 	up             *Context
 	stage          uint16
 	output         chan *Element
@@ -96,6 +94,7 @@ type Context struct {
 }
 
 func (c *Context) GetNodeID() uint16 {
+	c.checkConnector()
 	return c.connector.GetNodeID()
 }
 
@@ -104,10 +103,12 @@ func (c *Context) GetStage() uint16 {
 }
 
 func (c *Context) GetNumPeers() uint16 {
+	c.checkConnector()
 	return c.connector.GetNumPeers()
 }
 
 func (c *Context) GetReceiver() Receiver {
+	c.checkConnector()
 	if c.receiver == nil {
 		c.receiver = c.connector.MakeReceiver(c.stage)
 	}
@@ -115,6 +116,7 @@ func (c *Context) GetReceiver() Receiver {
 }
 
 func (c *Context) MakeSender(targetNodeId uint16) Sender {
+	c.checkConnector()
 	sender := c.connector.NewSender(targetNodeId, c.stage)
 	go func() {
 		for stamp := range sender.Acks() {
@@ -125,11 +127,27 @@ func (c *Context) MakeSender(targetNodeId uint16) Sender {
 }
 
 func (c *Context) MakeSenders() []Sender {
+	c.checkConnector()
 	senders := make([]Sender, c.GetNumPeers())
 	for peer := uint16(1); peer <= c.GetNumPeers(); peer++ {
 		senders[peer-1] = c.MakeSender(peer)
 	}
 	return senders
+}
+
+func (c *Context) checkConnector() {
+	if c.connector == nil {
+		panic("the pipeline requires a network runner - use network.Runner(pipeline,...) instead of Pipeline.Run()")
+	}
+}
+
+//FIXME instead of Put and Get on Context make clones of Fn
+func (c *Context) Put(index int, data interface{}) {
+	c.data[index] = data
+}
+
+func (c *Context) Get(index int) interface{} {
+	return c.data[index]
 }
 
 func (c *Context) Start() {
@@ -165,9 +183,9 @@ func (c *Context) Start() {
 		})
 
 	case Root:
-		//TODO make sure root behaviour with par > 1 is predictable
-		pending := make(chan PC, minBufSize)
-		c.initializeCheckpointer(1000000, pending) //TODO configurable capacity
+
+		pending := make(chan PC, c.def.bufferCap)
+		c.initializeCheckpointBuffer(c.def.bufferCap, pending)
 		c.Emit = func(element *Element) {
 			element.ack = c.Ack
 			element.Stamp.Uniq = atomic.AddUint64(&c.autoi, 1)
@@ -183,13 +201,13 @@ func (c *Context) Start() {
 			c.output <- element
 		}
 		c.runVerticalGroup(func() {
+			//TODO make sure root behaviour with par > 1 is predictable
 			fn.Run(c)
 		})
 
 	case Transform:
-		//TODO disallow par > 1 for network transforms
-		pending := make(chan PC, minBufSize)
-		c.initializeNetworkBuffer(10000, pending) //TODO configurable capacity
+		pending := make(chan PC, c.def.bufferCap)
+		c.initializeNetworkBuffer(c.def.bufferCap, pending)
 		c.Emit = func(element *Element) {
 			element.ack = c.Ack
 			if element.Stamp.Uniq > c.highestPending {
@@ -202,6 +220,7 @@ func (c *Context) Start() {
 			}
 			c.output <- element
 		}
+		//TODO disallow par > 1 for network transforms
 		c.runVerticalGroup(func() {
 			fn.Run(c.up.output, c)
 		})
@@ -210,36 +229,26 @@ func (c *Context) Start() {
 		c.Close = c.close
 		c.Ack = c.up.Ack
 		n := uint32(0)
-		c.runVerticalGroup(func() {
-			if c.def.triggerEvery == 0 {
-				for e := range c.up.output {
-					fn.Process(e)
-					if int(atomic.AddUint32(&n, 1)) % c.def.triggerEach == 0 {
-						fn.Flush()
-					}
-				}
-				fn.Flush()
-			} else {
-				ticker := time.NewTicker(c.def.triggerEvery).C
-				for {
-					select {
-					case e, ok := <-c.up.output:
-						if !ok {
-							fn.Flush()
-							return
-						} else {
-							fn.Process(e)
-						}
-					case <-ticker:
-						fn.Flush()
+		trigger := func() {
+			if err := fn.Flush(c); err != nil {
+				panic(err)
+			}
+		}
+		process := func(e *Element) {
+			fn.Process(e, c)
+			if c.def.triggerEach > 0 {
+				if int(atomic.AddUint32(&n, 1))%c.def.triggerEach == 0 {
+					if err := fn.Flush(c); err != nil {
+						panic(err)
 					}
 				}
 			}
-		})
+		}
+		c.runVerticalGroupWithTriggers(process, trigger)
 
 	case ElementWise:
-		pending := make(chan P, minBufSize)
-		c.initializeElementWiseBuffer(1000, pending) //TODO configurable capacity
+		pending := make(chan P, c.def.bufferCap)
+		c.initializeElementWiseBuffer(c.def.bufferCap, pending)
 		c.runVerticalGroup(func() {
 			for e := range c.up.output {
 				complete := int64(0)
@@ -267,38 +276,79 @@ func (c *Context) Start() {
 		c.Close = c.close
 		c.Ack = c.up.Ack
 		//TODO make sure fold behaves correctly under par >
-		c.runVerticalGroup(func() {
-			buffer := make([]uint64, 0, c.def.triggerEach)
-			isComplete := true
-			trigger := func() {
-				swap := buffer
-				buffer = make([]uint64, 0, c.def.triggerEach)
-				e := fn.Collect()
-				e.ack = func(uniq uint64) {
-					for _, u := range swap {
-						c.up.Ack(u)
+
+		buffer := make([]uint64, 0, c.def.triggerEach)
+
+		trigger := func() {
+			swap := buffer
+			buffer = make([]uint64, 0, c.def.triggerEach)
+			e := fn.Collect()
+			e.ack = func(uniq uint64) {
+				for _, u := range swap {
+					c.up.Ack(u)
+				}
+			}
+			c.output <- &e
+
+		}
+
+		process := func(e *Element) {
+			if c.def.triggerEvery == 0 && c.def.triggerEach <= 1 {
+				out := fn.Collect()
+				c.output <- &out
+				c.up.Ack(e.Stamp.Uniq)
+			} else {
+				fn.Process(e.Value)
+				buffer = append(buffer, e.Stamp.Uniq)
+				if c.def.triggerEach > 0 {
+					if len(buffer) >= cap(buffer) {
+						trigger()
 					}
 				}
-				c.output <- &e
-				isComplete = true
 			}
-			//TODO apply TriggerEvery as well
-			for e := range c.up.output {
-				fn.Process(e.Value)
-				isComplete = false
-				buffer = append(buffer, e.Stamp.Uniq)
-				if len(buffer) == cap(buffer) {
-					trigger()
-				}
-			}
-			if !isComplete {
-				trigger()
-			}
-		})
+		}
+
+		c.runVerticalGroupWithTriggers(process, trigger)
 
 	default:
 		panic(fmt.Errorf("unknown Fn Type: %v", reflect.TypeOf(fn)))
 	}
+}
+
+func (c *Context) runVerticalGroupWithTriggers(process func(e *Element), trigger func()) {
+	c.runVerticalGroup(func() {
+		isComplete := true
+		if c.def.triggerEvery == 0 {
+			for e := range c.up.output {
+				isComplete = false
+				process(e)
+			}
+			if !isComplete {
+				trigger()
+			}
+		} else {
+			ticker := time.NewTicker(c.def.triggerEvery).C
+			for {
+				select {
+				case e, ok := <-c.up.output:
+					if !ok {
+						if !isComplete {
+							trigger()
+							isComplete = true
+						}
+						return
+					} else {
+						isComplete = false
+						process(e)
+					}
+				case <-ticker:
+					trigger()
+					isComplete = true
+				}
+			}
+		}
+
+	})
 }
 
 func (c *Context) runVerticalGroup(f func()) {
@@ -321,7 +371,7 @@ func (c *Context) runVerticalGroup(f func()) {
 	}()
 }
 
-func (c *Context) initializeCheckpointer(cap int, pending chan PC) {
+func (c *Context) initializeCheckpointBuffer(cap int, pending chan PC) {
 	acks := make(chan uint64, cap)
 	c.Ack = func(uniq uint64) {
 		acks <- uniq
@@ -332,7 +382,7 @@ func (c *Context) initializeCheckpointer(cap int, pending chan PC) {
 		terminate <- true
 	}
 	pendingSuspendable := pending
-	pendingCheckpoints := make(map[uint64]*PC, cap)
+	pendingCheckpoints := make([]*PC, 0, cap)
 	acked := make(map[uint64]bool, cap)
 	watermark := make(Watermark)
 	pendingCommitReuqest := false
@@ -352,7 +402,7 @@ func (c *Context) initializeCheckpointer(cap int, pending chan PC) {
 				case checkpoint, ok := <-commits:
 					if ok {
 						if commitable != nil {
-							commitable.Commit(checkpoint)
+							commitable.Commit(checkpoint, c)
 						}
 						commitRequests <- true
 					}
@@ -390,19 +440,15 @@ func (c *Context) initializeCheckpointer(cap int, pending chan PC) {
 	}
 
 	resolveAcks := func(uniq uint64, action string) {
-		if p, exists := pendingCheckpoints[uniq]; exists {
-			if _, alsoExists := acked[uniq]; alsoExists {
-				delete(pendingCheckpoints, uniq)
-				delete(acked, uniq)
-				watermark[p.Checkpoint.Part] = p.Checkpoint.Data
-				if p.UpstreamNodeId > 0 {
-					c.receiver.Ack(p.UpstreamNodeId, p.Uniq)
-				} else if c.up != nil && !isCommitable {
-					//commitables have to ack their upstream manually
-					c.up.Ack(uniq)
-				}
-
-				//c.log(action+"(%v) RESOLVED PART %d DATA %v PENDING %d pendingCommitReuqest = %v\n", uniq, p.Checkpoint.Part, p.Checkpoint.Data, len(pendingCheckpoints), pendingCommitReuqest)
+		for len(pendingCheckpoints) > 0 && acked[pendingCheckpoints[0].Uniq] {
+			p := pendingCheckpoints[0]
+			watermark[p.Checkpoint.Part] = p.Checkpoint.Data
+			pendingCheckpoints = pendingCheckpoints[1:]
+			delete(acked, p.Uniq)
+			if p.UpstreamNodeId > 0 {
+				c.receiver.Ack(p.UpstreamNodeId, p.Uniq)
+			} else if c.up != nil {
+				c.up.Ack(uniq)
 			}
 		}
 
@@ -437,7 +483,7 @@ func (c *Context) initializeCheckpointer(cap int, pending chan PC) {
 				resolveAcks(uniq, "ACK")
 
 			case p := <-pendingSuspendable:
-				pendingCheckpoints[p.Uniq] = &p
+				pendingCheckpoints = append(pendingCheckpoints, &p)
 
 				resolveAcks(p.Uniq, "EMIT")
 
@@ -583,13 +629,12 @@ func (c *Context) initializeNetworkBuffer(cap int, pending chan PC) {
 	}()
 }
 
-
 func (c *Context) close() {
 	if ! c.closed {
 		c.completed <- true
 		c.closed = true
-		if fn, ok := c.def.Fn.(io.Closer); ok {
-			if err := fn.Close(); err != nil {
+		if fn, ok := c.def.Fn.(Closeable); ok {
+			if err := fn.Close(c); err != nil {
 				panic(err)
 			}
 		}

@@ -25,81 +25,61 @@ import (
 	"github.com/streadway/amqp"
 	"log"
 	"reflect"
+	"time"
 )
 
 type Source struct {
 	Uri           string
 	Exchange      string
-	ExchangeType  string
 	QueueName     string
-	Group         string
+	ConsumerTag   string
 	BindingKey    string
-	conn          *amqp.Connection
-	channel       *amqp.Channel
-	lastCommitTag uint64
+	PrefetchCount int
+	PrefetchSize  int
 }
 
 func (source *Source) OutType() reflect.Type {
-	return goc.ByteArrayType
+	return goc.BinaryType
 }
 
 func (source *Source) Run(context *goc.Context) {
 	var err error
 
 	log.Printf("dialing %q", source.Uri)
-	source.conn, err = amqp.Dial(source.Uri)
+	conn, err := amqp.Dial(source.Uri)
 	if err != nil {
 		panic(err)
 	}
 
 	go func() {
-		<-source.conn.NotifyClose(make(chan *amqp.Error))
-		log.Printf("Closing AMQP source")
+		err := <-conn.NotifyClose(make(chan *amqp.Error))
+		log.Printf("Closing AMQP source: %v", err)
 	}()
 
 	log.Printf("got Connection, getting channel")
-	source.channel, err = source.conn.Channel()
+	channel, err := conn.Channel()
 	if err != nil {
 		panic(err)
 	}
 
-	log.Printf("got channel, declaring Exchange (%q)", source.Exchange)
-	if err = source.channel.ExchangeDeclare(
-		source.Exchange,     // name of the Exchange
-		source.ExchangeType, // type
-		true,                // durable
-		false,               // delete when complete
-		false,               // internal
-		false,               // noWait
-		nil,                 // arguments
-	); err != nil {
-		panic(fmt.Errorf("exchange Declare: %source", err))
+	if source.BindingKey != "" {
+		log.Printf("binding to Exchange (key %q)", source.BindingKey)
+		if err := channel.QueueBind(source.QueueName, source.BindingKey, source.Exchange, false, nil, ); err != nil {
+			panic(err)
+		}
 	}
 
-	log.Printf("declared Exchange, declaring Queue %q", source.QueueName)
-	queue, err := source.channel.QueueDeclare(
-		source.QueueName, // name of the queue
-		true,             // durable
-		false,            // delete when unused
-		false,            // exclusive
-		false,            // noWait
-		nil,              // arguments
-	)
-	if err != nil {
-		panic(fmt.Errorf("Queue Declare: %source", err))
-	}
+	log.Printf("Queue bound to Exchange, starting Consume with Consumer Tag: %q", source.ConsumerTag)
 
-	log.Printf("declared Queue (%q %d messages, %d consumers)",
-		queue.Name, queue.Messages, queue.Consumers)
+	context.Put(0, conn)
+	context.Put(1, channel)
+	context.Put(2, uint64(0)) //lastCommitTag
+	context.Put(3, time.Time{}) //lastCommitTime
 
-	log.Printf("binding to Exchange (key %q)", source.BindingKey)
-	if err := source.channel.QueueBind(source.QueueName, source.BindingKey, source.Exchange, false, nil, ); err != nil {
-		panic(err)
-	}
-	log.Printf("Queue bound to Exchange, starting Consume (consumer Group %q)", source.Group)
+	channel.Qos(source.PrefetchCount, source.PrefetchSize, false)
 
-	deliveries, err := source.channel.Consume(
-		source.QueueName, source.Group, false, false, false, false, nil, )
+	deliveries, err := channel.Consume(
+		source.QueueName, source.ConsumerTag, false, false, false, false, nil)
 
 	if err != nil {
 		panic(err)
@@ -113,27 +93,40 @@ func (source *Source) Run(context *goc.Context) {
 		})
 	}
 
+	log.Println("No more AMQP deliveries")
 }
 
-func (source *Source) Commit(checkpoint goc.Watermark) error {
+func (source *Source) Commit(checkpoint goc.Watermark, ctx *goc.Context) error {
+	channel := ctx.Get(1).(*amqp.Channel)
+	lastCommitTag := ctx.Get(2).(uint64)
+	lastCommitTime :=  ctx.Get(3).(time.Time)
 	if checkpoint[0] != nil {
 		deliverTag := checkpoint[0].(uint64)
-		if err := source.channel.Ack(deliverTag, true); err != nil {
+		if err := channel.Ack(deliverTag, true); err != nil {
 			return err
 		}
-		log.Printf("AMQP09 Source Committed, %d\n", deliverTag-source.lastCommitTag)
-		source.lastCommitTag = deliverTag
+		now := time.Now()
+		diff := now.Sub(lastCommitTime)
+		if diff > 10 * time.Second {
+			numCommitted := deliverTag - lastCommitTag
+			ctx.Put(3, now)
+			log.Printf("AMQP09 Source Acked, %d\n", numCommitted)
+			ctx.Put(2, deliverTag)
+		}
 	}
 	return nil
 }
 
-func (source *Source) Close() error {
+func (source *Source) Close(ctx *goc.Context) error {
+	conn := ctx.Get(0).(*amqp.Connection)
+	channel := ctx.Get(1).(*amqp.Channel)
 
-	if err := source.channel.Cancel(source.Group, true); err != nil {
+	if err := channel.Cancel(source.ConsumerTag, true); err != nil {
+
 		return fmt.Errorf("source cancel failed: %source", err)
 	}
 
-	if err := source.conn.Close(); err != nil {
+	if err := conn.Close(); err != nil {
 		return fmt.Errorf("AMQP connection close error: %source", err)
 	}
 

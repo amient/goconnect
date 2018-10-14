@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/amient/goconnect/pkg/goc/coder/gocxml"
+	"github.com/amient/goconnect/pkg/goc/coder/xml"
 	"log"
 	"strings"
 	"time"
@@ -28,11 +28,11 @@ func main() {
 		}
 	}()
 
-	s2 := make(chan gocxml.Node, minBuf)
+	s2 := make(chan xml.Node, minBuf)
 	go func() {
 		defer close(s2)
 		for input := range s1 {
-			n, _ := gocxml.ReadNodeFromString(input)
+			n, _ := xml.ReadNodeFromString(input)
 			s2 <- n
 		}
 	}()

@@ -31,9 +31,9 @@ type Graph []*Context
 
 func ConnectStages(connector Connector, pipeline *Pipeline) Graph {
 	graph := make(Graph, len(pipeline.Defs))
-	log.Printf("Applying pipline of %d stages to node %d", len(graph), connector.GetNodeID())
-	for _, def := range pipeline.Defs {
-		graph[def.Id] = NewContext(connector, def)
+	log.Printf("Applying pipline of %d stages", len(graph))
+	for stageId, def := range pipeline.Defs {
+		graph[def.Id] = NewContext(connector, uint16(stageId + 1), def)
 		if def.Id > 0 {
 			graph[def.Id].up = graph[def.Up.Id]
 		}
@@ -62,8 +62,9 @@ func RunGraphs(graphs ...Graph) {
 
 	for {
 		if chosen, value, _ := reflect.Select(cases); chosen == 0 {
+			//FIXME busy pipelines sometimes refuse to terminate upon signalling
+			log.Printf("Caught signal %v: Cancelling\n", value.Interface())
 			for _, source := range sources {
-				log.Printf("Caught signal %v: Cancelling\n", value.Interface())
 				source.Close()
 			}
 		} else {

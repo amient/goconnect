@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package gocstring
+package str
 
 import (
 	"github.com/amient/goconnect/pkg/goc"
@@ -27,7 +27,7 @@ import (
 type Decoder struct{}
 
 func (d *Decoder) InType() reflect.Type {
-	return goc.ByteArrayType
+	return goc.BinaryType
 }
 
 func (d *Decoder) OutType() reflect.Type {

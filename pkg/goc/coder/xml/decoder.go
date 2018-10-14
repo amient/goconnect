@@ -17,23 +17,29 @@
  * limitations under the License.
  */
 
-package gocstring
+package xml
 
 import (
+	"bytes"
 	"github.com/amient/goconnect/pkg/goc"
 	"reflect"
 )
 
-type Encoder struct{}
+type Decoder struct{}
 
-func (d *Encoder) InType() reflect.Type {
-	return goc.StringType
+func (d *Decoder) InType() reflect.Type {
+	return goc.BinaryType
 }
 
-func (d *Encoder) OutType() reflect.Type {
-	return goc.ByteArrayType
+func (d *Decoder) OutType() reflect.Type {
+	return NodeType
 }
 
-func (d *Encoder) Process(input interface{}) interface{} {
-	return []byte(input.(string))
+func (d *Decoder) Process(input interface{}) interface{} {
+	if node, err := ReadNode(bytes.NewReader(input.([]byte))); err != nil {
+		panic(err)
+	} else {
+		return node
+	}
+
 }

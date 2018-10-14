@@ -33,6 +33,7 @@ type Def struct {
 	maxVerticalParallelism int
 	triggerEach            int
 	triggerEvery           time.Duration
+	bufferCap              int
 }
 
 func (def *Def) Apply(f Fn) *Def {
@@ -55,10 +56,22 @@ func (def *Def) Fold(init interface{}, acc interface{}) *Def {
 	return def.pipeline.Fold(def, UserFoldFn(init, acc))
 }
 
+func (def *Def) Count() *Def {
+	return def.pipeline.Fold(def, UserFoldFn(int64(0), func(acc int64, in interface{}) int64 {
+		return acc + 1
+	}))
+}
+
+
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 func (def *Def) Par(i int) *Def {
 	def.maxVerticalParallelism = i
+	return def
+}
+
+func (def *Def) Buffer(i int) *Def {
+	def.bufferCap = i
 	return def
 }
 

@@ -17,11 +17,9 @@
  * limitations under the License.
  */
 
-package gocxml
+package str
 
 import (
-	"bufio"
-	"bytes"
 	"github.com/amient/goconnect/pkg/goc"
 	"reflect"
 )
@@ -29,21 +27,13 @@ import (
 type Encoder struct{}
 
 func (d *Encoder) InType() reflect.Type {
-	return NodeType
+	return goc.StringType
 }
 
 func (d *Encoder) OutType() reflect.Type {
-	return goc.ByteArrayType
+	return goc.BinaryType
 }
 
 func (d *Encoder) Process(input interface{}) interface{} {
-	var b bytes.Buffer
-	w := bufio.NewWriter(&b)
-	_, err := WriteNode(w, input.(Node))
-	w.Flush()
-	if err != nil {
-		panic(err)
-	} else {
-		return b.Bytes()
-	}
+	return []byte(input.(string))
 }

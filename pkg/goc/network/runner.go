@@ -3,11 +3,17 @@ package network
 import (
 	"github.com/amient/goconnect/pkg/goc"
 	"log"
+	"strings"
 	"sync"
 	"time"
 )
 
-func Runner(pipeline *goc.Pipeline, addrs ...string) {
+func Runner(pipeline *goc.Pipeline, addrLists ...string) {
+
+	addrs := make([]string, 0)
+	for _, list := range addrLists {
+		addrs = append(addrs, strings.Split(list, ",")...)
+	}
 
 	localNodes := JoinCluster(addrs...)
 

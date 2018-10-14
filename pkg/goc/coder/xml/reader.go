@@ -1,7 +1,7 @@
-package gocxml
+package xml
 
 import (
-	"encoding/xml"
+	encXml "encoding/xml"
 	"io"
 	"strings"
 )
@@ -22,9 +22,9 @@ func ReadNode(r io.Reader) (Node, error) {
 		nil,
 		nil,
 	}
-	dec := xml.NewDecoder(r)
+	dec := encXml.NewDecoder(r)
 
-	var t xml.Token
+	var t encXml.Token
 	var err error
 	var current *tag
 	current = result
@@ -32,11 +32,11 @@ func ReadNode(r io.Reader) (Node, error) {
 	// Parse tokens.
 	for t, err = dec.Token(); err == nil; t, err = dec.Token() {
 		switch t := t.(type) {
-		case xml.StartElement:
+		case encXml.StartElement:
 			// Copy attributes.
-			attrs := make([]*xml.Attr, len(t.Attr))
+			attrs := make([]*encXml.Attr, len(t.Attr))
 			for i, attr := range t.Attr {
-				attrs[i] = &xml.Attr{attr.Name, attr.Value}
+				attrs[i] = &encXml.Attr{attr.Name, attr.Value}
 			}
 
 			// Create child node.
@@ -50,17 +50,17 @@ func ReadNode(r io.Reader) (Node, error) {
 			current.children = append(current.children, child)
 			current = child
 
-		case xml.EndElement:
+		case encXml.EndElement:
 			current = current.Parent().(*tag)
 
-		case xml.CharData:
+		case encXml.CharData:
 			child := &text{
 				current,
 				string(t),
 			}
 			current.children = append(current.children, child)
 
-		case xml.Comment:
+		case encXml.Comment:
 			child := &comment{
 				current,
 				string(t),
@@ -68,7 +68,7 @@ func ReadNode(r io.Reader) (Node, error) {
 
 			current.children = append(current.children, child)
 
-		case xml.ProcInst:
+		case encXml.ProcInst:
 			child := &procInst{
 				current,
 				string(t.Target),
@@ -77,7 +77,7 @@ func ReadNode(r io.Reader) (Node, error) {
 
 			current.children = append(current.children, child)
 
-		case xml.Directive:
+		case encXml.Directive:
 			child := &directive{
 				current,
 				string(t),

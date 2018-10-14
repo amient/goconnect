@@ -20,6 +20,54 @@ a lot more efficient and has a low package and memory footprint - it can run hap
 
 (NOTE: THE PROTOTYPE IN THIS CODEBASE DOESN'T HAVE ALL THE FEATURES LISTED ABOVE BUT THOSE ARE THE AIM AND WILL APPEAR SOON)
 
+## Implemented Features
+
+- Generalized at-least-once processing guarantees for all element wise processing, i.e. covers all features below
+- Declaration vs Materialization - pipeline is declared as a graph of Defs and then materialized into a runnable graph
+- Bounded and Unbounded sources are treated identically both in the API and in the runner context - stream and batch totally unified
+- Network Runner: network.Runner(pipeline, peers..) - allows stages to place network constraints by requesting receivers/senders and applying network logic
+- Single Runner: Pipeline.Run() - for pipelines whose stages don't have any network constraints and can run in parallel without coordination
+- TriggerEach / TriggerEvery for SinkFn - either may be used optionally for performance gain, default trigger is no trigger, i.e. only one at the end if 
+- TriggerEach / TriggerEvery for FoldFn - either must be used in order for fold to emit anything
+- Configurable stage buffers: .Buffer(numElements int) - used to control pending/ack buffers, not output buffers
+- Stage output channel .Par(n) defines vertical parallelism, i.e. how many routines run the fn in parallel and push to the output channel 
+- Coders are injected recursively using coder.Registry()
+- Coder vertical parallelism can be controlled by Pipeline.CoderPar(n) default setting
+- Coders
+  - binary > xml > binary
+  - gzip decoder 
+  - string > binary > string
+- Sources (Root Transforms) 
+  - List Source / RoundRobin Source
+  - AMQP Source
+  - Kafka Source
+- Transforms
+    - SinkFn(func)
+    - FoldFn(func)
+    - FilterFn + UserFilterFn(func)
+    - MapFn + UserMapFn(func)
+    - FlatMapFn + UserFlatMapFn(func)
+    - FoldFn +UserFoldFn(func) +Count()
+- Sinks
+  - Kafka Sink
+  - STDOUT Sink
+- Network
+  - RoundRobin
+  - MergeOrdered
+
+## Features In Progress/TODO
+
+- Coders
+  - avro with projection and schema registry support
+  - file source using network split internally to spread the URLs 
+  - processing epochs: dynamic node join/leave 
+  - persistent checkpoints
+  - gzip encoder
+  - use Fn struct cloning instead of Context.Put/Get for materialized context
+  - coder injection shortest path in case there are mutliple combinations satisfying the in/out types
+  - analyse pipeline network constraints and decide warn/recommend single/network runners
+  - Indirect type handling in coder injection - this will enable using *KVBytes instead of KVBytes and less copy
+  - Exactly-Once processing as an extension to the existing at-least-once
 
 The API is partially based on reflection but this is only used in-stream for user defined functions - implementation of transform interfaces use type casting in the worst case, no reflection. 
     
@@ -91,6 +139,7 @@ So there are several implications of this:
         - b) file contents is retrieved from - runs on all by default  
     - STD-OUT - runs on one specific node selected by the user    
        
+     
      
      
      

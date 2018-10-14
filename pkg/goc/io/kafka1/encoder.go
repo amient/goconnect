@@ -27,7 +27,7 @@ import (
 type NilKeyEncoder struct{}
 
 func (d *NilKeyEncoder) InType() reflect.Type {
-	return goc.ByteArrayType
+	return goc.BinaryType
 }
 
 func (d *NilKeyEncoder) OutType() reflect.Type {

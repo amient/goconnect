@@ -36,7 +36,7 @@ func (sink *Out) InType() reflect.Type {
 	return goc.AnyType
 }
 
-func (sink *Out) Process(input *goc.Element) {
+func (sink *Out) Process(input *goc.Element, ctx *goc.Context) {
 	if sink.stdout == nil {
 		sink.stdout = bufio.NewWriter(os.Stdout)
 	}
@@ -44,7 +44,7 @@ func (sink *Out) Process(input *goc.Element) {
 	sink.buffer = append(sink.buffer, input)
 }
 
-func (sink *Out) Flush() error {
+func (sink *Out) Flush(ctx *goc.Context) error {
 	var result error
 	if len(sink.buffer) > 0 {
 		result = sink.stdout.Flush()

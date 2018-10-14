@@ -62,7 +62,7 @@ func (it *iterable) Run(context *goc.Context) {
 	}
 }
 
-func (it *iterable) Commit(watermark goc.Watermark) error {
+func (it *iterable) Commit(watermark goc.Watermark, ctx *goc.Context) error {
 	it.offset = watermark[0].(int)
 	//log.Println("ITERABLE COMMIT: ", watermark[0])
 	return nil

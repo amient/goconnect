@@ -9,11 +9,11 @@ import (
 type NetMergeOrdered struct {}
 
 func (n *NetMergeOrdered) InType() reflect.Type {
-	return goc.ByteArrayType
+	return goc.BinaryType
 }
 
 func (n *NetMergeOrdered) OutType() reflect.Type {
-	return goc.ByteArrayType
+	return goc.BinaryType
 }
 
 func (n *NetMergeOrdered) Run(input <-chan *goc.Element, context *goc.Context) {

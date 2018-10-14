@@ -22,7 +22,7 @@ package main
 import (
 	"github.com/amient/goconnect/pkg/goc"
 	"github.com/amient/goconnect/pkg/goc/coder"
-	"github.com/amient/goconnect/pkg/goc/coder/gocxml"
+	"github.com/amient/goconnect/pkg/goc/coder/xml"
 	"github.com/amient/goconnect/pkg/goc/io"
 	"github.com/amient/goconnect/pkg/goc/io/std"
 	"github.com/amient/goconnect/pkg/goc/network"
@@ -40,10 +40,10 @@ func main() {
 	pipeline := goc.NewPipeline().WithCoders(coder.Registry(), 4)
 
 	//root source of text elements
-	messages := pipeline.Root(io.RoundRobin(500000, data))
+	messages := pipeline.Root(io.RoundRobin(500000, data)).Buffer(1000000)
 
 	//extract names with custom Map fn (coders satisfying []byte => xml are injected by the pipeline)
-	extracted := messages.Map(func(in gocxml.Node) string { return in.Children()[0].Children()[0].Text() }).Par(2)
+	extracted := messages.Map(func(in xml.Node) string { return in.Children()[0].Children()[0].Text() }).Par(2)
 
 	//remove all names containing letter 'B' with custom Filter fn
 	filtered := extracted.Filter(func(input string) bool {
@@ -51,11 +51,14 @@ func main() {
 	})
 
 	//output the aggregation result by applying a general StdOutSink transform
-	filtered.Fold(0, func(acc int, in string) int { return acc + len(in) }).TriggerEach(100000).
-		Filter(func(x int) bool { return x > 40 }).
-		Apply(new(std.Out))
+	filtered.Fold(0, func(acc int, in string) int { return acc + len(in) }).TriggerEach(50000).
+		Filter(func(x int) bool { return x > 200000 }).
+		Apply(new(std.Out)).TriggerEach(1)
 
-	//filtered.Apply(&kafka1.Sink{Bootstrap: "localhost:9092", Topic: "test"})
+	//filtered.Apply(&kafka1.Sink{
+	//	Topic:          "test",
+	//	ProducerConfig: kafka.ConfigMap{"bootstrap.servers": "localhost:9092"},
+	//})
 
 	network.Runner(pipeline, "127.0.0.1:19001")
 

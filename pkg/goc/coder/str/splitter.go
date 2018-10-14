@@ -1,4 +1,4 @@
-package gocstring
+package str
 
 import (
 	"github.com/amient/goconnect/pkg/goc"

@@ -23,36 +23,36 @@ import (
 	"fmt"
 	"github.com/amient/goconnect/pkg/goc"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
-	"log"
 	"reflect"
 	"sync/atomic"
 	"time"
 )
 
 type Sink struct {
-	Bootstrap string
-	Topic     string
-	producer  *kafka.Producer
-	numProduced int32
+	Topic          string
+	ProducerConfig kafka.ConfigMap
+	numProduced    int32
 }
 
 func (sink *Sink) InType() reflect.Type {
 	return reflect.TypeOf(goc.KVBytes{})
 }
 
-func (sink *Sink) Process(input *goc.Element) {
+func (sink *Sink) Process(input *goc.Element, ctx *goc.Context) {
 	var err error
 
-	if sink.producer == nil {
-		sink.producer, err = kafka.NewProducer(&kafka.ConfigMap{
-			"bootstrap.servers":   sink.Bootstrap,
-			"go.delivery.reports": true,
-		})
+	var producer *kafka.Producer
+	if ctx.Get(0) != nil {
+		producer = ctx.Get(0).(*kafka.Producer)
+	} else {
+		sink.ProducerConfig.SetKey("go.delivery.reports", true)
+		producer, err = kafka.NewProducer(&sink.ProducerConfig)
 		if err != nil {
 			panic(err)
 		}
+		ctx.Put(0, producer)
 		go func() {
-			for e := range sink.producer.Events() {
+			for e := range producer.Events() {
 				sink.processKafkaEvent(e)
 			}
 		}()
@@ -62,31 +62,33 @@ func (sink *Sink) Process(input *goc.Element) {
 
 	for {
 		select {
-		case sink.producer.ProduceChannel() <- &kafka.Message{
+		case producer.ProduceChannel() <- &kafka.Message{
 			TopicPartition: kafka.TopicPartition{Topic: &sink.Topic, Partition: kafka.PartitionAny},
 			Key:            kv.Key,
 			Value:          kv.Value,
 			Timestamp:      time.Unix(input.Stamp.Unix, 0),
 			Opaque:         input,
 		}:
+			//TODO atomic context update of numProduced
 			atomic.AddInt32(&sink.numProduced, 1)
 			return
-		case e := <-sink.producer.Events():
+		case e := <-producer.Events():
 			sink.processKafkaEvent(e)
 		}
 	}
 }
 
-func (sink *Sink) Flush() error {
-	log.Println("Kafka Sink Flush")
-	if sink.producer != nil {
-		numFlushed := atomic.SwapInt32(&sink.numProduced, 0)
-		if sink.producer.Flush(30000) == 0 {
-			log.Println("Kafka Sink Flushed ", numFlushed)
-			sink.numProduced = 0
-		} else {
-			return fmt.Errorf("failed to flush all produced messages")
+func (sink *Sink) Flush(ctx *goc.Context) error {
+	if ctx.Get(0) != nil {
+		producer := ctx.Get(0).(*kafka.Producer)
+		var outstanding int
+		for i := 1; i < 10; i ++{
+			outstanding = producer.Flush(30000)
+			if outstanding == 0 {
+				return nil
+			}
 		}
+		return fmt.Errorf("failed to flush all produced messages, outstading: %v", outstanding)
 	}
 	return nil
 }
@@ -98,16 +100,18 @@ func (sink *Sink) processKafkaEvent(e kafka.Event) {
 			panic(fmt.Errorf("Delivery failed: %v\n", ev.TopicPartition))
 		} else {
 			ev.Opaque.(*goc.Element).Ack()
-			if atomic.AddInt32(&sink.numProduced, -1) == 0 {
-				log.Println("Kafka Sink in a clean state")
+			n := atomic.AddInt32(&sink.numProduced, -1)
+			if  n == 0 {
+				//log.Println("Kafka Sink in a clean state")
 			}
 		}
 	}
 }
 
-func (sink *Sink) Close() error {
-	if sink.producer != nil {
-		sink.producer.Close()
+func (sink *Sink) Close(ctx *goc.Context) error {
+	if ctx.Get(0) != nil {
+		producer := ctx.Get(0).(*kafka.Producer)
+		producer.Close()
 	}
 	return nil
 }

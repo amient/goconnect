@@ -24,7 +24,7 @@ import (
 	"github.com/amient/goconnect/pkg/goc"
 	"github.com/amient/goconnect/pkg/goc/coder"
 	"github.com/amient/goconnect/pkg/goc/io/kafka1"
-	"github.com/amient/goconnect/pkg/goc/network"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 var (
@@ -41,14 +41,18 @@ func main() {
 	pipeline := goc.NewPipeline().WithCoders(coder.Registry(), 1)
 
 	source := pipeline.Root(&kafka1.Source{
-		Bootstrap: *kafkaSourceBootstrap,
-		Topic:     *kafkaSourceTopic,
-		Group:     *kafkaSourceGroup})
+		Topic: *kafkaSourceTopic,
+		ConsumerConfig: kafka.ConfigMap{
+			"bootstrap.servers": *kafkaSourceBootstrap,
+			"group.id":          *kafkaSourceGroup,
+			"auto.offset.reset": "earliest",
+		}})
 
 	source.Apply(&kafka1.Sink{
-		Bootstrap: *kafkaSinkBootstrap,
-		Topic:     *kafkaSinkTopic})
+		Topic: *kafkaSinkTopic,
+		ProducerConfig: kafka.ConfigMap{
+			"bootstrap.servers": *kafkaSinkBootstrap}})
 
-	network.Runner(pipeline, "127.0.0.1:8234")
+	pipeline.Run()
 
 }

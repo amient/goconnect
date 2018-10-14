@@ -38,56 +38,58 @@ func (c ConsumerCheckpoint) String() string {
 }
 
 type Source struct {
-	Bootstrap string
-	Topic     string
-	Group     string
-	consumer  *kafka.Consumer
-	start     time.Time
-	counter   map[int32]uint64
-	total     uint64
+	Topic          string
+	ConsumerConfig kafka.ConfigMap
 }
 
 func (source *Source) OutType() reflect.Type {
+	//FIXME output type should be a pointer to KVBytes but this needs also implementaiton in the injection code to work with indirect types
 	return reflect.TypeOf(goc.KVBytes{})
 }
 
 func (source *Source) Run(context *goc.Context) {
-	var err error
-	source.counter = make(map[int32]uint64)
-	source.consumer, err = kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers": source.Bootstrap,
-		"group.id":          source.Group,
-		"default.topic.config": kafka.ConfigMap{
-			"auto.offset.reset":  "earliest", //TODO pass this as config
-			"enable.auto.commit": "false",
-		},
-		"enable.auto.commit":       "false",
-		"go.events.channel.enable": true,
-	})
+	var start time.Time
+	var total uint64
+	counter := make(map[int32]uint64)
+	config := &source.ConsumerConfig
+	config.SetKey("go.events.channel.enable", true)
+	config.SetKey("enable.auto.commit", false)
+	defaultTopicConfig, _ := config.Get("default.topic.config", kafka.ConfigMap{})
+	SetConfig := func(key string, defVal kafka.ConfigValue) {
+		v, _ := config.Get(key, defVal)
+		defaultTopicConfig.(kafka.ConfigMap).SetKey(key, v)
+	}
+	SetConfig("enable.auto.commit", false)
+	SetConfig("auto.offset.reset", "earliest")
+	config.SetKey("default.topic.config", defaultTopicConfig)
+
+	consumer, err := kafka.NewConsumer(config)
 	if err != nil {
 		panic(err)
 	}
 
-	log.Printf("Subscribing to kafka topic %s", source.Topic)
-	if err := source.consumer.Subscribe(source.Topic, nil); err != nil {
+	context.Put(0, consumer)
+
+	log.Printf("Subscribing to kafka topic %s with grup %q", source.Topic, (*config)["group.id"])
+	if err := consumer.Subscribe(source.Topic, nil); err != nil {
 		panic(err)
 	}
 
+	log.Printf("Consuming kafka topic %q", source.Topic)
 
-	for event := range source.consumer.Events() {
+	for event := range consumer.Events() {
 
 		switch e := event.(type) {
 		case kafka.AssignedPartitions: //not used
 		case kafka.RevokedPartitions: //not used
 		case *kafka.Message:
-			if len(source.counter) == 0 {
-				log.Printf("Consuming kafka topic %s", source.Topic)
-				source.start = time.Now()
+			if len(counter) == 0 {
+				start = time.Now()
 			}
-			if _, contains := source.counter[e.TopicPartition.Partition]; !contains {
-				source.counter[e.TopicPartition.Partition] = 0
+			if _, contains := counter[e.TopicPartition.Partition]; !contains {
+				counter[e.TopicPartition.Partition] = 0
 			}
-			source.counter[e.TopicPartition.Partition]++
+			counter[e.TopicPartition.Partition]++
 			context.Emit(&goc.Element{
 				Stamp: goc.Stamp{Unix: e.Timestamp.Unix()},
 				Checkpoint: goc.Checkpoint{
@@ -100,11 +102,11 @@ func (source *Source) Run(context *goc.Context) {
 				},
 			})
 		case kafka.PartitionEOF:
-			source.total += source.counter[e.Partition]
-			delete(source.counter, e.Partition)
-			if len(source.counter) == 0 && source.total > 0 {
-				log.Printf("EOF: Consumed %d in %f s\n", source.total, time.Now().Sub(source.start).Seconds())
-				source.total = 0
+			total += counter[e.Partition]
+			delete(counter, e.Partition)
+			if len(counter) == 0 && total > 0 {
+				log.Printf("EOF: Consumed %d in %f s\n", total, time.Now().Sub(start).Seconds())
+				total = 0
 			}
 
 		case kafka.Error:
@@ -113,7 +115,8 @@ func (source *Source) Run(context *goc.Context) {
 	}
 }
 
-func (source *Source) Commit(checkpoint goc.Watermark) error {
+func (source *Source) Commit(checkpoint goc.Watermark, ctx *goc.Context) error {
+	consumer := ctx.Get(0).(*kafka.Consumer)
 	var offsets []kafka.TopicPartition
 	for k, v := range checkpoint {
 		offsets = append(offsets, kafka.TopicPartition{
@@ -123,7 +126,7 @@ func (source *Source) Commit(checkpoint goc.Watermark) error {
 		})
 	}
 	if len(offsets) > 0 {
-		if _, err := source.consumer.CommitOffsets(offsets); err != nil {
+		if _, err := consumer.CommitOffsets(offsets); err != nil {
 			return err
 		} else {
 			//log.Printf("Kafka Commit Successful: %v", offsets)
@@ -132,7 +135,9 @@ func (source *Source) Commit(checkpoint goc.Watermark) error {
 	return nil
 }
 
-func (source *Source) Close() error {
-	defer log.Println("Closed Kafka Consumer")
-	return source.consumer.Close()
+func (source *Source) Close(ctx *goc.Context) error {
+	consumer := ctx.Get(0).(*kafka.Consumer)
+	log.Println("Closing Kafka Consumer")
+	//FIXME closing kafka consumer doesn't remove the client from the group, only after zk timeout
+	return consumer.Close()
 }

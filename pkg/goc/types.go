@@ -25,10 +25,14 @@ import (
 )
 
 var AnyType = reflect.TypeOf([]interface{}{}).Elem()
+var BinaryType = reflect.TypeOf([]byte{})
 var ErrorType = reflect.TypeOf(fmt.Errorf("{}"))
 var StringType = reflect.TypeOf("")
-var IntType = reflect.TypeOf(0)
-var ByteArrayType = reflect.TypeOf([]byte{})
+var IntType = reflect.TypeOf(int(0))
+var ByteType = reflect.TypeOf(byte(0))
+var Int16Type = reflect.TypeOf(int16(0))
+var Int32Type = reflect.TypeOf(int32(0))
+var Int64Type = reflect.TypeOf(int64(0))
 
 type KV struct {
 	Key   interface{}

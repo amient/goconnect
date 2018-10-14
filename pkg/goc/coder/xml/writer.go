@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package gocxml
+package xml
 
 import (
 	"fmt"

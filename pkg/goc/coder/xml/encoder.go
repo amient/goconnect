@@ -17,29 +17,33 @@
  * limitations under the License.
  */
 
-package gocxml
+package xml
 
 import (
+	"bufio"
 	"bytes"
 	"github.com/amient/goconnect/pkg/goc"
 	"reflect"
 )
 
-type Decoder struct{}
+type Encoder struct{}
 
-func (d *Decoder) InType() reflect.Type {
-	return goc.ByteArrayType
-}
-
-func (d *Decoder) OutType() reflect.Type {
+func (d *Encoder) InType() reflect.Type {
 	return NodeType
 }
 
-func (d *Decoder) Process(input interface{}) interface{} {
-	if node, err := ReadNode(bytes.NewReader(input.([]byte))); err != nil {
+func (d *Encoder) OutType() reflect.Type {
+	return goc.BinaryType
+}
+
+func (d *Encoder) Process(input interface{}) interface{} {
+	var b bytes.Buffer
+	w := bufio.NewWriter(&b)
+	_, err := WriteNode(w, input.(Node))
+	w.Flush()
+	if err != nil {
 		panic(err)
 	} else {
-		return node
+		return b.Bytes()
 	}
-
 }

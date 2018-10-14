@@ -27,10 +27,14 @@ type Fn interface{}
 
 type Watermark map[int]interface{}
 
+type Closeable interface {
+	Close(*Context) error
+}
+
 type Root interface {
 	OutType() reflect.Type
 	Run(*Context)
-	Commit(watermark Watermark) error
+	Commit(Watermark, *Context) error
 }
 
 type Transform interface {
@@ -47,8 +51,8 @@ type ElementWise interface {
 
 type Sink interface {
 	InType() reflect.Type
-	Process(*Element)
-	Flush() error
+	Process(*Element, *Context)
+	Flush(*Context) error
 }
 
 type MapFn interface {
@@ -84,6 +88,7 @@ func UserMapFn(f interface{}) MapFn {
 type userMapFn struct {
 	inType  reflect.Type
 	outType reflect.Type
+	//FIXME f has to be in the context not in the fn def - unless there is nice way to make struct deep clones
 	f       reflect.Value
 }
 

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"log"
 	"reflect"
+	"time"
 )
 
 type Pipeline struct {
@@ -37,6 +38,16 @@ func NewPipeline() *Pipeline {
 		Defs:   []*Def{},
 	}
 }
+
+func (p *Pipeline) Run() {
+	graph := ConnectStages(nil, p)
+	start := time.Now()
+	log.Println("Running a single")
+	RunGraphs(graph)
+	log.Printf("All stages completed in %f0.0 s", time.Now().Sub(start).Seconds())
+}
+
+
 
 func (p *Pipeline) WithCoders(coders []MapFn, defaultPar int) *Pipeline {
 	p.coders = coders
@@ -115,10 +126,12 @@ func (p *Pipeline) Sink(that *Def, fn Sink) *Def {
 func (p *Pipeline) register(def *Def) *Def {
 	def.pipeline = p
 	def.Id = len(p.Defs)
-	//defaults:
+	//defaults
+	def.bufferCap = 32
 	def.maxVerticalParallelism = 1
-	def.triggerEach = 1
+	def.triggerEach = 0
 	def.triggerEvery = 0
+	//
 	p.Defs = append(p.Defs, def)
 	return def
 }

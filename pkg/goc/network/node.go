@@ -3,7 +3,6 @@ package network
 import (
 	"github.com/amient/goconnect/pkg/goc"
 	"log"
-	"sync/atomic"
 	"time"
 )
 
@@ -22,11 +21,6 @@ func NewNode(addr string, nodes []string) (*Node, error) {
 type Node struct {
 	server  *Server
 	nodes   []string
-	stageId int32
-}
-
-func (node *Node) GenerateStageID() uint16 {
-	return uint16(atomic.AddInt32(&node.stageId, 1))
 }
 
 func (node *Node) GetNodeID() uint16 {
@@ -51,6 +45,15 @@ func (node *Node) NewSender(targetNodeId uint16, stageId uint16) goc.Sender {
 }
 
 func (node *Node) Join(nodes []string) {
+	//TODO pipelines which don't contain any network stages, i.e. forks, splits, merges shuffles
+	//..don't have to join the cluster, members can join and leave whenever started/stopped
+	//TODO the best way would be to make joining and leaving nodes completely dynamic
+	//by introducing processing epochs - an epoch starts and ends whenever any node joins
+	//or leaves the group. the previous epoch must complete and fully drain all remaining data
+	//before the new epoch is started.
+	// - unconstrained stages are simply drained and re-started
+	// - constrained stages should use checkpoint storage to be able to resume from the previous
+	//   epoch's last position in case the nomination process results in a different node(s) being selected.
 	for nodeId := 0; nodeId < len(nodes); {
 		addr := nodes[nodeId]
 		s := newSender(addr, 0, uint16(nodeId))

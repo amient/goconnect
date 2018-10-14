@@ -20,13 +20,19 @@
 package main
 
 import (
+	"flag"
 	"github.com/amient/goconnect/pkg/goc"
 	"github.com/amient/goconnect/pkg/goc/coder"
-	"github.com/amient/goconnect/pkg/goc/coder/gocstring"
+	"github.com/amient/goconnect/pkg/goc/coder/str"
 	"github.com/amient/goconnect/pkg/goc/io"
 	"github.com/amient/goconnect/pkg/goc/io/std"
 	"github.com/amient/goconnect/pkg/goc/network"
 	"strings"
+)
+
+var (
+	//runner options
+	peers = flag.String("peers", "127.0.0.1:19001,127.0.0.1:19002,127.0.0.1:19003", "Coma-separated list of host:port peers")
 )
 
 func main() {
@@ -35,15 +41,15 @@ func main() {
 
 	pipeline.
 		Root(io.From([]string{"aaa\tbbb\tccc", "ddd", "eee", "fff", "ggg\thhh"})).
-		Apply(gocstring.Split("\t")). //same as FlatMap(func(in string, out chan string) { for _, s := range strings.Split(in, "\t") { out <- s } }).
+		Apply(str.Split("\t")). //same as FlatMap(func(in string, out chan string) { for _, s := range strings.Split(in, "\t") { out <- s } }).
 		//coder: string -> []uint8
 		Apply(new(network.NetRoundRobin)).
 		//coder: []uint8 -> string
 		Map(func(in string) string { return strings.ToUpper(in) }).Par(2).
 		//coder: string -> []uint8
 		Apply(new(network.NetMergeOrdered)).
-		Apply(new(std.Out))
+		Apply(new(std.Out)).TriggerEach(1)
 
-	network.Runner(pipeline, "127.0.0.1:19001", "127.0.0.1:19002", "127.0.0.1:19003")
+	network.Runner(pipeline, *peers)
 
 }
