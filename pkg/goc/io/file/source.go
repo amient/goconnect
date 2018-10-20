@@ -17,45 +17,48 @@
  * limitations under the License.
  */
 
-package network
+package file
 
 import (
 	"github.com/amient/goconnect/pkg/goc"
+	"github.com/amient/goconnect/pkg/goc/coder/url"
+	"io/ioutil"
 	"reflect"
 )
 
-type NetMergeOrdered struct{}
-
-func (n *NetMergeOrdered) InType() reflect.Type {
-	return goc.BinaryType
+type Source struct {
+	Path string
+	//TODO regex filter
 }
 
-func (n *NetMergeOrdered) OutType() reflect.Type {
-	return goc.BinaryType
+func (s *Source) OutType() reflect.Type {
+	return url.UrlType
 }
 
-func (n *NetMergeOrdered) Run(input <-chan *goc.Element, context *goc.Context) {
-
-	LastNode := context.GetNumPeers()
-	mergeOnThisNode := context.GetNodeID() == LastNode
-	var recv goc.Receiver
-	if mergeOnThisNode {
-		recv = context.GetReceiver()
-	}
-	send := context.MakeSender(LastNode)
-
-	go func() {
-		for e := range input {
-			send.Send(e)
+func (s *Source) Run(ctx *goc.Context) {
+	//TODO select one node on each host, not one node out of all nodes
+	if ctx.GetNodeID() == 1 {
+		if files, err := ioutil.ReadDir(s.Path); err != nil {
+			panic(err)
+		} else {
+			//TODO termination handling
+			for i, f := range files {
+				//TODO generate local dir complex checkpoint (timestamp + []incomplete)
+				//TODO general representation of a file (not io.FileInfo or sftp.Url but goc.Url)
+				ctx.Emit(&goc.Element{
+					Checkpoint: goc.Checkpoint{0, i},
+					Value: &url.Url{
+						Proto: "file",
+						Path:  s.Path,
+						Name:  f.Name(),
+						Mod:   f.ModTime().Unix(),
+					},
+				})
+			}
 		}
-		send.Eos()
-	}()
-
-	if mergeOnThisNode {
-		buf := goc.NewOrderedElementSet(10)
-		for e := range recv.Elements() {
-			buf.AddElement(e, context)
-		}
 	}
+}
 
+func (s *Source) Commit(goc.Watermark, *goc.Context) error {
+	return nil
 }

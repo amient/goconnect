@@ -25,7 +25,6 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"log"
 	"reflect"
-	"time"
 )
 
 type ConsumerCheckpoint struct {
@@ -43,12 +42,11 @@ type Source struct {
 }
 
 func (source *Source) OutType() reflect.Type {
-	//FIXME output type should be a pointer to KVBytes but this needs also implementaiton in the injection code to work with indirect types
-	return reflect.TypeOf(goc.KVBytes{})
+	return goc.KVBinaryType
 }
 
 func (source *Source) Run(context *goc.Context) {
-	var start time.Time
+	//var start time.Time
 	var total uint64
 	counter := make(map[int32]uint64)
 	config := &source.ConsumerConfig
@@ -77,40 +75,47 @@ func (source *Source) Run(context *goc.Context) {
 
 	log.Printf("Consuming kafka topic %q", source.Topic)
 
-	for event := range consumer.Events() {
+	for {
+		select {
+		case <- context.Termination():
+			return
+		case event, ok := <-consumer.Events():
+			if !ok {
+				return
+			}
+			switch e := event.(type) {
+			case kafka.AssignedPartitions: //not used
+			case kafka.RevokedPartitions: //not used
+			case *kafka.Message:
+				//if len(counter) == 0 {
+				//	start = time.Now()
+				//}
+				if _, contains := counter[e.TopicPartition.Partition]; !contains {
+					counter[e.TopicPartition.Partition] = 0
+				}
+				counter[e.TopicPartition.Partition]++
+				context.Emit(&goc.Element{
+					Stamp: goc.Stamp{Unix: e.Timestamp.Unix()},
+					Checkpoint: goc.Checkpoint{
+						Part: int(e.TopicPartition.Partition),
+						Data: e.TopicPartition.Offset,
+					},
+					Value: &goc.KVBinary{
+						Key:   e.Key,
+						Value: e.Value,
+					},
+				})
+			case kafka.PartitionEOF:
+				total += counter[e.Partition]
+				delete(counter, e.Partition)
+				if len(counter) == 0 && total > 0 {
+					//log.Printf("EOF Consumed %d in %f s\n", total, time.Now().Sub(start).Seconds())
+					total = 0
+				}
 
-		switch e := event.(type) {
-		case kafka.AssignedPartitions: //not used
-		case kafka.RevokedPartitions: //not used
-		case *kafka.Message:
-			if len(counter) == 0 {
-				start = time.Now()
+			case kafka.Error:
+				panic(e)
 			}
-			if _, contains := counter[e.TopicPartition.Partition]; !contains {
-				counter[e.TopicPartition.Partition] = 0
-			}
-			counter[e.TopicPartition.Partition]++
-			context.Emit(&goc.Element{
-				Stamp: goc.Stamp{Unix: e.Timestamp.Unix()},
-				Checkpoint: goc.Checkpoint{
-					Part: int(e.TopicPartition.Partition),
-					Data: e.TopicPartition.Offset,
-				},
-				Value: goc.KVBytes{
-					Key:   e.Key,
-					Value: e.Value,
-				},
-			})
-		case kafka.PartitionEOF:
-			total += counter[e.Partition]
-			delete(counter, e.Partition)
-			if len(counter) == 0 && total > 0 {
-				log.Printf("EOF: Consumed %d in %f s\n", total, time.Now().Sub(start).Seconds())
-				total = 0
-			}
-
-		case kafka.Error:
-			panic(e)
 		}
 	}
 }

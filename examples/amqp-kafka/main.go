@@ -47,7 +47,7 @@ func main() {
 
 	flag.Parse()
 
-	pipeline := goc.NewPipeline().WithCoders(coder.Registry(), 1)
+	pipeline := goc.NewPipeline().WithCoders(coder.Registry())
 
 	amqp09.DeclareExchange(*uri, *exchange, *exchangeType, *queue)
 
@@ -57,12 +57,16 @@ func main() {
 		QueueName:   *queue,
 		ConsumerTag: *consumerTag,
 		BindingKey:  *bindingKey,
-	})
+		PrefetchCount: 2000,
+	}).Buffer(100000)
 
 	messages.Apply(&kafka1.Sink{
 		Topic: *kafkaSinkTopic,
 		ProducerConfig: kafka.ConfigMap{
-			"bootstrap.servers": *kafkaSinkBootstrap}})
+			"bootstrap.servers": *kafkaSinkBootstrap,
+			"linger.ms":         100,
+			"message.max.bytes": 200000000,
+			"compression.type":  "gzip"}})
 
 	pipeline.Run()
 

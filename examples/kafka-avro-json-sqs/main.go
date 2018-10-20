@@ -23,37 +23,31 @@ import (
 	"flag"
 	"github.com/amient/goconnect/pkg/goc"
 	"github.com/amient/goconnect/pkg/goc/coder"
+	"github.com/amient/goconnect/pkg/goc/coder/avro"
 	"github.com/amient/goconnect/pkg/goc/io/kafka1"
+	"github.com/amient/goconnect/pkg/goc/io/std"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 var (
 	kafkaSourceBootstrap = flag.String("kafka.source.bootstrap", "localhost:9092", "Kafka Bootstrap servers for the source topis")
-	kafkaSourceGroup     = flag.String("kafka.source.group", "goconnect-mirror", "Source Kafka Consumer Group")
-	kafkaSourceTopic     = flag.String("kafka.source.topic", "test", "Source Kafka Topic")
-	//
-	kafkaSinkBootstrap = flag.String("kafka.sink.bootstrap", "localhost:9092", "Kafka Destination Bootstrap servers")
-	kafkaSinkTopic     = flag.String("kafka.sink.topic", "test-copy", "Destination Kafka Topic")
+	kafkaSourceGroup     = flag.String("kafka.source.group", "goc-avro-poc", "Source Kafka Consumer Group")
+	kafkaSourceTopic     = flag.String("kafka.source.topic", "_metrics", "Source Kafka Topic")
+	schemaRegistryUrl    = flag.String("schema.registry.url", "http://localhost:8081", "Schema Registry URL")
 )
 
 func main() {
 
 	pipeline := goc.NewPipeline().WithCoders(coder.Registry())
 
-	source := pipeline.Root(&kafka1.Source{
-		Topic: *kafkaSourceTopic,
-		ConsumerConfig: kafka.ConfigMap{
-			"bootstrap.servers": *kafkaSourceBootstrap,
-			"group.id":          *kafkaSourceGroup,
-			"auto.offset.reset": "earliest",
-		}}).Buffer(100000)
+	consumerConfig := kafka.ConfigMap{"bootstrap.servers": *kafkaSourceBootstrap, "group.id": *kafkaSourceGroup}
 
-	source.Apply(&kafka1.Sink{
-		Topic: *kafkaSinkTopic,
-		ProducerConfig: kafka.ConfigMap{
-			"bootstrap.servers": *kafkaSinkBootstrap,
-			"linger.ms": 100}})
+	pipeline.Root(&kafka1.Source{*kafkaSourceTopic, consumerConfig}).
+		//TODO Apply(&ConfluentSchemaRegistry{*schemaRegistryUrl}).
+		Apply(new(avro.GenericDecoder)).
+		//TODO Apply(new(avro.JsonEncoder)).
+		Apply(new(std.Out)).TriggerEach(1)
+		//TODO Apply(&aws.SqsSink{"..."})
 
 	pipeline.Run()
-
 }

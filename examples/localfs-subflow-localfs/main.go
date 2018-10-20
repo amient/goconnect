@@ -20,43 +20,40 @@
 package main
 
 import (
+	"flag"
 	"github.com/amient/goconnect/pkg/goc"
 	"github.com/amient/goconnect/pkg/goc/coder"
-	"github.com/amient/goconnect/pkg/goc/coder/xml"
-	"github.com/amient/goconnect/pkg/goc/io"
+	"github.com/amient/goconnect/pkg/goc/io/file"
 	"github.com/amient/goconnect/pkg/goc/io/std"
+	"github.com/amient/goconnect/pkg/goc/network"
 	"strings"
 )
 
-var data = []string{
-	"<name>Adam</name>", "<name>Albert</name>", "<name>Alice</name>", "<name>Alex</name>",
-	"<name>Bart</name>", "<name>Bob</name>", "<name>Brittney</name>", "<name>Brenda</name>",
-	"<name>Cecilia</name>", "<name>Chad</name>", "<name>Elliot</name>", "<name>Wojtek</name>",
-}
+var (
+	//runner options
+	peers = flag.String("peers", "127.0.0.1:19001,127.0.0.1:19002,127.0.0.1:19003", "Coma-separated list of host:port peers")
+)
 
 func main() {
+
+	//TODO var subflow goc.MapFn =  str.Split('\n') >
+	//TODO the flat map stage has to be able to resume mid-way through a file
 
 	pipeline := goc.NewPipeline().WithCoders(coder.Registry()).Par(2)
 
 	//root source of text elements
 	pipeline.
-		Root(io.RoundRobin(500000, data)).Buffer(100000).
-		Map(func(in xml.Node) string { return in.Children()[0].Children()[0].Text() }).
-		Filter(func(input string) bool { return !strings.Contains(input, "B") }).Par(4).
-		//
-		Fold(0, func(acc int, in string) int { return acc + len(in) }).TriggerEach(50000).
-		Filter(func(x int) bool { return x > 210000 }).
-		//Count().TriggerEvery(500 * time.Millisecond).
+		Root(&file.Source{"/tmp/test"}).
+		Apply(new(network.NetRoundRobin)).
+		//TODO Map( if gz then Apply(gzip.Decode), if bz then Apply(bzip.Decode) )
+		Apply(new(file.Reader)).
+		//TODO Map( subflow ).
+		Apply(new(file.Text)).
+		Map(func(in string) string { return strings.ToUpper(in) }).Par(4).
+		//Map(func(in xml.Node) string { return in.Children()[0].Children()[0].Text() }).
 		Apply(new(std.Out)).TriggerEach(1)
 
-	//Apply(&kafka1.Sink{
-	//	Topic:          "test",
-	//	ProducerConfig: kafka.ConfigMap{
-	//		"bootstrap.servers": "localhost:9092",
-	//		"linger.ms": 100,
-	//	},
-	//})
-
-	pipeline.Run()
+	//pipeline.Run()
+	network.Runner(pipeline, *peers)
 
 }

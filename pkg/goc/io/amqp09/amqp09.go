@@ -31,7 +31,7 @@ func DeclareExchange(amqpUri string, exchange string, exchangeType string, queue
 		false,               // noWait
 		nil,                 // arguments
 	); err != nil {
-		panic(fmt.Errorf("Exchange Declare: %source", err))
+		panic(fmt.Errorf("exchange Declare: %source", err))
 	}
 
 	queue, err := channel.QueueDeclare(

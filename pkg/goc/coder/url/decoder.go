@@ -17,34 +17,42 @@
  * limitations under the License.
  */
 
-package str
+package url
 
 import (
+	"bytes"
+	"encoding/binary"
 	"github.com/amient/goconnect/pkg/goc"
+	"github.com/amient/goconnect/pkg/goc/util"
 	"reflect"
-	"strings"
 )
 
-func Split(separator string) goc.Processor {
-	return &Splitter{separator: separator}
+type Decoder struct{}
+
+func (d *Decoder) InType() reflect.Type {
+	return goc.BinaryType
 }
 
-type Splitter struct {
-	separator string
+func (d *Decoder) OutType() reflect.Type {
+	return UrlType
 }
 
-func (s *Splitter) InType() reflect.Type {
-	return goc.StringType
-}
+func (d *Decoder) Process(input interface{}) interface{} {
 
-func (s *Splitter) OutType() reflect.Type {
-	return goc.StringType
-}
-
-func (s *Splitter) Materialize() func(input *goc.Element, ctx goc.PContext) {
-	return func(input *goc.Element, ctx goc.PContext) {
-		for _, s := range strings.Split(input.Value.(string), s.separator) {
-			ctx.Emit(&goc.Element{Value: s})
-		}
+	reader := bytes.NewReader(input.([]byte))
+	var err error
+	proto, err := util.ReadString(reader)
+	path, err := util.ReadString(reader)
+	name, err := util.ReadString(reader)
+	mod := int64(0)
+	err = binary.Read(reader, binary.LittleEndian, &mod)
+	if err != nil {
+		panic(err)
+	}
+	return &Url{
+		Proto: proto,
+		Path: path,
+		Name: name,
+		Mod: mod,
 	}
 }

@@ -24,18 +24,17 @@ import (
 	"github.com/amient/goconnect/pkg/goc"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"reflect"
-	"sync/atomic"
 	"time"
 )
 
 type Sink struct {
-	Topic          string
-	ProducerConfig kafka.ConfigMap
-	numProduced    int32
+	Topic           string
+	ProducerConfig  kafka.ConfigMap
+	//numProduced     int32 //FIXME contextual var, not a defintion
 }
 
 func (sink *Sink) InType() reflect.Type {
-	return reflect.TypeOf(goc.KVBytes{})
+	return goc.KVBinaryType
 }
 
 func (sink *Sink) Process(input *goc.Element, ctx *goc.Context) {
@@ -58,7 +57,7 @@ func (sink *Sink) Process(input *goc.Element, ctx *goc.Context) {
 		}()
 
 	}
-	kv := input.Value.(goc.KVBytes)
+	kv := input.Value.(*goc.KVBinary)
 
 	for {
 		select {
@@ -70,7 +69,7 @@ func (sink *Sink) Process(input *goc.Element, ctx *goc.Context) {
 			Opaque:         input,
 		}:
 			//TODO atomic context update of numProduced
-			atomic.AddInt32(&sink.numProduced, 1)
+			//atomic.AddInt32(&sink.numProduced, 1)
 			return
 		case e := <-producer.Events():
 			sink.processKafkaEvent(e)
@@ -82,7 +81,7 @@ func (sink *Sink) Flush(ctx *goc.Context) error {
 	if ctx.Get(0) != nil {
 		producer := ctx.Get(0).(*kafka.Producer)
 		var outstanding int
-		for i := 1; i < 10; i ++{
+		for i := 1; i < 10; i ++ {
 			outstanding = producer.Flush(30000)
 			if outstanding == 0 {
 				return nil
@@ -100,10 +99,10 @@ func (sink *Sink) processKafkaEvent(e kafka.Event) {
 			panic(fmt.Errorf("Delivery failed: %v\n", ev.TopicPartition))
 		} else {
 			ev.Opaque.(*goc.Element).Ack()
-			n := atomic.AddInt32(&sink.numProduced, -1)
-			if  n == 0 {
-				//log.Println("Kafka Sink in a clean state")
-			}
+			//n := atomic.AddInt32(&sink.numProduced, -1)
+			//if n == 0 {
+			//	log.Println("Kafka Sink in a clean state")
+			//}
 		}
 	}
 }

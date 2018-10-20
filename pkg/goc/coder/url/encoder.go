@@ -17,34 +17,33 @@
  * limitations under the License.
  */
 
-package str
+package url
 
 import (
+	"bytes"
+	"encoding/binary"
 	"github.com/amient/goconnect/pkg/goc"
+	"github.com/amient/goconnect/pkg/goc/util"
 	"reflect"
-	"strings"
 )
 
-func Split(separator string) goc.Processor {
-	return &Splitter{separator: separator}
+type Encoder struct{}
+
+func (e *Encoder) InType() reflect.Type {
+	return UrlType
 }
 
-type Splitter struct {
-	separator string
+func (e *Encoder) OutType() reflect.Type {
+	return goc.BinaryType
 }
 
-func (s *Splitter) InType() reflect.Type {
-	return goc.StringType
+func (e *Encoder) Process(input interface{}) interface{} {
+	url := input.(*Url)
+	result := new(bytes.Buffer)
+	util.WriteString(url.Proto, result)
+	util.WriteString(url.Path, result)
+	util.WriteString(url.Name, result)
+	binary.Write(result, binary.LittleEndian, url.Mod)
+	return result.Bytes()
 }
 
-func (s *Splitter) OutType() reflect.Type {
-	return goc.StringType
-}
-
-func (s *Splitter) Materialize() func(input *goc.Element, ctx goc.PContext) {
-	return func(input *goc.Element, ctx goc.PContext) {
-		for _, s := range strings.Split(input.Value.(string), s.separator) {
-			ctx.Emit(&goc.Element{Value: s})
-		}
-	}
-}

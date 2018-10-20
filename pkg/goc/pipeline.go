@@ -27,31 +27,33 @@ import (
 )
 
 type Pipeline struct {
-	Defs            []*Def
-	defaultCoderPar int
-	stamp           uint64
-	coders          []MapFn
+	Defs       []*Def
+	defaultPar int
+	stamp      uint64
+	coders     []MapFn
 }
 
 func NewPipeline() *Pipeline {
 	return &Pipeline{
-		Defs:   []*Def{},
+		defaultPar: 1,
+		Defs:       []*Def{},
 	}
 }
 
 func (p *Pipeline) Run() {
 	graph := ConnectStages(nil, p)
 	start := time.Now()
-	log.Println("Running a single")
 	RunGraphs(graph)
 	log.Printf("All stages completed in %f0.0 s", time.Now().Sub(start).Seconds())
 }
 
-
-
-func (p *Pipeline) WithCoders(coders []MapFn, defaultPar int) *Pipeline {
+func (p *Pipeline) WithCoders(coders []MapFn) *Pipeline {
 	p.coders = coders
-	p.defaultCoderPar = defaultPar
+	return p
+}
+
+func (p *Pipeline) Par(defaultPar int) *Pipeline {
+	p.defaultPar = defaultPar
 	return p
 }
 
@@ -59,13 +61,10 @@ func (p *Pipeline) Root(source Root) *Def {
 	return p.register(&Def{Type: source.OutType(), Fn: source})
 }
 
-
 func (p *Pipeline) Apply(def *Def, f Fn) *Def {
 	switch fn := f.(type) {
 	case Transform:
 		return p.Transform(def, fn)
-	case ElementWise:
-		return p.ElementWise(def, fn)
 	case Sink:
 		return p.Sink(def, fn)
 	case FoldFn:
@@ -74,8 +73,10 @@ func (p *Pipeline) Apply(def *Def, f Fn) *Def {
 		return p.Map(def, fn)
 	case FilterFn:
 		return p.Filter(def, fn)
+	case Processor:
+		return p.Processor(def, fn)
 	default:
-		panic(fmt.Errorf("only one of the interfaces defined in goc/Fn.go can be applied"))
+		panic(fmt.Errorf("only one of the interfaces defined in goc/Fn.go can be applied, got: %q", reflect.TypeOf(fn)))
 	}
 }
 
@@ -86,17 +87,24 @@ func (p *Pipeline) Transform(that *Def, fn Transform) *Def {
 	return p.register(&Def{Up: that, Type: fn.OutType(), Fn: fn})
 }
 
-func (p *Pipeline) ElementWise(that *Def, fn ElementWise) *Def {
-	if !that.Type.AssignableTo(fn.InType()) {
-		return p.ElementWise(p.injectCoder(that, fn.InType()), fn)
+func (p *Pipeline) Processor(that *Def, fn Processor) *Def {
+	if input, is := fn.(Input); is {
+		if !that.Type.AssignableTo(input.InType()) {
+			return p.Processor(p.injectCoder(that, input.InType()), fn)
+		}
 	}
-	return p.register(&Def{Type: fn.OutType(), Fn: fn, Up: that})
+	if output, is := fn.(Output); is {
+		return p.register(&Def{Type: output.OutType(), Fn: fn, Up: that})
+	} else {
+		return p.register(&Def{Type: ErrorType, Fn: fn, Up: that})
+	}
 }
 
 func (p *Pipeline) Map(that *Def, fn MapFn) *Def {
 	if !that.Type.AssignableTo(fn.InType()) {
 		return p.Map(p.injectCoder(that, fn.InType()), fn)
 	}
+
 	return p.register(&Def{Type: fn.OutType(), Fn: fn, Up: that})
 }
 
@@ -122,8 +130,23 @@ func (p *Pipeline) Sink(that *Def, fn Sink) *Def {
 	return p.register(&Def{Type: ErrorType, Fn: fn, Up: that})
 }
 
-
 func (p *Pipeline) register(def *Def) *Def {
+	//validate previous stage which may have been configured with constraint methods
+	if def.Up != nil {
+		switch def.Up.Fn.(type) {
+		case Root, Transform:
+			if def.Up.maxVerticalParallelism > 1 {
+				panic(fmt.Errorf("roots cannot have vertical parallelism greater than 1, got: %v", def.Up.maxVerticalParallelism))
+			}
+		case FoldFn:
+			if def.Up.triggerEach <= 0 && def.Up.triggerEvery <= 0 {
+				panic(fmt.Errorf("FoldFn must have one of the triggers configured"))
+			}
+			if def.Up.maxVerticalParallelism > 1 {
+				panic(fmt.Errorf("FoldFn cannot have vertical parallelism greater than 1, got: %v", def.Up.maxVerticalParallelism))
+			}
+		}
+	}
 	def.pipeline = p
 	def.Id = len(p.Defs)
 	//defaults
@@ -161,9 +184,8 @@ func (p *Pipeline) injectCoder(that *Def, to reflect.Type) *Def {
 	}
 	//log.Printf("Injecting coders to satisfy: %v => %v ", that.Type, to)
 	for _, mapper := range scan(that.Type, to, 1, []MapFn{}) {
-		log.Printf("Injecting coder: %v => %v using default parallelism %d", that.Type, mapper.OutType(), p.defaultCoderPar)
-		that = that.Apply(mapper).Par(p.defaultCoderPar)
+		log.Printf("Injecting coder: %v => %v using default parallelism %d", that.Type, mapper.OutType(), p.defaultPar)
+		that = that.Apply(mapper).Par(p.defaultPar)
 	}
 	return that
 }
-

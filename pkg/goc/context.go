@@ -22,8 +22,8 @@ package goc
 import (
 	"fmt"
 	"log"
+	"math"
 	"reflect"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -32,16 +32,6 @@ type PC struct {
 	Uniq           uint64
 	UpstreamNodeId uint16
 	Checkpoint     *Checkpoint
-}
-
-type P struct {
-	u        uint64
-	upstream uint64
-	complete *int64
-}
-
-type ProcessContext struct {
-	Emit func(value interface{})
 }
 
 type Receiver interface {
@@ -65,37 +55,44 @@ type Connector interface {
 
 func NewContext(connector Connector, stageId uint16, def *Def) *Context {
 	context := Context{
-		stage:     stageId,
-		connector: connector,
-		def:       def,
-		output:    make(chan *Element, def.maxVerticalParallelism*4),
-		completed: make(chan bool),
-		data:      make(map[int]interface{}),
+		stage:        stageId,
+		connector:    connector,
+		def:          def,
+		limitEnabled: def.limit > 0,
+		termination:  make(chan bool, 2),                                //RootFn implementations must consume context.Termination() channel
+		output:       make(chan *Element, def.maxVerticalParallelism*4), //TODO ouptut buffer may need to be bigger than factor of for, e.g. large FlatMaps
+		completed:    make(chan bool),
+		data:         make(map[int]interface{}),
 	}
 	return &context
 }
 
 type Context struct {
-	Emit           func(element *Element)
-	Ack            func(uniq uint64)
-	Close          func()
-	data           map[int]interface{}
-	up             *Context
-	stage          uint16
-	output         chan *Element
-	connector      Connector
-	receiver       Receiver
-	def            *Def
-	autoi          uint64
-	highestPending uint64
-	highestAcked   uint64
-	closed         bool
-	completed      chan bool
+	Emit         func(element *Element)
+	termination  chan bool
+	ack          func(uniq uint64)
+	stop         func(uniq uint64)
+	Close        func()
+	data         map[int]interface{}
+	up           *Context
+	stage        uint16
+	output       chan *Element
+	connector    Connector
+	receiver     Receiver
+	def          *Def
+	limitEnabled bool
+	limitCounter uint64
+	autoi        uint64
+	closed       bool
+	completed    chan bool
 }
 
 func (c *Context) GetNodeID() uint16 {
-	c.checkConnector()
-	return c.connector.GetNodeID()
+	if c.connector == nil {
+		return 1
+	} else {
+		return c.connector.GetNodeID()
+	}
 }
 
 func (c *Context) GetStage() uint16 {
@@ -120,7 +117,7 @@ func (c *Context) MakeSender(targetNodeId uint16) Sender {
 	sender := c.connector.NewSender(targetNodeId, c.stage)
 	go func() {
 		for stamp := range sender.Acks() {
-			c.up.Ack(stamp)
+			c.up.ack(stamp)
 		}
 	}()
 	return sender
@@ -150,68 +147,120 @@ func (c *Context) Get(index int) interface{} {
 	return c.data[index]
 }
 
+func (c *Context) Termination() <-chan bool {
+	return c.termination
+}
+
 func (c *Context) Start() {
 
 	switch fn := c.def.Fn.(type) {
 
-	case FilterFn:
-		c.Close = c.close
-		c.Ack = c.up.Ack
-		c.runVerticalGroup(func() {
-			for e := range c.up.output {
-				if fn.Pass(e.Value) {
-					c.output <- e
-				} else {
-					e.Ack()
-				}
-			}
-		})
+	case Root:
+		pending := make(chan PC, c.def.bufferCap)
+		c.initializeCheckpointer(c.def.bufferCap, pending, fn)
+		go func() {
+			fn.Run(c)
+			close(c.output)
+			c.Close()
+		}()
 
 	case MapFn:
-		c.Close = c.close
-		c.Ack = c.up.Ack
-		c.runVerticalGroup(func() {
-			for e := range c.up.output {
-				c.output <- &Element{
-					Value: fn.Process(e.Value),
-					Stamp: e.Stamp,
-					ack: func(uniq uint64) {
-						c.up.Ack(uniq)
-					},
-				}
-			}
-		})
+		c.ack = c.up.ack
+		c.stop = c.up.stop
+		NewWorkerGroup(c, &MapProcessor{fn}).Start(c.up.output)
 
-	case Root:
+	case FilterFn:
+		c.ack = c.up.ack
+		c.stop = c.up.stop
+		NewWorkerGroup(c, &FilterProcessor{fn}).Start(c.up.output)
 
-		pending := make(chan PC, c.def.bufferCap)
-		c.initializeCheckpointBuffer(c.def.bufferCap, pending)
-		c.Emit = func(element *Element) {
-			element.ack = c.Ack
-			element.Stamp.Uniq = atomic.AddUint64(&c.autoi, 1)
-			c.highestPending = element.Stamp.Uniq
-			if element.Stamp.Unix == 0 {
-				element.Stamp.Unix = time.Now().Unix()
-			}
-			pending <- PC{
-				Uniq:           element.Stamp.Uniq,
-				Checkpoint:     &element.Checkpoint,
-				UpstreamNodeId: element.FromNodeId,
-			}
-			c.output <- element
-		}
-		c.runVerticalGroup(func() {
-			//TODO make sure root behaviour with par > 1 is predictable
-			fn.Run(c)
-		})
+	case Processor:
+		NewWorkerGroup(c, fn).Start(c.up.output)
 
 	case Transform:
 		pending := make(chan PC, c.def.bufferCap)
-		c.initializeNetworkBuffer(c.def.bufferCap, pending)
+		//TODO implement limit/stop for network buffer
+		acks := make(chan uint64, c.def.bufferCap)
+		c.ack = func(uniq uint64) {
+			acks <- uniq
+		}
+		terminate := make(chan bool)
+		terminating := false
+		c.Close = func() {
+			terminate <- true
+		}
+		pendingSuspendable := pending
+		pendingCheckpoints := make(map[uint64]*PC, c.def.bufferCap)
+		acked := make(map[uint64]bool, c.def.bufferCap)
+
+		var highestPending uint64 //FIXME these two vars are volatile
+		var highestAcked uint64
+		maybeTerminate := func() {
+			if terminating {
+				if len(pendingCheckpoints) == 0 && highestPending == highestAcked {
+					//c.log("Completed - closing")
+					close(pending)
+					close(acks)
+					acks = nil
+					c.close()
+				} else {
+					//c.log("Awaiting Completion highestPending: %d, highestAcked: %d", c.highestPending, c.highestAcked)
+				}
+			}
+		}
+
+		resolveAcks := func(uniq uint64) {
+			if p, exists := pendingCheckpoints[uniq]; exists {
+				if _, alsoExists := acked[uniq]; alsoExists {
+					delete(pendingCheckpoints, uniq)
+					delete(acked, uniq)
+					c.receiver.Ack(p.UpstreamNodeId, p.Uniq)
+					//c.log(action+"(%v) RESOLVED PART %d DATA %v PENDING %d pendingCommitReuqest = %v\n", uniq, p.Checkpoint.Part, p.Checkpoint.Data, len(pendingCheckpoints), pendingCommitReuqest)
+				}
+			}
+
+			if len(pendingCheckpoints) < c.def.bufferCap && pendingSuspendable == nil {
+				//release the backpressure after capacity is freed
+				pendingSuspendable = pending
+			}
+
+			maybeTerminate()
+		}
+
+		go func() {
+			for !c.closed {
+				select {
+				case <-terminate:
+					terminating = true
+					maybeTerminate()
+				case uniq := <-acks:
+					if uniq > highestAcked {
+						highestAcked = uniq
+					}
+					acked[uniq] = true
+					resolveAcks(uniq)
+
+				case p := <-pendingSuspendable:
+					pendingCheckpoints[p.Uniq] = &p
+
+					resolveAcks(p.Uniq)
+
+					if len(pendingCheckpoints) == c.def.bufferCap {
+						//in order to apply backpressure this channel needs to be nilld but right now it hangs after second pendingSuspendable
+						pendingSuspendable = nil
+						//c.log("STAGE[%d] Applying backpressure, pending acks: %d\n", c.stage, len(pendingCheckpoints))
+					} else if len(pendingCheckpoints) > c.def.bufferCap {
+						panic(fmt.Errorf("illegal accumulator state, buffer size higher than %d", c.def.bufferCap))
+					}
+
+				}
+			}
+		}()
+
 		c.Emit = func(element *Element) {
-			element.ack = c.Ack
-			if element.Stamp.Uniq > c.highestPending {
-				c.highestPending = element.Stamp.Uniq
+			//TODO network stage need implementing .stop for limit conditions to propagate through them
+			if element.Stamp.Uniq > highestPending {
+				highestPending = element.Stamp.Uniq
 			}
 			pending <- PC{
 				Uniq:           element.Stamp.Uniq,
@@ -220,410 +269,355 @@ func (c *Context) Start() {
 			}
 			c.output <- element
 		}
-		//TODO disallow par > 1 for network transforms
-		c.runVerticalGroup(func() {
+		go func() {
 			fn.Run(c.up.output, c)
-		})
+			close(c.output)
+			c.Close()
+		}()
 
 	case Sink:
 		c.Close = c.close
-		c.Ack = c.up.Ack
-		n := uint32(0)
-		trigger := func() {
-			if err := fn.Flush(c); err != nil {
-				panic(err)
-			}
-		}
-		process := func(e *Element) {
-			fn.Process(e, c)
-			if c.def.triggerEach > 0 {
-				if int(atomic.AddUint32(&n, 1))%c.def.triggerEach == 0 {
+		c.stop = c.up.stop
+		go func() {
+			unflushed := false
+			n := 0
+			trigger := func() {
+				if unflushed {
 					if err := fn.Flush(c); err != nil {
 						panic(err)
 					}
+					unflushed = false
 				}
 			}
-		}
-		c.runVerticalGroupWithTriggers(process, trigger)
-
-	case ElementWise:
-		pending := make(chan P, c.def.bufferCap)
-		c.initializeElementWiseBuffer(c.def.bufferCap, pending)
-		c.runVerticalGroup(func() {
-			for e := range c.up.output {
-				complete := int64(0)
-				ctx := ProcessContext{
-					Emit: func(value interface{}) {
-						stamp := Stamp{Uniq: atomic.AddUint64(&c.autoi, 1)}
-						atomic.AddInt64(&complete, 1)
-						pending <- P{
-							upstream: e.Stamp.Uniq,
-							complete: &complete,
-							u:        stamp.Uniq,
-						}
-						c.output <- &Element{
-							Value: value,
-							Stamp: stamp,
-							ack:   c.Ack,
-						}
-					},
-				}
-				fn.Process(e, ctx)
+			var ticker <-chan time.Time
+			if c.def.triggerEvery > 0 {
+				ticker = time.NewTicker(c.def.triggerEvery).C
 			}
-		})
-
-	case FoldFn:
-		c.Close = c.close
-		c.Ack = c.up.Ack
-		//TODO make sure fold behaves correctly under par >
-
-		buffer := make([]uint64, 0, c.def.triggerEach)
-
-		trigger := func() {
-			swap := buffer
-			buffer = make([]uint64, 0, c.def.triggerEach)
-			e := fn.Collect()
-			e.ack = func(uniq uint64) {
-				for _, u := range swap {
-					c.up.Ack(u)
-				}
-			}
-			c.output <- &e
-
-		}
-
-		process := func(e *Element) {
-			if c.def.triggerEvery == 0 && c.def.triggerEach <= 1 {
-				out := fn.Collect()
-				c.output <- &out
-				c.up.Ack(e.Stamp.Uniq)
-			} else {
-				fn.Process(e.Value)
-				buffer = append(buffer, e.Stamp.Uniq)
-				if c.def.triggerEach > 0 {
-					if len(buffer) >= cap(buffer) {
+			for {
+				select {
+				case <-ticker:
+					trigger()
+				case e, ok := <-c.up.output:
+					if !ok {
 						trigger()
+						close(c.output)
+						c.Close()
+						return
+					} else {
+						e.ack = c.up.ack
+						if !c.limitReached(e.Stamp.Uniq) {
+
+							fn.Process(e, c)
+							unflushed = true
+							if c.def.triggerEach > 0 {
+								n++
+								if n%c.def.triggerEach == 0 {
+									if err := fn.Flush(c); err != nil {
+										panic(err)
+									}
+								}
+							}
+						}
 					}
 				}
 			}
+
+		}()
+
+	case FoldFn:
+		c.Close = c.close
+
+		stops := make(chan uint64, 1)
+		c.stop = func(uniq uint64) {
+			stops <- uniq
+		}
+		acks := make(chan uint64, c.def.bufferCap)
+		c.ack = func(uniq uint64) {
+			acks <- uniq
 		}
 
-		c.runVerticalGroupWithTriggers(process, trigger)
+		go func() {
+			pending := make(map[uint64][]uint64, c.def.bufferCap)
+			buffer := make([]uint64, 0, c.def.triggerEach)
+			isClean := true
+			highestAcked := uint64(0)
+			trigger := func() {
+				if !isClean {
+					e := fn.Collect()
+					e.Stamp.Uniq = atomic.AddUint64(&c.autoi, 1)
+					if !c.limitReached(e.Stamp.Uniq) {
+						if e.Stamp.Unix == 0 {
+							e.Stamp.Unix = time.Now().Unix()
+						}
+						swap := buffer
+						buffer = make([]uint64, 0, c.def.triggerEach)
+						pending[e.Stamp.Uniq] = swap
+						c.output <- &e
+					}
+					isClean = true
+				}
+			}
+
+			var ticker <-chan time.Time
+			if c.def.triggerEvery > 0 {
+				ticker = time.NewTicker(c.def.triggerEvery).C
+			}
+
+			resolveAck := func(uniq uint64) {
+				if uniq > highestAcked {
+					highestAcked = uniq
+				}
+				buffer := pending[uniq]
+				delete(pending, uniq)
+				for _, u := range buffer {
+					//log.Println("FOLD UPSTREAM ACK ", u)
+					c.up.ack(u)
+				}
+			}
+
+			var stopStamp = uint64(math.MaxUint64)
+			var terminated = false
+
+			var doStop = func(uniq uint64) {
+				stopStamp = uniq
+				maxInputStopStamp := uint64(0)
+				for _, x := range pending[uniq] {
+					if x > maxInputStopStamp {
+						maxInputStopStamp = x
+					}
+				}
+				//log.Println("FOLD UPSTREAM STOP ", maxInputStopStamp)
+				c.up.stop(maxInputStopStamp)
+			}
+
+			defer c.Close()
+			upstream := c.up.output
+			checkTerminated := func() {
+				if highestAcked >= stopStamp && upstream == nil {
+					terminated = true
+				}
+			}
+			for !terminated {
+				select {
+				case uniq := <-stops:
+					doStop(uniq)
+					if highestAcked >= stopStamp && upstream == nil {
+						terminated = true
+					}
+				default:
+					//select is split into 2 sections to guarantee that the stop signal is processed before any ack
+					//because the pseudo-random selection may trigger ack before stop and the pending buffer which
+					//must be available for the stop id upstream resolution would be be deleted
+					select {
+
+					case uniq := <-stops:
+						doStop(uniq)
+						checkTerminated()
+
+					case uniq := <-acks:
+						resolveAck(uniq)
+						if highestAcked >= stopStamp && upstream == nil {
+							terminated = true
+						}
+
+					case <-ticker:
+						trigger()
+
+					case e, ok := <-upstream:
+						if !ok {
+							trigger()
+							upstream = nil
+							close(c.output)
+							if c.autoi < stopStamp {
+								stopStamp = c.autoi
+							}
+							if highestAcked >= stopStamp && upstream == nil {
+								terminated = true
+							}
+						} else {
+							fn.Process(e.Value)
+							isClean = false
+							buffer = append(buffer, e.Stamp.Uniq)
+							if c.def.triggerEach > 0 {
+								if len(buffer) >= c.def.triggerEach {
+									trigger()
+								}
+							}
+						}
+					}
+				}
+			}
+		}()
 
 	default:
 		panic(fmt.Errorf("unknown Fn Type: %v", reflect.TypeOf(fn)))
 	}
 }
 
-func (c *Context) runVerticalGroupWithTriggers(process func(e *Element), trigger func()) {
-	c.runVerticalGroup(func() {
-		isComplete := true
-		if c.def.triggerEvery == 0 {
-			for e := range c.up.output {
-				isComplete = false
-				process(e)
-			}
-			if !isComplete {
-				trigger()
-			}
-		} else {
-			ticker := time.NewTicker(c.def.triggerEvery).C
-			for {
-				select {
-				case e, ok := <-c.up.output:
-					if !ok {
-						if !isComplete {
-							trigger()
-							isComplete = true
-						}
-						return
-					} else {
-						isComplete = false
-						process(e)
-					}
-				case <-ticker:
-					trigger()
-					isComplete = true
-				}
-			}
+func (c *Context) initializeCheckpointer(cap int, pending chan PC, fn Root) {
+	var highestPending uint64 //FIXME volatile
+	c.Emit = func(element *Element) {
+		element.Stamp.Uniq = atomic.AddUint64(&c.autoi, 1)
+		highestPending = element.Stamp.Uniq
+		element.ack = c.ack
+		if element.Stamp.Unix == 0 {
+			element.Stamp.Unix = time.Now().Unix()
 		}
-
-	})
-}
-
-func (c *Context) runVerticalGroup(f func()) {
-	verticalGroupStart := sync.WaitGroup{}
-	verticalGroupFinish := sync.WaitGroup{}
-	for i := 1; i <= c.def.maxVerticalParallelism; i++ {
-		verticalGroupStart.Add(1)
-		verticalGroupFinish.Add(1)
-		go func() {
-			verticalGroupStart.Done()
-			f()
-			verticalGroupFinish.Done()
-		}()
+		if ! c.limitReached(element.Stamp.Uniq) {
+			pending <- PC{
+				Uniq:           element.Stamp.Uniq,
+				Checkpoint:     &element.Checkpoint,
+				UpstreamNodeId: element.FromNodeId,
+			}
+			c.output <- element
+		}
 	}
-	verticalGroupStart.Wait()
-	go func() {
-		verticalGroupFinish.Wait()
-		close(c.output)
-		c.Close()
-	}()
-}
-
-func (c *Context) initializeCheckpointBuffer(cap int, pending chan PC) {
 	acks := make(chan uint64, cap)
-	c.Ack = func(uniq uint64) {
+	c.ack = func(uniq uint64) {
+		if uniq == 0 {
+			panic(fmt.Errorf("ack stamp cannot be zero"))
+		}
+		//acks get nulled when closing but if this was caused by Limit there may still follow some calls to c.ack
 		acks <- uniq
 	}
-	terminate := make(chan bool)
-	terminating := false
-	c.Close = func() {
-		terminate <- true
-	}
-	pendingSuspendable := pending
-	pendingCheckpoints := make([]*PC, 0, cap)
-	acked := make(map[uint64]bool, cap)
-	watermark := make(Watermark)
-	pendingCommitReuqest := false
-
-	var commits chan Watermark
-	var commitRequests chan bool
-	commitable, isCommitable := c.def.Fn.(Root)
-	if isCommitable {
-		commits = make(chan Watermark)
-		commitRequests = make(chan bool)
-		go func() {
-			commitRequests <- true
-			defer close(commits)
-			defer close(commitRequests)
-			for !c.closed {
-				select {
-				case checkpoint, ok := <-commits:
-					if ok {
-						if commitable != nil {
-							commitable.Commit(checkpoint, c)
-						}
-						commitRequests <- true
+	commits := make(chan Watermark, c.def.maxVerticalParallelism*100)
+	go func() {
+		defer close(commits)
+		//commits consumer must run in a separate routine so that the output emitters continue working even if the commit takes a long time, in other words this is one aspect of the backpressure feature
+		t := time.NewTicker(250 * time.Millisecond).C
+		var checkpoint Watermark
+		var final = false
+		for {
+			select {
+			case w := <-commits:
+				if len(w) == 0 {
+					final = true
+				} else if checkpoint == nil {
+					checkpoint = w
+				} else {
+					for x := range w {
+						checkpoint[x] = w[x]
 					}
 				}
-			}
-		}()
-	}
-
-	doCommit := func() {
-		if len(watermark) > 0 {
-			pendingCommitReuqest = false
-			if isCommitable {
-				//c.log("Commit Checkpoint: %v", watermark)
-				commits <- watermark
-			}
-			watermark = make(map[int]interface{})
-		}
-	}
-
-	maybeTerminate := func() {
-		if terminating {
-			if len(watermark) == 0 && c.highestPending == c.highestAcked {
-				clean := (pendingCommitReuqest || !isCommitable) && len(pendingCheckpoints) == 0
-				if clean {
+			case <-t:
+				if checkpoint != nil {
+					//c.log("Commit Checkpoint: %v", checkpoint)
+					fn.Commit(checkpoint, c)
+					checkpoint = nil
+				}
+				if final {
+					//terminating checkpoint
 					//c.log("Completed - closing")
 					close(pending)
 					close(acks)
 					acks = nil
 					c.close()
-				}
-			} else {
-				//c.log("Awaiting Completion highestPending: %d, highestAcked: %d", c.highestPending, c.highestAcked)
-			}
-		}
-	}
-
-	resolveAcks := func(uniq uint64, action string) {
-		for len(pendingCheckpoints) > 0 && acked[pendingCheckpoints[0].Uniq] {
-			p := pendingCheckpoints[0]
-			watermark[p.Checkpoint.Part] = p.Checkpoint.Data
-			pendingCheckpoints = pendingCheckpoints[1:]
-			delete(acked, p.Uniq)
-			if p.UpstreamNodeId > 0 {
-				c.receiver.Ack(p.UpstreamNodeId, p.Uniq)
-			} else if c.up != nil {
-				c.up.Ack(uniq)
-			}
-		}
-
-		if len(pendingCheckpoints) < cap && pendingSuspendable == nil {
-			//release the backpressure after capacity is freed
-			pendingSuspendable = pending
-		}
-
-		//commit if pending commit request or not commitable in which case commit requests are never fired
-		if pendingCommitReuqest || !isCommitable {
-			doCommit()
-		}
-
-		maybeTerminate()
-	}
-
-	go func() {
-		for !c.closed {
-			select {
-			case <-terminate:
-				terminating = true
-				maybeTerminate()
-			case <-commitRequests:
-				pendingCommitReuqest = true
-				doCommit()
-				maybeTerminate()
-			case uniq := <-acks:
-				if uniq > c.highestAcked {
-					c.highestAcked = uniq
-				}
-				acked[uniq] = true
-				resolveAcks(uniq, "ACK")
-
-			case p := <-pendingSuspendable:
-				pendingCheckpoints = append(pendingCheckpoints, &p)
-
-				resolveAcks(p.Uniq, "EMIT")
-
-				if len(pendingCheckpoints) == cap {
-					//in order to apply backpressure this channel needs to be nilld but right now it hangs after second pendingSuspendable
-					pendingSuspendable = nil
-					//c.log("STAGE[%d] Applying backpressure, pending acks: %d\n", c.stage, len(pendingCheckpoints))
-				} else if len(pendingCheckpoints) > cap {
-					panic(fmt.Errorf("illegal accumulator state, buffer size higher than %d", cap))
+					return
 				}
 
 			}
 		}
 	}()
-}
 
-func (c *Context) initializeElementWiseBuffer(i int, pending chan P) {
-	terminate := make(chan bool)
-	terminating := false
+	terminate := make(chan uint64, 1)
 	c.Close = func() {
-		terminate <- true
-	}
-	acks := make(chan uint64, 1000) //TODO configurable ack capacity
-	c.Ack = func(uniq uint64) {
-		acks <- uniq
-	}
-	numAcked := uint64(0)
-	go func() {
-		groups := make(map[uint64]*P)
-		maybeTerminate := func() {
-			if terminating {
-				if len(groups) == 0 && numAcked == c.autoi {
-					c.log("Completed - closing")
-					close(acks)
-					c.close()
-				}
-			}
-		}
-		for !c.closed {
-			select {
-			case <-terminate:
-				terminating = true
-				maybeTerminate()
-			case p2, ok := <-pending:
-				if ok {
-					groups[p2.u] = &p2
-				} else {
-					pending = nil
-				}
-			case uniq, ok := <-acks:
-				if ok {
-					atomic.AddUint64(&numAcked, 1)
-					p := groups[uniq]
-					delete(groups, uniq)
-					if atomic.AddInt64(p.complete, -1) == 0 {
-						c.up.Ack(p.upstream)
-						maybeTerminate()
-					}
-				} else {
-					acks = nil
-					maybeTerminate()
-				}
-			}
-		}
-	}()
-
-}
-
-func (c *Context) initializeNetworkBuffer(cap int, pending chan PC) {
-	acks := make(chan uint64, cap)
-	c.Ack = func(uniq uint64) {
-		acks <- uniq
-	}
-	terminate := make(chan bool)
-	terminating := false
-	c.Close = func() {
-		terminate <- true
+		terminate <- 0
 	}
 	pendingSuspendable := pending
-	pendingCheckpoints := make(map[uint64]*PC, cap)
+	pendingCheckpoints := make([]*PC, 0, cap)
 	acked := make(map[uint64]bool, cap)
-
-	maybeTerminate := func() {
-		if terminating {
-			if len(pendingCheckpoints) == 0 && c.highestPending == c.highestAcked {
-				//c.log("Completed - closing")
-				close(pending)
-				close(acks)
-				acks = nil
-				c.close()
-			} else {
-				//c.log("Awaiting Completion highestPending: %d, highestAcked: %d", c.highestPending, c.highestAcked)
-			}
-		}
-	}
-
-	resolveAcks := func(uniq uint64, action string) {
-		if p, exists := pendingCheckpoints[uniq]; exists {
-			if _, alsoExists := acked[uniq]; alsoExists {
-				delete(pendingCheckpoints, uniq)
-				delete(acked, uniq)
-				c.receiver.Ack(p.UpstreamNodeId, p.Uniq)
-				//c.log(action+"(%v) RESOLVED PART %d DATA %v PENDING %d pendingCommitReuqest = %v\n", uniq, p.Checkpoint.Part, p.Checkpoint.Data, len(pendingCheckpoints), pendingCommitReuqest)
-			}
-		}
-
-		if len(pendingCheckpoints) < cap && pendingSuspendable == nil {
-			//release the backpressure after capacity is freed
-			pendingSuspendable = pending
-		}
-
-		maybeTerminate()
+	watermark := make(Watermark)
+	var stopStamp uint64 = math.MaxUint64
+	c.stop = func(uniq uint64) {
+		c.termination <- true
+		terminate <- uniq
 	}
 
 	go func() {
+		terminating := false
+		var highestAcked uint64
+		resolveAcks := func() {
+			for len(pendingCheckpoints) > 0 && acked[pendingCheckpoints[0].Uniq] {
+				p := pendingCheckpoints[0]
+				watermark[p.Checkpoint.Part] = p.Checkpoint.Data
+				pendingCheckpoints = pendingCheckpoints[1:]
+				delete(acked, p.Uniq)
+				if p.UpstreamNodeId > 0 {
+					c.receiver.Ack(p.UpstreamNodeId, p.Uniq)
+				} else if c.up != nil {
+					c.up.ack(p.Uniq)
+				}
+			}
+
+			if len(pendingCheckpoints) < cap && pendingSuspendable == nil {
+				//release the backpressure after capacity is freed
+				pendingSuspendable = pending
+			}
+
+			if len(watermark) > 0 {
+				commits <- watermark
+				watermark = make(map[int]interface{})
+			}
+
+			if terminating {
+				if highestPending <= highestAcked || stopStamp <= highestAcked {
+					if len(watermark) == 0 && len(pendingCheckpoints) == 0 && len(acked) == 0 {
+						commits <- Watermark{}
+					} else {
+						//c.log("Watermark: %v", watermark)
+						//c.log("Pending: %v", pendingCheckpoints)
+						//c.log("acked: %v", acked)
+					}
+				}
+			}
+		}
 		for !c.closed {
 			select {
-			case <-terminate:
+			case s := <-terminate:
 				terminating = true
-				maybeTerminate()
-			case uniq := <-acks:
-				if uniq > c.highestAcked {
-					c.highestAcked = uniq
+				if s > 0 {
+					//c.log("ROOT STOP STAMP %v", s)
+					stopStamp = s
+					//delete all pending checkpoints above stopStamp
+					for p := len(pendingCheckpoints) - 1; p >= 0; p-- {
+						if pendingCheckpoints[p].Uniq > stopStamp {
+							//c.log("DROPPING CHECKPOINT= %v", pendingCheckpoints[p].Uniq)
+							pendingCheckpoints = append(pendingCheckpoints[:p], pendingCheckpoints[p+1:]...)
+						}
+					}
+					//TODO delete acked higher than stopStamp
+					for a := range acked {
+						if a > stopStamp {
+							delete(acked, a)
+						}
+					}
 				}
-				acked[uniq] = true
-				resolveAcks(uniq, "ACK")
-
-			case p := <-pendingSuspendable:
-				pendingCheckpoints[p.Uniq] = &p
-
-				resolveAcks(p.Uniq, "EMIT")
-
-				if len(pendingCheckpoints) == cap {
-					//in order to apply backpressure this channel needs to be nilld but right now it hangs after second pendingSuspendable
-					pendingSuspendable = nil
-					//c.log("STAGE[%d] Applying backpressure, pending acks: %d\n", c.stage, len(pendingCheckpoints))
-				} else if len(pendingCheckpoints) > cap {
-					panic(fmt.Errorf("illegal accumulator state, buffer size higher than %d", cap))
+				resolveAcks()
+			case uniq, ok := <-acks:
+				if ok && uniq <= stopStamp {
+					//c.log("ACK %d", uniq)
+					if uniq > highestAcked {
+						highestAcked = uniq
+					}
+					acked[uniq] = true
+					//c.log("BEFORE RESOLVE ROOT ACK %v -> %v", uniq, acked)
+					resolveAcks()
+					//c.log("AFTER RESOLVE ROOT ACK %v -> %v", uniq, acked)
+					//c.log("AFTER ROOT ACK WATERMARK: %v", watermark)
 				}
 
+			case p, ok := <-pendingSuspendable:
+				if ok && p.Uniq <= stopStamp {
+					pendingCheckpoints = append(pendingCheckpoints, &p)
+					resolveAcks()
+					if len(pendingCheckpoints) == cap {
+						//in order to apply backpressure this channel needs to be set to nil so that the select doesn't enter into a busy loop until resolved
+						pendingSuspendable = nil
+						//c.log("STAGE[%d] Applying backpressure, pending acks: %d\n", c.stage, len(pendingCheckpoints))
+					} else if len(pendingCheckpoints) > cap {
+						panic(fmt.Errorf("illegal accumulator state, buffer size higher than %d", cap))
+					}
+				}
 			}
 		}
 	}()
@@ -631,6 +625,7 @@ func (c *Context) initializeNetworkBuffer(cap int, pending chan PC) {
 
 func (c *Context) close() {
 	if ! c.closed {
+		//c.log("CLOSED")
 		c.completed <- true
 		c.closed = true
 		if fn, ok := c.def.Fn.(Closeable); ok {
@@ -652,4 +647,21 @@ func (c *Context) log(f string, args ... interface{}) {
 	if c.stage > 0 {
 		log.Printf("NODE[%d] STAGE[%d] "+f, args2...)
 	}
+}
+
+func (c *Context) limitReached(stopStamp uint64) bool {
+	if c.limitEnabled {
+		after := atomic.AddUint64(&c.limitCounter, 1)
+		if after == c.def.limit {
+			if c.stop == nil {
+				panic(fmt.Errorf("stage[%d] stop function is nil", c.stage))
+			} else {
+				//c.log("Limit Reached @ %d", stopStamp)
+				c.stop(stopStamp)
+			}
+		} else if after > c.def.limit {
+			return true
+		}
+	}
+	return false
 }

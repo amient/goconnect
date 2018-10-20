@@ -27,15 +27,33 @@ type Fn interface{}
 
 type Watermark map[int]interface{}
 
+type Input interface {
+	InType() reflect.Type
+}
+
+type Output interface {
+	OutType() reflect.Type
+}
+
 type Closeable interface {
 	Close(*Context) error
 }
 
 type Root interface {
 	OutType() reflect.Type
+	//TODO Materialize() func(context PContext)
 	Run(*Context)
 	Commit(Watermark, *Context) error
 }
+
+type PContext interface {
+	Emit(*Element)
+}
+
+type Processor interface {
+	Materialize() func(input *Element, context PContext)
+}
+
 
 type Transform interface {
 	InType() reflect.Type
@@ -43,11 +61,6 @@ type Transform interface {
 	Run(<-chan *Element, *Context)
 }
 
-type ElementWise interface {
-	InType() reflect.Type
-	OutType() reflect.Type
-	Process(*Element, ProcessContext)
-}
 
 type Sink interface {
 	InType() reflect.Type
@@ -88,7 +101,6 @@ func UserMapFn(f interface{}) MapFn {
 type userMapFn struct {
 	inType  reflect.Type
 	outType reflect.Type
-	//FIXME f has to be in the context not in the fn def - unless there is nice way to make struct deep clones
 	f       reflect.Value
 }
 
@@ -103,6 +115,15 @@ func (fn *userMapFn) OutType() reflect.Type {
 func (fn *userMapFn) Process(input interface{}) interface{} {
 	return fn.f.Call([]reflect.Value{reflect.ValueOf(input)})[0].Interface()
 }
+
+//func (fn *userMapFn) Materialize() func(input *Element, ctx PContext) {
+//	return func(input *Element, ctx PContext) {
+//		ctx.Emit(&Element{
+//			Stamp: input.Stamp,
+//			Value: fn.f.Call([]reflect.Value{reflect.ValueOf(input.Value)})[0].Interface(),
+//		})
+//	}
+//}
 
 func UserFilterFn(f interface{}) FilterFn {
 	t := reflect.TypeOf(f)
@@ -149,6 +170,7 @@ type userFoldFn struct {
 	inType  reflect.Type
 	outType reflect.Type
 	f       reflect.Value
+	//FIXME value has to be in the context not in the fn def - unless there is nice way to make struct deep clones
 	value   reflect.Value
 }
 
@@ -168,7 +190,7 @@ func (fn *userFoldFn) Collect() Element {
 	return Element{Value: fn.value.Interface()}
 }
 
-func UserFlatMapFn(f interface{}) ElementWise {
+func UserFlatMapFn(f interface{}) Processor {
 	t := reflect.TypeOf(f)
 	if t.Kind() != reflect.Func || t.NumIn() != 2 || t.NumOut() != 0 || t.In(1).Kind() != reflect.Chan {
 		panic("FlatMap function must have 2 arguments and no return type")
@@ -194,17 +216,19 @@ func (fn *userFlatMapFn) OutType() reflect.Type {
 	return fn.outChanType.Elem()
 }
 
-func (fn *userFlatMapFn) Process(input *Element, ctx ProcessContext) {
-	inter := reflect.MakeChan(fn.outChanType, 0)
-	go func() {
-		fn.f.Call([]reflect.Value{reflect.ValueOf(input.Value), inter})
-		inter.Close()
-	}()
-	for {
-		if x, ok := inter.Recv(); !ok {
-			break
-		} else {
-			ctx.Emit(x.Interface())
+func (fn *userFlatMapFn)  Materialize() func(input *Element, ctx PContext) {
+	return func(input *Element, ctx PContext) {
+		inter := reflect.MakeChan(fn.outChanType, 0)
+		go func() {
+			fn.f.Call([]reflect.Value{reflect.ValueOf(input.Value), inter})
+			inter.Close()
+		}()
+		for {
+			if x, ok := inter.Recv(); !ok {
+				break
+			} else {
+				ctx.Emit(&Element{Value: x.Interface() })
+			}
 		}
 	}
 }

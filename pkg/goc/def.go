@@ -34,6 +34,7 @@ type Def struct {
 	triggerEach            int
 	triggerEvery           time.Duration
 	bufferCap              int
+	limit                  uint64
 }
 
 func (def *Def) Apply(f Fn) *Def {
@@ -41,27 +42,26 @@ func (def *Def) Apply(f Fn) *Def {
 }
 
 func (def *Def) Map(f interface{}) *Def {
-	return def.pipeline.Map(def, UserMapFn(f))
+	return def.pipeline.Apply(def, UserMapFn(f))
 }
 
 func (def *Def) FlatMap(f interface{}) *Def {
-	return def.pipeline.ElementWise(def, UserFlatMapFn(f))
+	return def.pipeline.Apply(def, UserFlatMapFn(f))
 }
 
 func (def *Def) Filter(f interface{}) *Def {
-	return def.pipeline.Filter(def, UserFilterFn(f))
+	return def.pipeline.Apply(def, UserFilterFn(f))
 }
 
 func (def *Def) Fold(init interface{}, acc interface{}) *Def {
-	return def.pipeline.Fold(def, UserFoldFn(init, acc))
+	return def.pipeline.Apply(def, UserFoldFn(init, acc))
 }
 
 func (def *Def) Count() *Def {
-	return def.pipeline.Fold(def, UserFoldFn(int64(0), func(acc int64, in interface{}) int64 {
+	return def.pipeline.Apply(def, UserFoldFn(int64(0), func(acc int64, in interface{}) int64 {
 		return acc + 1
 	}))
 }
-
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -82,5 +82,9 @@ func (def *Def) TriggerEach(i int) *Def {
 
 func (def *Def) TriggerEvery(i time.Duration) *Def {
 	def.triggerEvery = i
+	return def
+}
+func (def *Def) Limit(i uint64) *Def {
+	def.limit = i
 	return def
 }

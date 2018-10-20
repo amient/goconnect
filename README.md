@@ -6,8 +6,10 @@ a lot more efficient and has a low package and memory footprint - it can run hap
 - it builds linear pipelines for similar to Kafka Connect so it's goal is data connectivity not general data processing 
 - it is more general than Kafka Connect and can build file-for-a-file pipelines
 - but it is a bit less general compared to Beam it only builds linear chains of transforms, not graphs
+- it is also stateless at the moment
 - like Beam, it has internal concept of parallelism and coders
 - additionally it features vertical and horizontal parallelism out-of-the-box
+  - (roots cannot have vertical parallelism greater than 1)
 - it scales similarly to Kafka Connect by simply running multiple identical instances 
 - it guarantees at-least-once processing and is capable of exactly-once 
   with a choice of optimistic and pessimistic checkpointing depending whether the source supports some notion of offsets or not
@@ -30,7 +32,9 @@ a lot more efficient and has a low package and memory footprint - it can run hap
 - TriggerEach / TriggerEvery for SinkFn - either may be used optionally for performance gain, default trigger is no trigger, i.e. only one at the end if 
 - TriggerEach / TriggerEvery for FoldFn - either must be used in order for fold to emit anything
 - Configurable stage buffers: .Buffer(numElements int) - used to control pending/ack buffers, not output buffers
-- Stage output channel .Par(n) defines vertical parallelism, i.e. how many routines run the fn in parallel and push to the output channel 
+- Any stage except Root can have veritical paralleism set by .Par(n) with guaranteed ordering
+  - i.e. how many routines run the fn in parallel and push to the output channel 
+- Stage output can be limited to n elements .Limit(n) - this makes any pipeline bounded 
 - Coders are injected recursively using coder.Registry()
 - Coder vertical parallelism can be controlled by Pipeline.CoderPar(n) default setting
 - Coders
@@ -47,7 +51,7 @@ a lot more efficient and has a low package and memory footprint - it can run hap
     - FilterFn + UserFilterFn(func)
     - MapFn + UserMapFn(func)
     - FlatMapFn + UserFlatMapFn(func)
-    - FoldFn +UserFoldFn(func) +Count()
+    - FoldFn +UserFoldFn(func) + .Count()
 - Sinks
   - Kafka Sink
   - STDOUT Sink
@@ -58,16 +62,36 @@ a lot more efficient and has a low package and memory footprint - it can run hap
 ## Features In Progress/TODO
 
 - Coders
-  - avro with projection and schema registry support
   - file source using network split internally to spread the URLs 
-  - processing epochs: dynamic node join/leave 
-  - persistent checkpoints
+    - subflows
+    - persistent checkpoints
+  - avro with projection and schema registry support
+  - processing epochs: dynamic node join/leave potentially using Raft algo 
   - gzip encoder
-  - use Fn struct cloning instead of Context.Put/Get for materialized context
+  - use Fn struct cloning or Materialization instead of Context.Put/Get 
   - coder injection shortest path in case there are mutliple combinations satisfying the in/out types
   - analyse pipeline network constraints and decide warn/recommend single/network runners
   - Indirect type handling in coder injection - this will enable using *KVBytes instead of KVBytes and less copy
   - Exactly-Once processing as an extension to the existing at-least-once
+  - Develop general conception of stateful processing (parallel with guarantees and not just kv-stores but also prefix trees, etc.)
+
+### Test Cases
+ - Root committer works with backpressure, i.e. the longer the commits take the less frequent they become
+ - Final commit is precise when limit is applied on a pipeline with unbounded root
+ - Pipeline with network nodes fails if network runner is not used
+ - Roots can select an exclusive node when running in a network 
+ - sinks with timed triggers call flush on sinks
+ - Sinks with no trigger will trigger once at the end
+ - Sinks and Folds with .TriggerEach(1) will emit and flush on every element respectively
+ - sinks without timed triggers still checkpoint correctly and on bounded/limit condition call flush once at the end
+ - folds with timed trigger always emit values at correct intervals
+ - pipelines with bounded root always terminate with correct result
+ - filters, maps, flatmaps and sinks preserve order with Par(>1) 
+ - Limits work on roots, filters, maps, flatmaps, folds, sinks with or without Par(>1) 
+ - Limits work on stages that follow after a fold
+ - Multiple folds works correctly, e.g. user fold fn followed by counter
+
+## The Concept
 
 The API is partially based on reflection but this is only used in-stream for user defined functions - implementation of transform interfaces use type casting in the worst case, no reflection. 
     
@@ -139,7 +163,6 @@ So there are several implications of this:
         - b) file contents is retrieved from - runs on all by default  
     - STD-OUT - runs on one specific node selected by the user    
        
-     
      
      
      

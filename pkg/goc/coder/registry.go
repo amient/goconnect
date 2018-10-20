@@ -2,9 +2,10 @@ package coder
 
 import (
 	"github.com/amient/goconnect/pkg/goc"
+	"github.com/amient/goconnect/pkg/goc/coder/kv"
 	"github.com/amient/goconnect/pkg/goc/coder/str"
+	"github.com/amient/goconnect/pkg/goc/coder/url"
 	"github.com/amient/goconnect/pkg/goc/coder/xml"
-	"github.com/amient/goconnect/pkg/goc/io/kafka1"
 )
 
 func Registry() []goc.MapFn {
@@ -13,6 +14,9 @@ func Registry() []goc.MapFn {
 		new(xml.Encoder),
 		new(str.Decoder),
 		new(str.Encoder),
-		new(kafka1.NilKeyEncoder),
+		new(url.Decoder),
+		new(url.Encoder),
+		new(kv.NilKeyEncoder),
+		new(kv.IgnoreKeyDecoder),
 	}
 }

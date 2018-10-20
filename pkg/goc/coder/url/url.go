@@ -17,34 +17,25 @@
  * limitations under the License.
  */
 
-package str
+package url
 
 import (
-	"github.com/amient/goconnect/pkg/goc"
 	"reflect"
-	"strings"
+	"time"
 )
 
-func Split(separator string) goc.Processor {
-	return &Splitter{separator: separator}
+var UrlType = reflect.TypeOf(&Url{})
+
+type Url struct {
+	Proto string
+	Path  string
+	Name  string
+	Mod   int64
 }
 
-type Splitter struct {
-	separator string
+func (u *Url) String() string {
+	return time.Unix(u.Mod, 0).String() + " " + u.Proto + "://" + u.Path + "/" + u.Name
 }
-
-func (s *Splitter) InType() reflect.Type {
-	return goc.StringType
-}
-
-func (s *Splitter) OutType() reflect.Type {
-	return goc.StringType
-}
-
-func (s *Splitter) Materialize() func(input *goc.Element, ctx goc.PContext) {
-	return func(input *goc.Element, ctx goc.PContext) {
-		for _, s := range strings.Split(input.Value.(string), s.separator) {
-			ctx.Emit(&goc.Element{Value: s})
-		}
-	}
+func (u *Url) AbsolutePath() string {
+	return u.Path + "/" + u.Name
 }

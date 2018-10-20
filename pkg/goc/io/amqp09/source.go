@@ -73,7 +73,7 @@ func (source *Source) Run(context *goc.Context) {
 
 	context.Put(0, conn)
 	context.Put(1, channel)
-	context.Put(2, uint64(0)) //lastCommitTag
+	context.Put(2, uint64(0))   //lastCommitTag
 	context.Put(3, time.Time{}) //lastCommitTime
 
 	channel.Qos(source.PrefetchCount, source.PrefetchSize, false)
@@ -85,32 +85,39 @@ func (source *Source) Run(context *goc.Context) {
 		panic(err)
 	}
 
-	for delivery := range deliveries {
-		context.Emit(&goc.Element{
-			Stamp:      goc.Stamp{Unix: delivery.Timestamp.Unix()},
-			Checkpoint: goc.Checkpoint{Data: delivery.DeliveryTag},
-			Value:      delivery.Body,
-		})
+	for {
+		select {
+		case <-context.Termination():
+			return
+		case delivery, ok := <-deliveries:
+			if !ok {
+				return
+			}
+			context.Emit(&goc.Element{
+				Stamp:      goc.Stamp{Unix: delivery.Timestamp.Unix()},
+				Checkpoint: goc.Checkpoint{Data: delivery.DeliveryTag},
+				Value:      delivery.Body,
+			})
+		}
 	}
-
-	log.Println("No more AMQP deliveries")
 }
 
 func (source *Source) Commit(checkpoint goc.Watermark, ctx *goc.Context) error {
 	channel := ctx.Get(1).(*amqp.Channel)
 	lastCommitTag := ctx.Get(2).(uint64)
-	lastCommitTime :=  ctx.Get(3).(time.Time)
+	lastCommitTime := ctx.Get(3).(time.Time)
 	if checkpoint[0] != nil {
 		deliverTag := checkpoint[0].(uint64)
+		//TODO test that RabbitMQ honors the acks up to the given devlieryTag and not like JMS (everything consumer so far)
 		if err := channel.Ack(deliverTag, true); err != nil {
 			return err
 		}
 		now := time.Now()
 		diff := now.Sub(lastCommitTime)
-		if diff > 10 * time.Second {
+		if diff > 10*time.Second {
 			numCommitted := deliverTag - lastCommitTag
 			ctx.Put(3, now)
-			log.Printf("AMQP09 Source Acked, %d\n", numCommitted)
+			log.Printf("AMQP09 Source Ack TPS: %d\n", numCommitted / 10)
 			ctx.Put(2, deliverTag)
 		}
 	}

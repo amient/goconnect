@@ -53,11 +53,16 @@ func (it *iterable) Run(context *goc.Context) {
 	if context.GetNodeID() == 1 {
 		limit := it.val.Len()
 		for l := 0; l < it.n; l++ {
-			i := l % limit
-			context.Emit(&goc.Element{
-				Value:      it.val.Index(i).Interface(),
-				Checkpoint: goc.Checkpoint{Data: l},
-			})
+			select {
+			case <-context.Termination():
+				return
+			default:
+				i := l % limit
+				context.Emit(&goc.Element{
+					Value:      it.val.Index(i).Interface(),
+					Checkpoint: goc.Checkpoint{Data: l},
+				})
+			}
 		}
 	}
 }

@@ -30,7 +30,7 @@ type Checkpoint struct {
 }
 
 type Element struct {
-	Checkpoint Checkpoint //TODO make private and make sure it never leaves the stage Fn
+	Checkpoint Checkpoint
 	Value      interface{}
 	Stamp      Stamp
 	FromNodeId uint16
@@ -53,7 +53,6 @@ type OrderedElementSet struct {
 }
 
 func (set *OrderedElementSet) AddElement(elementToAdd *Element, context *Context) {
-	//FIXME ordered element set must have its own stamp
 	set.elements[elementToAdd.Stamp.Uniq] = elementToAdd
 	for ; set.elements[set.next+1] != nil; {
 		set.next ++

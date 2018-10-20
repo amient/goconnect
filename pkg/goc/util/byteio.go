@@ -17,26 +17,40 @@
  * limitations under the License.
  */
 
-package kafka1
+package util
 
 import (
-	"github.com/amient/goconnect/pkg/goc"
-	"reflect"
+	"encoding/binary"
+	"fmt"
+	"io"
 )
 
-type NilKeyEncoder struct{}
-
-func (d *NilKeyEncoder) InType() reflect.Type {
-	return goc.BinaryType
-}
-
-func (d *NilKeyEncoder) OutType() reflect.Type {
-	return reflect.TypeOf(goc.KVBytes{})
-}
-
-func (d *NilKeyEncoder) Process(input interface{}) interface{} {
-	return goc.KVBytes{
-		Key:   nil,
-		Value: input.([]byte),
+func ReadString(reader io.Reader) (string, error) {
+	var len uint32
+	if err := binary.Read(reader, binary.LittleEndian, &len); err != nil {
+		panic(err)
+		return "", err
 	}
+	result := make([]byte, len)
+	if n, err := reader.Read(result); err != nil {
+		panic(err)
+		return "", err
+	} else if uint32(n) != len {
+		panic(fmt.Errorf(" %d <> %d", n, len))
+		return "", fmt.Errorf("!")
+	}
+	return string(result), nil
+}
+
+func WriteString(value string, writer io.Writer) error {
+	var len = uint32(len(value))
+	if err := binary.Write(writer, binary.LittleEndian, len); err != nil {
+		return err
+	}
+	if n, err := writer.Write([]byte(value)); err != nil {
+		return err
+	} else if uint32(n) != len {
+		return fmt.Errorf("%d <> %d", n, len)
+	}
+	return nil
 }

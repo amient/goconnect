@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/signal"
 	"reflect"
+	"runtime/pprof"
 	"syscall"
 )
 
@@ -31,9 +32,9 @@ type Graph []*Context
 
 func ConnectStages(connector Connector, pipeline *Pipeline) Graph {
 	graph := make(Graph, len(pipeline.Defs))
-	log.Printf("Applying pipline of %d stages", len(graph))
+	//log.Printf("Applying pipline of %d stages", len(graph))
 	for stageId, def := range pipeline.Defs {
-		graph[def.Id] = NewContext(connector, uint16(stageId + 1), def)
+		graph[def.Id] = NewContext(connector, uint16(stageId+1), def)
 		if def.Id > 0 {
 			graph[def.Id].up = graph[def.Up.Id]
 		}
@@ -53,7 +54,7 @@ func RunGraphs(graphs ...Graph) {
 	for i, graph := range graphs {
 		sources[i] = graph[0]
 		for _, ctx := range graph {
-			log.Printf("Context[%d] Stage %d %v\n", runningStages, ctx.stage, reflect.TypeOf(ctx.def.Fn))
+			log.Printf("Context[%d] ~ Stage[%d] %v\n", runningStages, ctx.stage, reflect.TypeOf(ctx.def.Fn))
 			cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(ctx.completed)})
 			ctx.Start()
 			runningStages++
@@ -62,14 +63,15 @@ func RunGraphs(graphs ...Graph) {
 
 	for {
 		if chosen, value, _ := reflect.Select(cases); chosen == 0 {
-			//FIXME busy pipelines sometimes refuse to terminate upon signalling
+			//TODO busy pipelines sometimes refuse to terminate upon signalling
 			log.Printf("Caught signal %v: Cancelling\n", value.Interface())
 			for _, source := range sources {
 				source.Close()
 			}
+			pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
 		} else {
 			runningStages--
-			//log.Printf("Graph Finished Stage[%v], num running stages: %v", chosen, runningStages)
+			//log.Printf("Context[%v] ~ Finished ~ num running stages: %v", chosen - 1, runningStages)
 			if runningStages == 0 {
 				return
 			}

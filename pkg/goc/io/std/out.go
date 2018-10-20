@@ -21,57 +21,41 @@ package std
 
 import (
 	"bufio"
-	"fmt"
 	"github.com/amient/goconnect/pkg/goc"
 	"os"
 	"reflect"
 )
 
-type Out struct {
-	buffer []*goc.Element
-	stdout *bufio.Writer
-}
+type Out struct {}
 
 func (sink *Out) InType() reflect.Type {
 	return goc.AnyType
 }
 
 func (sink *Out) Process(input *goc.Element, ctx *goc.Context) {
-	if sink.stdout == nil {
-		sink.stdout = bufio.NewWriter(os.Stdout)
+	if ctx.Get(0) == nil {
+		ctx.Put(0,  new([]*goc.Element))
+		ctx.Put(1,  bufio.NewWriter(os.Stdout))
 	}
-	sink.process(sink.stdout, input.Value)
-	sink.buffer = append(sink.buffer, input)
+	buffer := ctx.Get(0).(*[]*goc.Element)
+	stdout := ctx.Get(1).(*bufio.Writer)
+	process(stdout, input.Value)
+	*buffer = append(*buffer, input)
 }
 
 func (sink *Out) Flush(ctx *goc.Context) error {
 	var result error
-	if len(sink.buffer) > 0 {
-		result = sink.stdout.Flush()
-		for _, e := range sink.buffer {
-			e.Ack()
+	if ctx.Get(0) != nil {
+		buffer := ctx.Get(0).(*[]*goc.Element)
+		stdout := ctx.Get(1).(*bufio.Writer)
+		if len(*buffer) > 0 {
+			result = stdout.Flush()
+			for _, e := range *buffer {
+				e.Ack()
+			}
+			*buffer = make([]*goc.Element, 0, 100)
 		}
-		sink.buffer = make([]*goc.Element, 0, 100)
 	}
 	return result
 }
 
-func (sink *Out) process(stdout *bufio.Writer, element interface{}) {
-	switch e := element.(type) {
-	case []byte:
-		stdout.Write(e)
-	case string:
-		stdout.WriteString(e)
-	case goc.KV:
-		sink.process(stdout, e.Key)
-		sink.process(stdout, " -> ")
-		sink.process(stdout, e.Value)
-	case goc.KVBytes:
-		sink.process(stdout, e.Key)
-		sink.process(stdout, " -> ")
-		sink.process(stdout, e.Value)
-	default:
-		fmt.Fprint(stdout, element)
-	}
-	stdout.WriteByte('\n')
-}

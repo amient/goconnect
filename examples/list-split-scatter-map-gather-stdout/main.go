@@ -37,19 +37,19 @@ var (
 
 func main() {
 
-	pipeline := goc.NewPipeline().WithCoders(coder.Registry(), 1)
+	pipeline := goc.NewPipeline().WithCoders(coder.Registry()).Par(4)
 
 	pipeline.
 		Root(io.From([]string{"aaa\tbbb\tccc", "ddd", "eee", "fff", "ggg\thhh"})).
-		Apply(str.Split("\t")). //same as FlatMap(func(in string, out chan string) { for _, s := range strings.Split(in, "\t") { out <- s } }).
+		Apply(str.Split("\t")).Par(4). //same as FlatMap(func(in string, out chan string) { for _, s := range strings.Split(in, "\t") { out <- s } }).
 		//coder: string -> []uint8
 		Apply(new(network.NetRoundRobin)).
 		//coder: []uint8 -> string
-		Map(func(in string) string { return strings.ToUpper(in) }).Par(2).
+		Map(func(in string) string { return strings.ToUpper(in) }).Par(4).
 		//coder: string -> []uint8
 		Apply(new(network.NetMergeOrdered)).
-		Apply(new(std.Out)).TriggerEach(1)
+		Apply(new(std.Out)).TriggerEach(1)//TODO .Limit(7) doesn't work on networked pipeliens yet
 
 	network.Runner(pipeline, *peers)
-
+	//pipeline.Run()
 }

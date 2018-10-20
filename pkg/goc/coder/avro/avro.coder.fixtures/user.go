@@ -4,7 +4,7 @@ var (
 	UserSchemaV1 = `{
     "type":	"record",
     "name": "UserV2",
-	"namespace": "resolver.fixtures",
+	"namespace": "avro.coder.fixtures",
     "fields": [
         { "name": "Errors", "type": { "type": "array", "items":"string" }, "default": []},
         { "name": "Phone", "type": ["null", "int"], "default": null },
@@ -13,7 +13,7 @@ var (
         { "name": "Address", "type": ["null",{
             "type":	"record",
             "name": "Address",
-			"namespace": "resolver.fixtures",
+			"namespace": "avro.coder.fixtures",
             "fields": [
                 { "name": "Address1", "type": "string" },
                 { "name": "Address2", "type": ["null", "string"], "default": null },
@@ -27,7 +27,7 @@ var (
 	UserSchemaV2 = `{
     "type":	"record",
     "name": "UserV2",
-	"namespace": "resolver.fixtures",
+	"namespace": "avro.coder.fixtures",
     "fields": [
         { "name": "FirstName", "type": "string", "aliases": ["first_name"]},
         { "name": "LastName", "type": "string", "aliases": ["last_name"]}, 
@@ -36,7 +36,7 @@ var (
  		{ "name": "Address", "type": ["null",{
             "type":	"record",
             "name": "Address",
-			"namespace": "resolver.fixtures",
+			"namespace": "avro.coder.fixtures",
             "fields": [
                 { "name": "Address1", "type": "string" },
                 { "name": "Address2", "type": ["null", "string"], "default": null },

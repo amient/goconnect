@@ -17,34 +17,26 @@
  * limitations under the License.
  */
 
-package str
+package kv
 
 import (
 	"github.com/amient/goconnect/pkg/goc"
 	"reflect"
-	"strings"
 )
 
-func Split(separator string) goc.Processor {
-	return &Splitter{separator: separator}
+type NilKeyEncoder struct{}
+
+func (d *NilKeyEncoder) InType() reflect.Type {
+	return goc.BinaryType
 }
 
-type Splitter struct {
-	separator string
+func (d *NilKeyEncoder) OutType() reflect.Type {
+	return goc.KVBinaryType
 }
 
-func (s *Splitter) InType() reflect.Type {
-	return goc.StringType
-}
-
-func (s *Splitter) OutType() reflect.Type {
-	return goc.StringType
-}
-
-func (s *Splitter) Materialize() func(input *goc.Element, ctx goc.PContext) {
-	return func(input *goc.Element, ctx goc.PContext) {
-		for _, s := range strings.Split(input.Value.(string), s.separator) {
-			ctx.Emit(&goc.Element{Value: s})
-		}
+func (d *NilKeyEncoder) Process(input interface{}) interface{} {
+	return &goc.KVBinary{
+		Key:   nil,
+		Value: input.([]byte),
 	}
 }

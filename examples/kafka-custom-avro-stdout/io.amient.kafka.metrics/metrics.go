@@ -1,6 +1,8 @@
 package io_amient_kafka_metrics
 
-var MeasurementSchema =`{
+import "github.com/amient/avro"
+
+var MeasurementSchemaV1, _ = avro.ParseSchema(`{
   "type": "record",
   "name": "MeasurementV1",
   "namespace": "io.amient.kafka.metrics",
@@ -22,4 +24,4 @@ var MeasurementSchema =`{
         "type": {"type" : "map", "values" : "double"}
     }
   ]
-}`
+}`)

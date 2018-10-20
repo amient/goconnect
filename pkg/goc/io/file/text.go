@@ -17,34 +17,44 @@
  * limitations under the License.
  */
 
-package str
+package file
 
 import (
+	"bytes"
 	"github.com/amient/goconnect/pkg/goc"
 	"reflect"
-	"strings"
 )
 
-func Split(separator string) goc.Processor {
-	return &Splitter{separator: separator}
+type Text struct {
+	//TODO text must have an encoding and the reading of the input ByteStream needs to recognize line character in that encoding
 }
 
-type Splitter struct {
-	separator string
+func (r *Text) InType() reflect.Type {
+	return ByteStreamType
 }
 
-func (s *Splitter) InType() reflect.Type {
+func (r *Text) OutType() reflect.Type {
 	return goc.StringType
 }
 
-func (s *Splitter) OutType() reflect.Type {
-	return goc.StringType
-}
-
-func (s *Splitter) Materialize() func(input *goc.Element, ctx goc.PContext) {
+func (r *Text) Materialize() func(input *goc.Element, context goc.PContext) {
 	return func(input *goc.Element, ctx goc.PContext) {
-		for _, s := range strings.Split(input.Value.(string), s.separator) {
-			ctx.Emit(&goc.Element{Value: s})
+		bs := input.Value.(ByteStream)
+		buf := new(bytes.Buffer)
+		b := make([]byte, 1)
+		emit := func() {
+			if buf.Len() > 0 {
+				ctx.Emit(&goc.Element{Value: string(buf.Bytes())})
+				buf.Reset()
+			}
 		}
+		for bs.Read(&b) > 0 {
+			if b[0] == '\n' {
+				emit()
+			} else {
+				buf.Write(b)
+			}
+		}
+		emit()
 	}
 }

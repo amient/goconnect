@@ -17,7 +17,7 @@ func main() {
 		"<name>Cecilia</name>", "<name>Chad</name>", "<name>Elliot</name>", "<name>Wojtek</name>",
 	}
 
-	minBuf := 8
+	minBuf := 32
 
 	cap := len(data)
 	s1 := make(chan string, minBuf)
@@ -55,16 +55,34 @@ func main() {
 		}
 	}()
 
-	agg := 0
-	n := 0
-	for input := range s4 {
-		agg += len(input)
-		n++
-		if n% 100000 == 0 {
-			println(agg)
+	s5 := make(chan int, minBuf)
+	go func() {
+		defer close(s5)
+		agg := 0
+		n := 0
+		for input := range s4 {
+			agg += len(input)
+			n++
+			if n% 50000 == 0 {
+				s5 <- agg
+			}
 		}
-	}
-	println(agg)
+		s5 <- agg
+	}()
 
-	log.Printf("Test completed %d in %f0.0 s", agg, time.Now().Sub(start).Seconds())
+	s6 := make(chan int, minBuf)
+	go func() {
+		defer close(s6)
+		for input := range s5 {
+			if input > 210000 {
+				s6 <- input
+			}
+		}
+	}()
+
+	for input := range s6 {
+		println(input)
+	}
+
+	log.Printf("Test completed in %f0.0 s", time.Now().Sub(start).Seconds())
 }

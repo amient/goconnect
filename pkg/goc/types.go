@@ -33,13 +33,9 @@ var ByteType = reflect.TypeOf(byte(0))
 var Int16Type = reflect.TypeOf(int16(0))
 var Int32Type = reflect.TypeOf(int32(0))
 var Int64Type = reflect.TypeOf(int64(0))
-
-type KV struct {
-	Key   interface{}
-	Value interface{}
-}
-
-type KVBytes struct {
+var KVBinaryType = reflect.TypeOf(&KVBinary{})
+type KVBinary struct {
 	Key   []byte
 	Value []byte
 }
+
