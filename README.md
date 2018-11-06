@@ -13,7 +13,7 @@ a lot more efficient and has a low package and memory footprint - it can run hap
 - it scales similarly to Kafka Connect by simply running multiple identical instances 
 - it guarantees at-least-once processing and is capable of exactly-once 
   with a choice of optimistic and pessimistic checkpointing depending whether the source supports some notion of offsets or not
-- it has a concept of EventTime built in to the basic concept
+- it has a concept of EventTime built-in
 - it is a unified data processing framework in terms of batch/stream semantics 
   if the input data is bounded the pipeline will terminate when all input elements are fully processed
   if the input data is unbounded the pipeline will run indefinitely 
@@ -41,10 +41,14 @@ a lot more efficient and has a low package and memory footprint - it can run hap
   - binary > xml > binary
   - gzip decoder 
   - string > binary > string
+  - avro schema registry decoder 
+  - avro binary decoder > generic | specific 
+  - avro projector 
 - Sources (Root Transforms) 
   - List Source / RoundRobin Source
-  - AMQP Source
+  - Amqp09 Source
   - Kafka Source
+  - File Source
 - Transforms
     - SinkFn(func)
     - FoldFn(func)
@@ -52,9 +56,11 @@ a lot more efficient and has a low package and memory footprint - it can run hap
     - MapFn + UserMapFn(func)
     - FlatMapFn + UserFlatMapFn(func)
     - FoldFn +UserFoldFn(func) + .Count()
+    - Text (used to flatMap files into lines)
 - Sinks
   - Kafka Sink
-  - STDOUT Sink
+  - Amqp09 Sink
+  - StdOut Sink
 - Network
   - RoundRobin
   - MergeOrdered
@@ -62,10 +68,10 @@ a lot more efficient and has a low package and memory footprint - it can run hap
 ## Features In Progress/TODO
 
 - Coders
+  - avro schema registry encoder & avro binary encoder
   - file source using network split internally to spread the URLs 
     - subflows
     - persistent checkpoints
-  - avro with projection and schema registry support
   - processing epochs: dynamic node join/leave potentially using Raft algo 
   - gzip encoder
   - use Fn struct cloning or Materialization instead of Context.Put/Get 

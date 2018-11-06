@@ -22,7 +22,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	avrolib "github.com/amient/avro"
 	"github.com/amient/goconnect/examples/kafka-custom-avro-stdout/io.amient.kafka.metrics"
 	"github.com/amient/goconnect/pkg/goc"
 	"github.com/amient/goconnect/pkg/goc/coder"
@@ -41,13 +40,14 @@ var (
 
 func main() {
 
+	flag.Parse()
+
 	pipeline := goc.NewPipeline().WithCoders(coder.Registry())
 
 	consumerConfig := kafka.ConfigMap{"bootstrap.servers": *kafkaSourceBootstrap, "group.id": *kafkaSourceGroup}
 
 	pipeline.Root(&kafka1.Source{*kafkaSourceTopic, consumerConfig}).
-		Apply(&KafkaMetricsAvroRegistry{map[int]avrolib.DatumReader{
-			1: avrolib.NewDatumReader(io_amient_kafka_metrics.MeasurementSchemaV1)}}).
+		Apply(new(KafkaMetricsAvroRegistry)).
 		Apply(new(avro.GenericDecoder)).
 		Apply(new(std.Out)).TriggerEach(1)
 
@@ -55,9 +55,7 @@ func main() {
 
 }
 
-type KafkaMetricsAvroRegistry struct {
-	projections map[int]avrolib.DatumReader
-}
+type KafkaMetricsAvroRegistry struct{}
 
 func (m *KafkaMetricsAvroRegistry) InType() reflect.Type {
 	return goc.KVBinaryType
@@ -73,13 +71,10 @@ func (m *KafkaMetricsAvroRegistry) Process(input interface{}) interface{} {
 	case 0:
 		panic("cannot use rest schema registry for kafka metrics formats")
 	case 1:
-		version := int(kvBinary.Value[1])
-		if projection, ok := m.projections[version]; !ok {
-			panic(fmt.Errorf("unsupported KafkaMetrics Measurement Version %v", version))
-		} else {
+		switch int(kvBinary.Value[1]) {
+		case 1:
 			return &avro.AvroBinary{
 				Schema: io_amient_kafka_metrics.MeasurementSchemaV1,
-				Reader: projection,
 				Data:   kvBinary.Value[2:],
 			}
 		}

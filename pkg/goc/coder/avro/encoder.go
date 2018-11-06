@@ -17,6 +17,36 @@
  * limitations under the License.
  */
 
- package avro
+package avro
 
-//TODO
+import (
+	"github.com/amient/avro"
+	"github.com/amient/goconnect/pkg/goc"
+	"reflect"
+)
+
+//TODO type BinaryEncoder struct {}
+//
+//func (e *BinaryEncoder) InType() reflect.Type {
+//	return GenericRecordType
+//}
+//
+//func (e *BinaryEncoder) OutType() reflect.Type {
+//	return goc.BinaryType
+//}
+//TODO the same encoder should work for both Generic and Specific Records
+
+
+type JsonEncoder struct{}
+
+func (e *JsonEncoder) InType() reflect.Type {
+	return GenericRecordType
+}
+
+func (e *JsonEncoder) OutType() reflect.Type {
+	return goc.StringType
+}
+
+func (e *JsonEncoder) Process(in interface{}) interface{} {
+	return in.(*avro.GenericRecord).String()
+}

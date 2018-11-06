@@ -47,10 +47,14 @@ type Root interface {
 }
 
 type PContext interface {
+	//TODO EmitTime(ts time.Time)
+	//TODO Checkpoint(partition int, data interface{})
+	//TODO Emit(value interface{})
 	Emit(*Element)
 }
 
 type Processor interface {
+	//Materialize() creates a single-routine context that will not be shared
 	Materialize() func(input *Element, context PContext)
 }
 

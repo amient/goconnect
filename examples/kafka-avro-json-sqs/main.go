@@ -27,27 +27,78 @@ import (
 	"github.com/amient/goconnect/pkg/goc/io/kafka1"
 	"github.com/amient/goconnect/pkg/goc/io/std"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
+	avrolib "github.com/amient/avro"
 )
 
 var (
-	kafkaSourceBootstrap = flag.String("kafka.source.bootstrap", "localhost:9092", "Kafka Bootstrap servers for the source topis")
-	kafkaSourceGroup     = flag.String("kafka.source.group", "goc-avro-poc", "Source Kafka Consumer Group")
-	kafkaSourceTopic     = flag.String("kafka.source.topic", "_metrics", "Source Kafka Topic")
-	schemaRegistryUrl    = flag.String("schema.registry.url", "http://localhost:8081", "Schema Registry URL")
+	kafkaBootstrap    = flag.String("kafka-bootstrap", "localhost:9092", "Kafka Bootstrap servers for the source topis")
+	kafkaGroup        = flag.String("kafka-group", "goc-avro-poc", "Source Kafka Consumer Group")
+	kafkaTopic        = flag.String("kafka-topic", "", "Source Kafka Topic")
+	schemaRegistryUrl = flag.String("schema-registry-url", "http://localhost:8081", "Schema Registry URL")
+	targetSchema, err = avrolib.ParseSchema(`{
+  "type": "record",
+  "name": "Transaction",
+  "namespace": "com.sainsburys.domain.transaction",
+  "fields": [
+    {
+      "name": "transactionId",
+      "type": "string",
+      "default": ""
+    },
+    {
+      "name": "loyaltyId",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null
+    },
+    {
+      "name": "storeId",
+      "type": "string",
+      "default": ""
+    },
+    {
+      "name": "superStoreId",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null
+    },
+    {
+      "name": "tillId",
+      "type": "string",
+      "default": ""
+    },
+    {
+      "name": "seqNo",
+      "type": "long",
+      "default": 0
+    },
+    {
+      "name": "timestamp",
+      "type": "long",
+      "default": -1
+    }
+  ]}`)
 )
+
 
 func main() {
 
+	flag.Parse()
+
 	pipeline := goc.NewPipeline().WithCoders(coder.Registry())
 
-	consumerConfig := kafka.ConfigMap{"bootstrap.servers": *kafkaSourceBootstrap, "group.id": *kafkaSourceGroup}
+	consumerConfig := kafka.ConfigMap{"bootstrap.servers": *kafkaBootstrap, "group.id": *kafkaGroup}
 
-	pipeline.Root(&kafka1.Source{*kafkaSourceTopic, consumerConfig}).
-		//TODO Apply(&ConfluentSchemaRegistry{*schemaRegistryUrl}).
-		Apply(new(avro.GenericDecoder)).
-		//TODO Apply(new(avro.JsonEncoder)).
+	pipeline.Root(&kafka1.Source{*kafkaTopic, consumerConfig}).
+		Apply(&avro.SchemaRegistry{Url: *schemaRegistryUrl}).
+		Apply(&avro.GenericProjector{targetSchema }).
+		Apply(new(avro.JsonEncoder)).
 		Apply(new(std.Out)).TriggerEach(1)
-		//TODO Apply(&aws.SqsSink{"..."})
+	//TODO Apply(&aws.SqsSink{"..."})
 
 	pipeline.Run()
 }

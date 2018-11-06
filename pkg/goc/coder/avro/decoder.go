@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
- package avro
+package avro
 
 import (
 	"github.com/amient/avro"
@@ -25,13 +25,16 @@ import (
 )
 
 type AvroBinary struct {
-	Schema avro.Schema
-	Reader avro.DatumReader
-	Data   []byte
+	Schema   avro.Schema
+	SchemaID uint32
+	Data     []byte
 }
 
 var AvroBinaryType = reflect.TypeOf(&AvroBinary{})
 var GenericRecordType = reflect.TypeOf(&avro.GenericRecord{})
+
+
+//TODO SpecificDecoder
 
 type GenericDecoder struct{}
 
@@ -46,7 +49,8 @@ func (d *GenericDecoder) OutType() reflect.Type {
 func (d *GenericDecoder) Process(input interface{}) interface{} {
 	avroBinary := input.(*AvroBinary)
 	decodedRecord := avro.NewGenericRecord(avroBinary.Schema)
-	if err := avroBinary.Reader.Read(decodedRecord, avro.NewBinaryDecoder(avroBinary.Data)); err != nil {
+	reader := avro.NewDatumReader(avroBinary.Schema)
+	if err := reader.Read(decodedRecord, avro.NewBinaryDecoder(avroBinary.Data)); err != nil {
 		panic(err)
 	}
 	return decodedRecord
