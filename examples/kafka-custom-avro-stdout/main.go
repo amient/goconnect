@@ -62,7 +62,7 @@ func (m *KafkaMetricsAvroRegistry) InType() reflect.Type {
 }
 
 func (m *KafkaMetricsAvroRegistry) OutType() reflect.Type {
-	return avro.AvroBinaryType
+	return avro.BinaryType
 }
 
 func (m *KafkaMetricsAvroRegistry) Process(input interface{}) interface{} {
@@ -73,10 +73,12 @@ func (m *KafkaMetricsAvroRegistry) Process(input interface{}) interface{} {
 	case 1:
 		switch int(kvBinary.Value[1]) {
 		case 1:
-			return &avro.AvroBinary{
+			return &avro.Binary{
 				Schema: io_amient_kafka_metrics.MeasurementSchemaV1,
 				Data:   kvBinary.Value[2:],
 			}
+		default:
+			panic("there is no other version at this time")
 		}
 	case '{':
 		fallthrough

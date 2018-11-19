@@ -30,7 +30,7 @@ import (
 type Sink struct {
 	Topic           string
 	ProducerConfig  kafka.ConfigMap
-	//numProduced     int32 //FIXME contextual var, not a defintion
+	//numProduced     int32 //FIXME this must be done in the Materialize()..
 }
 
 func (sink *Sink) InType() reflect.Type {

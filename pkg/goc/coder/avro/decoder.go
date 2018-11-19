@@ -20,26 +20,50 @@
 package avro
 
 import (
+	"encoding/binary"
 	"github.com/amient/avro"
+	"github.com/amient/goconnect/pkg/goc"
 	"reflect"
 )
 
-type AvroBinary struct {
-	Schema   avro.Schema
-	SchemaID uint32
-	Data     []byte
+type SchemaRegistryDecoder struct {
+	Url string
+	//TODO add ca cert
+	//TODO add ssl cert
+	//TODO add ssl key
+	//TODO add ssl key password
 }
 
-var AvroBinaryType = reflect.TypeOf(&AvroBinary{})
-var GenericRecordType = reflect.TypeOf(&avro.GenericRecord{})
+func (cf *SchemaRegistryDecoder) InType() reflect.Type {
+	return goc.BinaryType
+}
 
+func (cf *SchemaRegistryDecoder) OutType() reflect.Type {
+	return BinaryType
+}
 
-//TODO SpecificDecoder
+func (cf *SchemaRegistryDecoder) Materialize() func(input *goc.Element, context goc.PContext) {
+	client := &schemaRegistryClient{url: cf.Url}
+	return func(input *goc.Element, context goc.PContext) {
+		bytes := input.Value.([]byte)
+		switch bytes[0] {
+		case 0:
+			schemaId := binary.BigEndian.Uint32(bytes[1:])
+			schema := client.get(schemaId)
+			context.Emit(&goc.Element{Value: &Binary{
+				Schema: schema,
+				Data:   bytes[5:],
+			}})
+		case 1:
+			panic("avro binary header incorrect")
+		}
+	}
+}
 
 type GenericDecoder struct{}
 
 func (d *GenericDecoder) InType() reflect.Type {
-	return AvroBinaryType
+	return BinaryType
 }
 
 func (d *GenericDecoder) OutType() reflect.Type {
@@ -47,7 +71,7 @@ func (d *GenericDecoder) OutType() reflect.Type {
 }
 
 func (d *GenericDecoder) Process(input interface{}) interface{} {
-	avroBinary := input.(*AvroBinary)
+	avroBinary := input.(*Binary)
 	decodedRecord := avro.NewGenericRecord(avroBinary.Schema)
 	reader := avro.NewDatumReader(avroBinary.Schema)
 	if err := reader.Read(decodedRecord, avro.NewBinaryDecoder(avroBinary.Data)); err != nil {
@@ -55,3 +79,9 @@ func (d *GenericDecoder) Process(input interface{}) interface{} {
 	}
 	return decodedRecord
 }
+
+//TODO KVGenericDecoder
+
+//TODO SpecificDecoder
+
+//TODO JsonDecoder

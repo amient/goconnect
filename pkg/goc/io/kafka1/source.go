@@ -68,7 +68,7 @@ func (source *Source) Run(context *goc.Context) {
 
 	context.Put(0, consumer)
 
-	log.Printf("Subscribing to kafka topic %s with grup %q", source.Topic, (*config)["group.id"])
+	log.Printf("Subscribing to kafka topic %s with group %q", source.Topic, (*config)["group.id"])
 	if err := consumer.Subscribe(source.Topic, nil); err != nil {
 		panic(err)
 	}

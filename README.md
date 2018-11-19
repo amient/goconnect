@@ -39,11 +39,13 @@ a lot more efficient and has a low package and memory footprint - it can run hap
 - Coder vertical parallelism can be controlled by Pipeline.CoderPar(n) default setting
 - Coders
   - binary > xml > binary
-  - gzip decoder 
+  - gzip > binary > gzip
   - string > binary > string
+  - avro generic decoder (binary)
+  - avro generic encoder (binary or json)  
+  - avro generic projector 
   - avro schema registry decoder 
-  - avro binary decoder > generic | specific 
-  - avro projector 
+  - avro schema registry encoder
 - Sources (Root Transforms) 
   - List Source / RoundRobin Source
   - Amqp09 Source
@@ -67,19 +69,19 @@ a lot more efficient and has a low package and memory footprint - it can run hap
 
 ## Features In Progress/TODO
 
-- Coders
-  - avro schema registry encoder & avro binary encoder
-  - file source using network split internally to spread the URLs 
-    - subflows
-    - persistent checkpoints
-  - processing epochs: dynamic node join/leave potentially using Raft algo 
-  - gzip encoder
-  - use Fn struct cloning or Materialization instead of Context.Put/Get 
-  - coder injection shortest path in case there are mutliple combinations satisfying the in/out types
-  - analyse pipeline network constraints and decide warn/recommend single/network runners
-  - Indirect type handling in coder injection - this will enable using *KVBytes instead of KVBytes and less copy
-  - Exactly-Once processing as an extension to the existing at-least-once
-  - Develop general conception of stateful processing (parallel with guarantees and not just kv-stores but also prefix trees, etc.)
+- migrate all transforms which use Context.Put/Get to Materialization 
+- file source using network split internally to spread the URLs 
+- subflows
+    - file-for-a-file use case
+    - avro applied to kv pairs: goc.KVBinary -> avro.KVGenericDecoder -> avro.KVBinary -> SchemaRegistryKVEncoder(topic) -> goc.KVBinary
+- persistent checkpoints
+- avro: specific decoder and encoder
+- processing epochs: dynamic node join/leave potentially using Raft algo
+- coder injection shortest path in case there are mutliple combinations satisfying the in/out types
+- analyse pipeline network constraints and decide warn/recommend single/network runners
+- Indirect type handling in coder injection - this will enable using *KVBytes instead of KVBytes and less copy
+- Exactly-Once processing as an extension to the existing at-least-once
+- Develop general conception of stateful processing (parallel with guarantees and not just kv-stores but also prefix trees, etc.)
 
 ### Test Cases
  - Root committer works with backpressure, i.e. the longer the commits take the less frequent they become

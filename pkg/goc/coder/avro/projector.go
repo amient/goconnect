@@ -11,7 +11,7 @@ type GenericProjector struct {
 }
 
 func (p *GenericProjector) InType() reflect.Type {
-	return AvroBinaryType
+	return BinaryType
 }
 
 func (p *GenericProjector) OutType() reflect.Type {
@@ -19,14 +19,14 @@ func (p *GenericProjector) OutType() reflect.Type {
 }
 
 func (p *GenericProjector) Materialize() func(input *goc.Element, context goc.PContext) {
-	projections := make(map[uint32]avrolib.DatumReader)
+	projections := make(map[fingerprint]avrolib.DatumReader)
 	return func(input *goc.Element, context goc.PContext) {
-		avroBinary := input.Value.(*AvroBinary)
-		//FIXME instead of using schemaID implement Schema Fingerprints as per Avro Spec and then use the hash as the cache key
-		projection := projections[avroBinary.SchemaID]
+		avroBinary := input.Value.(*Binary)
+		var f fingerprint = avroBinary.Schema.Fingerprint()
+		projection := projections[f]
 		if projection == nil {
 			projection = avrolib.NewDatumProjector(p.TargetSchema, avroBinary.Schema)
-			projections[avroBinary.SchemaID] = projection
+			projections[f] = projection
 		}
 		decodedRecord := avrolib.NewGenericRecord(p.TargetSchema)
 		if err := projection.Read(decodedRecord, avrolib.NewBinaryDecoder(avroBinary.Data)); err != nil {
@@ -36,8 +36,3 @@ func (p *GenericProjector) Materialize() func(input *goc.Element, context goc.PC
 	}
 }
 
-//
-//
-//reader := avro.NewDatumReader(avroBinary.Schema)
-
-//return decodedRecord

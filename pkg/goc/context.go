@@ -138,7 +138,7 @@ func (c *Context) checkConnector() {
 	}
 }
 
-//FIXME instead of Put and Get on Context make clones of Fn
+//FIXME instead of Put and Get on Context migrate all transforms that needs to materialized forms
 func (c *Context) Put(index int, data interface{}) {
 	c.data[index] = data
 }
