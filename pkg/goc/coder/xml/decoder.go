@@ -35,11 +35,12 @@ func (d *Decoder) OutType() reflect.Type {
 	return NodeType
 }
 
-func (d *Decoder) Process(input interface{}) interface{} {
-	if node, err := ReadNode(bytes.NewReader(input.([]byte))); err != nil {
-		panic(err)
-	} else {
-		return node
+func (d *Decoder)  Materialize() func(input interface{}) interface{} {
+	return func(input interface{}) interface{} {
+		if node, err := ReadNode(bytes.NewReader(input.([]byte))); err != nil {
+			panic(err)
+		} else {
+			return node
+		}
 	}
-
 }

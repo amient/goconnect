@@ -42,19 +42,19 @@ func (cf *SchemaRegistryDecoder) OutType() reflect.Type {
 	return BinaryType
 }
 
-func (cf *SchemaRegistryDecoder) Materialize() func(input *goc.Element, context goc.PContext) {
+func (cf *SchemaRegistryDecoder) Materialize() func(input interface{}) interface{} {
 	client := &schemaRegistryClient{url: cf.Url}
-	return func(input *goc.Element, context goc.PContext) {
-		bytes := input.Value.([]byte)
+	return func(input interface{}) interface{} {
+		bytes := input.([]byte)
 		switch bytes[0] {
 		case 0:
 			schemaId := binary.BigEndian.Uint32(bytes[1:])
 			schema := client.get(schemaId)
-			context.Emit(&goc.Element{Value: &Binary{
+			return &Binary{
 				Schema: schema,
 				Data:   bytes[5:],
-			}})
-		case 1:
+			}
+		default:
 			panic("avro binary header incorrect")
 		}
 	}
@@ -70,14 +70,16 @@ func (d *GenericDecoder) OutType() reflect.Type {
 	return GenericRecordType
 }
 
-func (d *GenericDecoder) Process(input interface{}) interface{} {
-	avroBinary := input.(*Binary)
-	decodedRecord := avro.NewGenericRecord(avroBinary.Schema)
-	reader := avro.NewDatumReader(avroBinary.Schema)
-	if err := reader.Read(decodedRecord, avro.NewBinaryDecoder(avroBinary.Data)); err != nil {
-		panic(err)
+func (d *GenericDecoder)  Materialize() func(input interface{}) interface{} {
+	return func(input interface{}) interface{} {
+		avroBinary := input.(*Binary)
+		decodedRecord := avro.NewGenericRecord(avroBinary.Schema)
+		reader := avro.NewDatumReader(avroBinary.Schema)
+		if err := reader.Read(decodedRecord, avro.NewBinaryDecoder(avroBinary.Data)); err != nil {
+			panic(err)
+		}
+		return decodedRecord
 	}
-	return decodedRecord
 }
 
 //TODO KVGenericDecoder

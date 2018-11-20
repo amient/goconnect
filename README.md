@@ -68,8 +68,8 @@ a lot more efficient and has a low package and memory footprint - it can run hap
   - MergeOrdered
 
 ## Features In Progress/TODO
-
-- migrate all transforms which use Context.Put/Get to Materialization 
+- refactor root to materialized 
+  - migrate all transforms which use Context.Put/Get to Materialization 
 - file source using network split internally to spread the URLs 
 - subflows
     - file-for-a-file use case

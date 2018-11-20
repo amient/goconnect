@@ -35,15 +35,13 @@ type Output interface {
 	OutType() reflect.Type
 }
 
-type Closeable interface {
-	Close(*Context) error
+type Transform interface {
+	InType() reflect.Type
+	OutType() reflect.Type
 }
 
-type Root interface {
-	OutType() reflect.Type
-	//TODO Materialize() func(context PContext)
-	Run(*Context)
-	Commit(Watermark, *Context) error
+type Closeable interface {
+	Close(*Context) error
 }
 
 type PContext interface {
@@ -53,13 +51,30 @@ type PContext interface {
 	Emit(*Element)
 }
 
+type Root interface {
+	OutType() reflect.Type
+	//TODO Materialize() func(context PContext)
+	Run(*Context)
+	Commit(Watermark, *Context) error
+}
+
 type Processor interface {
 	//Materialize() creates a single-routine context that will not be shared
 	Materialize() func(input *Element, context PContext)
 }
 
+type Mapper interface {
+	InType() reflect.Type
+	OutType() reflect.Type
+	Materialize() func(input interface{}) interface{}
+}
 
-type Transform interface {
+type Filter interface {
+	Type() reflect.Type
+	Materialize() func(input interface{}) bool
+}
+
+type NetTransform interface {
 	InType() reflect.Type
 	OutType() reflect.Type
 	Run(<-chan *Element, *Context)
@@ -72,17 +87,6 @@ type Sink interface {
 	Flush(*Context) error
 }
 
-type MapFn interface {
-	InType() reflect.Type
-	OutType() reflect.Type
-	Process(interface{}) interface{}
-}
-
-type FilterFn interface {
-	Type() reflect.Type
-	Pass(value interface{}) bool
-}
-
 type FoldFn interface {
 	InType() reflect.Type
 	OutType() reflect.Type
@@ -90,7 +94,7 @@ type FoldFn interface {
 	Collect() Element
 }
 
-func UserMapFn(f interface{}) MapFn {
+func UserMapFn(f interface{}) Mapper {
 	t := reflect.TypeOf(f)
 	if t.Kind() != reflect.Func || t.NumIn() != 1 || t.NumOut() != 1 {
 		panic("Map function must have exactly 1 input and 1 output argument")
@@ -116,20 +120,13 @@ func (fn *userMapFn) OutType() reflect.Type {
 	return fn.outType
 }
 
-func (fn *userMapFn) Process(input interface{}) interface{} {
-	return fn.f.Call([]reflect.Value{reflect.ValueOf(input)})[0].Interface()
+func (fn *userMapFn)  Materialize() func(input interface{}) interface{} {
+	return func(input interface{}) interface{} {
+		return fn.f.Call([]reflect.Value{reflect.ValueOf(input)})[0].Interface()
+	}
 }
 
-//func (fn *userMapFn) Materialize() func(input *Element, ctx PContext) {
-//	return func(input *Element, ctx PContext) {
-//		ctx.Emit(&Element{
-//			Stamp: input.Stamp,
-//			Value: fn.f.Call([]reflect.Value{reflect.ValueOf(input.Value)})[0].Interface(),
-//		})
-//	}
-//}
-
-func UserFilterFn(f interface{}) FilterFn {
+func UserFilterFn(f interface{}) Filter {
 	t := reflect.TypeOf(f)
 	if t.Kind() != reflect.Func || t.NumIn() != 1 || t.NumOut() != 1 || t.Out(0).Kind() != reflect.Bool {
 		panic("Filter function must have exactly 1 input and 1 bool output argument")
@@ -148,9 +145,10 @@ type userFilterFn struct {
 func (fn *userFilterFn) Type() reflect.Type {
 	return fn.t
 }
-
-func (fn *userFilterFn) Pass(input interface{}) bool {
-	return fn.f.Call([]reflect.Value{reflect.ValueOf(input)})[0].Interface().(bool)
+func (fn *userFilterFn) Materialize() func(input interface{}) bool {
+	return func(input interface{}) bool {
+		return fn.f.Call([]reflect.Value{reflect.ValueOf(input)})[0].Interface().(bool)
+	}
 }
 
 func UserFoldFn(initial interface{}, f interface{}) FoldFn {

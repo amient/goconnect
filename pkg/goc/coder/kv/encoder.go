@@ -34,9 +34,11 @@ func (d *NilKeyEncoder) OutType() reflect.Type {
 	return goc.KVBinaryType
 }
 
-func (d *NilKeyEncoder) Process(input interface{}) interface{} {
-	return &goc.KVBinary{
-		Key:   nil,
-		Value: input.([]byte),
+func (d *NilKeyEncoder)  Materialize() func(input interface{}) interface{} {
+	return func(input interface{}) interface{} {
+		return &goc.KVBinary{
+			Key:   nil,
+			Value: input.([]byte),
+		}
 	}
 }

@@ -50,7 +50,7 @@ func main() {
 		//TODO Map( subflow ).
 		Apply(new(file.Text)).
 		Map(func(in string) string { return strings.ToUpper(in) }).Par(4).
-		//Map(func(in xml.Node) string { return in.Children()[0].Children()[0].Text() }).
+		//TODO Apply(new(network.NetMergeOrdered)). - this is not working atm because the there is a flat map after network spli
 		Apply(new(std.Out)).TriggerEach(1)
 
 	//pipeline.Run()

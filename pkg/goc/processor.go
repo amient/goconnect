@@ -91,7 +91,7 @@ func (g *WorkerGroup) Start(input chan *Element) *WorkerGroup {
 			}
 		}(i)
 	}
-	//separate goroutine wathches for eos on the input work and then closes the (unordered) results
+	//separate goroutine watches for eos on the input work and then closes the (unordered) results
 	go func() {
 		group.Wait()
 		close(results)
@@ -105,6 +105,7 @@ func (g *WorkerGroup) Start(input chan *Element) *WorkerGroup {
 	if tracingAcks {
 		pendingUp = make(map[uint64]*int)
 		pendingDown = make(map[uint64]uint64)
+		g.c.log("TRACING ACKS WITH BUFFER SIZE: %d",  g.c.def.bufferCap)
 		acks = make(chan uint64, g.c.def.bufferCap)
 		stops = make(chan uint64, 1)
 		g.c.ack = func(uniq uint64) {
@@ -149,6 +150,7 @@ func (g *WorkerGroup) Start(input chan *Element) *WorkerGroup {
 			if e.Stamp.Uniq == 0 {
 				e.Stamp.Uniq = counter
 			}
+			//g.c.log("doOutput: %d -> %d", e.Stamp.Uniq, result.upstreamStamp)
 			if limitEnabled {
 				if counter == lim {
 					if g.c.stop == nil {
@@ -205,11 +207,11 @@ func (g *WorkerGroup) Start(input chan *Element) *WorkerGroup {
 				maybeTerminate()
 			case uniq, _ := <-acks:
 				if uniq <= stopStamp {
-					//g.c.log("ACK %d", uniq)
 					upstreamStamp := pendingDown[uniq]
 					delete(pendingDown, uniq)
 					unacked := pendingUp[upstreamStamp]
 					*unacked--
+					//g.c.log("[%d] UPSTREAM STAMP[%d] UNACKED : %d", uniq, upstreamStamp, *unacked)
 					if *unacked == 0 || uniq > stopStamp {
 						delete(pendingUp, upstreamStamp)
 						g.c.up.ack(upstreamStamp)
@@ -273,26 +275,29 @@ func (g *WorkerGroup) Start(input chan *Element) *WorkerGroup {
 }
 
 type MapProcessor struct {
-	fn MapFn
+	fn  Mapper
 }
 
 func (p *MapProcessor) Materialize() func(input *Element, context PContext) {
+	f := p.fn.Materialize()
 	return func(input *Element, ctx PContext) {
 		ctx.Emit(&Element{
 			FromNodeId: input.FromNodeId,
 			Stamp:      input.Stamp,
-			Value:      p.fn.Process(input.Value),
+			Value:      f(input.Value),
 		})
 	}
 }
 
+
 type FilterProcessor struct {
-	fn FilterFn
+	fn Filter
 }
 
 func (p *FilterProcessor) Materialize() func(input *Element, context PContext) {
+	f := p.fn.Materialize()
 	return func(input *Element, ctx PContext) {
-		if p.fn.Pass(input.Value) {
+		if f(input.Value) {
 			ctx.Emit(input)
 		} else {
 			input.Ack()

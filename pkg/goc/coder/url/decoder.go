@@ -37,22 +37,23 @@ func (d *Decoder) OutType() reflect.Type {
 	return UrlType
 }
 
-func (d *Decoder) Process(input interface{}) interface{} {
-
-	reader := bytes.NewReader(input.([]byte))
-	var err error
-	proto, err := util.ReadString(reader)
-	path, err := util.ReadString(reader)
-	name, err := util.ReadString(reader)
-	mod := int64(0)
-	err = binary.Read(reader, binary.LittleEndian, &mod)
-	if err != nil {
-		panic(err)
-	}
-	return &Url{
-		Proto: proto,
-		Path: path,
-		Name: name,
-		Mod: mod,
+func (d *Decoder)  Materialize() func(input interface{}) interface{} {
+	return func(input interface{}) interface{} {
+		reader := bytes.NewReader(input.([]byte))
+		var err error
+		proto, err := util.ReadString(reader)
+		path, err := util.ReadString(reader)
+		name, err := util.ReadString(reader)
+		mod := int64(0)
+		err = binary.Read(reader, binary.LittleEndian, &mod)
+		if err != nil {
+			panic(err)
+		}
+		return &Url{
+			Proto: proto,
+			Path:  path,
+			Name:  name,
+			Mod:   mod,
+		}
 	}
 }

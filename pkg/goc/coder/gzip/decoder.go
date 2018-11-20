@@ -17,16 +17,17 @@ func (d *Decoder) OutType() reflect.Type {
 	return goc.BinaryType
 }
 
-func (d *Decoder) Process(input interface{}) interface{} {
+func (d *Decoder)  Materialize() func(input interface{}) interface{} {
+	return func(input interface{}) interface{} {
+		buf := new(bytes.Buffer)
+		if reader, err := gzip.NewReader(bytes.NewBuffer(input.([]byte))); err != nil {
+			panic(err)
+		} else if _, err := buf.ReadFrom(reader); err != nil {
+			panic(err)
+		} else {
+			reader.Close()
+		}
 
-	buf := new(bytes.Buffer)
-	if reader, err := gzip.NewReader(bytes.NewBuffer(input.([]byte))); err != nil {
-		panic(err)
-	} else if _, err := buf.ReadFrom(reader); err != nil {
-		panic(err)
-	} else {
-		reader.Close()
+		return buf.Bytes()
 	}
-
-	return buf.Bytes()
 }

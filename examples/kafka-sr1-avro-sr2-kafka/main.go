@@ -26,6 +26,7 @@ import (
 	"github.com/amient/goconnect/pkg/goc/coder/avro"
 	"github.com/amient/goconnect/pkg/goc/io/kafka1"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
+	avrolib "github.com/amient/avro"
 )
 
 var (
@@ -41,6 +42,21 @@ var (
 	sinkKafkaUsername     = flag.String("sink-username", "", "Source Kafka Principal")
 	sinkKafkaPassword     = flag.String("sink-password", "", "Source Kafka Password")
 	sinkSchemaRegistryUrl = flag.String("sink-schema-registry-url", "http://localhost:8081", "Source Kafka Topic")
+	targetSchema, err = avrolib.ParseSchema(`{
+  "type": "record",
+  "name": "Example",
+  "fields": [
+    {
+      "name": "seqNo",
+      "type": "long",
+      "default": 0
+    },
+    {
+      "name": "timestamp",
+      "type": "long",
+      "default": -1
+    }
+  ]}`)
 )
 
 func main() {
@@ -57,11 +73,16 @@ func main() {
 				"group.id":          *sourceKafkaGroup,
 				"sasl.username":     *soureKafkaUsername,
 				"sasl.password":     *soureKafkaPassword,
-				"auto.offset.reset": "earliest"}}).Buffer(100000).
-		Apply(&avro.SchemaRegistryDecoder{Url: *sourceSchemaRegistryUrl}). //FIXME the acks get blocked here
-		//Apply(&avro.GenericProjector{targetSchema }).
+				"auto.offset.reset": "earliest"}}).Buffer(10000).
+
+		Apply(&avro.SchemaRegistryDecoder{Url: *sourceSchemaRegistryUrl}).
+
+		Apply(&avro.GenericProjector{targetSchema }).
+
 		Apply(new(avro.GenericEncoder)).
+
 		Apply(&avro.SchemaRegistryEncoder{Url: *sinkSchemaRegistryUrl, Subject: *sinkKafkaTopic + "-value"}).
+
 		Apply(&kafka1.Sink{
 			Topic: *sinkKafkaTopic,
 			ProducerConfig: kafka.ConfigMap{

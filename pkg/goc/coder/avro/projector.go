@@ -2,7 +2,6 @@ package avro
 
 import (
 	avrolib "github.com/amient/avro"
-	"github.com/amient/goconnect/pkg/goc"
 	"reflect"
 )
 
@@ -18,10 +17,10 @@ func (p *GenericProjector) OutType() reflect.Type {
 	return GenericRecordType
 }
 
-func (p *GenericProjector) Materialize() func(input *goc.Element, context goc.PContext) {
+func (p *GenericProjector) Materialize() func(input interface{}) interface{} {
 	projections := make(map[fingerprint]avrolib.DatumReader)
-	return func(input *goc.Element, context goc.PContext) {
-		avroBinary := input.Value.(*Binary)
+	return func(input interface{}) interface{} {
+		avroBinary := input.(*Binary)
 		var f fingerprint = avroBinary.Schema.Fingerprint()
 		projection := projections[f]
 		if projection == nil {
@@ -32,7 +31,7 @@ func (p *GenericProjector) Materialize() func(input *goc.Element, context goc.PC
 		if err := projection.Read(decodedRecord, avrolib.NewBinaryDecoder(avroBinary.Data)); err != nil {
 			panic(err)
 		}
-		context.Emit(&goc.Element{Value: decodedRecord})
+		return decodedRecord
 	}
 }
 

@@ -37,40 +37,8 @@ var (
 	schemaRegistryUrl = flag.String("schema-registry-url", "http://localhost:8081", "Schema Registry URL")
 	targetSchema, err = avrolib.ParseSchema(`{
   "type": "record",
-  "name": "Transaction",
-  "namespace": "com.sainsburys.domain.transaction",
+  "name": "Example",
   "fields": [
-    {
-      "name": "transactionId",
-      "type": "string",
-      "default": ""
-    },
-    {
-      "name": "loyaltyId",
-      "type": [
-        "null",
-        "string"
-      ],
-      "default": null
-    },
-    {
-      "name": "storeId",
-      "type": "string",
-      "default": ""
-    },
-    {
-      "name": "superStoreId",
-      "type": [
-        "null",
-        "string"
-      ],
-      "default": null
-    },
-    {
-      "name": "tillId",
-      "type": "string",
-      "default": ""
-    },
     {
       "name": "seqNo",
       "type": "long",

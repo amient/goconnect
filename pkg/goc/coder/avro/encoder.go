@@ -37,8 +37,10 @@ func (e *JsonEncoder) OutType() reflect.Type {
 	return goc.StringType
 }
 
-func (e *JsonEncoder) Process(in interface{}) interface{} {
-	return in.(*avro.GenericRecord).String()
+func (e *JsonEncoder)  Materialize() func(input interface{}) interface{} {
+	return func(input interface{}) interface{} {
+		return input.(*avro.GenericRecord).String()
+	}
 }
 
 type GenericEncoder struct{}
@@ -51,16 +53,18 @@ func (e *GenericEncoder) OutType() reflect.Type {
 	return BinaryType
 }
 
-func (e *GenericEncoder) Process(input interface{}) interface{} {
-	schema := input.(*avro.GenericRecord).Schema()
-	writer := avro.NewGenericDatumWriter().SetSchema(schema)
-	buf := new(bytes.Buffer)
-	if err := writer.Write(input, avro.NewBinaryEncoder(buf)); err != nil {
-		panic(err)
-	}
-	return &Binary{
-		Schema: schema,
-		Data:   buf.Bytes(),
+func (e *GenericEncoder)  Materialize() func(input interface{}) interface{} {
+	return func(input interface{}) interface{} {
+		schema := input.(*avro.GenericRecord).Schema()
+		writer := avro.NewGenericDatumWriter().SetSchema(schema)
+		buf := new(bytes.Buffer)
+		if err := writer.Write(input, avro.NewBinaryEncoder(buf)); err != nil {
+			panic(err)
+		}
+		return &Binary{
+			Schema: schema,
+			Data:   buf.Bytes(),
+		}
 	}
 }
 
@@ -81,13 +85,14 @@ func (cf *SchemaRegistryEncoder) OutType() reflect.Type {
 	return goc.BinaryType
 }
 
-func (cf *SchemaRegistryEncoder) Materialize() func(input *goc.Element, context goc.PContext) {
+func (cf *SchemaRegistryEncoder) Materialize() func(input interface{}) interface{} {
 	if cf.Subject == "" {
+		//TODO if no subject is provided use schema.namespace + . + name
 		panic("Subject not defined for SchemaRegistryEncoder")
 	}
 	client := &schemaRegistryClient{url: cf.Url}
-	return func(input *goc.Element, context goc.PContext) {
-		ab := input.Value.(*Binary)
+	return func(input interface{}) interface{} {
+		ab := input.(*Binary)
 		schemaId := client.getSchemaId(ab.Schema, cf.Subject)
 		buf := new(bytes.Buffer)
 		if err := buf.WriteByte(0); err != nil {
@@ -97,7 +102,7 @@ func (cf *SchemaRegistryEncoder) Materialize() func(input *goc.Element, context 
 		} else if _, err := buf.Write(ab.Data); err != nil {
 			panic(err)
 		} else {
-			context.Emit(&goc.Element{ Value: buf.Bytes() })
+			return buf.Bytes()
 		}
 	}
 }

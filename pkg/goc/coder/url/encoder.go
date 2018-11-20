@@ -37,13 +37,15 @@ func (e *Encoder) OutType() reflect.Type {
 	return goc.BinaryType
 }
 
-func (e *Encoder) Process(input interface{}) interface{} {
-	url := input.(*Url)
-	result := new(bytes.Buffer)
-	util.WriteString(url.Proto, result)
-	util.WriteString(url.Path, result)
-	util.WriteString(url.Name, result)
-	binary.Write(result, binary.LittleEndian, url.Mod)
-	return result.Bytes()
+func (e *Encoder)  Materialize() func(input interface{}) interface{} {
+	return func(input interface{}) interface{} {
+		url := input.(*Url)
+		result := new(bytes.Buffer)
+		util.WriteString(url.Proto, result)
+		util.WriteString(url.Path, result)
+		util.WriteString(url.Name, result)
+		binary.Write(result, binary.LittleEndian, url.Mod)
+		return result.Bytes()
+	}
 }
 

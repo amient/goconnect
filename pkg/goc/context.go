@@ -23,7 +23,9 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
 	"reflect"
+	"runtime/pprof"
 	"sync/atomic"
 	"time"
 )
@@ -151,6 +153,7 @@ func (c *Context) Termination() <-chan bool {
 	return c.termination
 }
 
+
 func (c *Context) Start() {
 
 	switch fn := c.def.Fn.(type) {
@@ -164,20 +167,21 @@ func (c *Context) Start() {
 			c.Close()
 		}()
 
-	case MapFn:
+	case Processor:
+		NewWorkerGroup(c, fn).Start(c.up.output)
+
+	case Mapper:
 		c.ack = c.up.ack
 		c.stop = c.up.stop
-		NewWorkerGroup(c, &MapProcessor{fn}).Start(c.up.output)
+		NewWorkerGroup(c,  &MapProcessor{fn}).Start(c.up.output)
 
-	case FilterFn:
+	case Filter:
 		c.ack = c.up.ack
 		c.stop = c.up.stop
 		NewWorkerGroup(c, &FilterProcessor{fn}).Start(c.up.output)
 
-	case Processor:
-		NewWorkerGroup(c, fn).Start(c.up.output)
 
-	case Transform:
+	case NetTransform:
 		pending := make(chan PC, c.def.bufferCap)
 		//TODO implement limit/stop for network buffer
 		acks := make(chan uint64, c.def.bufferCap)
@@ -469,7 +473,16 @@ func (c *Context) initializeCheckpointer(cap int, pending chan PC, fn Root) {
 				Checkpoint:     &element.Checkpoint,
 				UpstreamNodeId: element.FromNodeId,
 			}
-			c.output <- element
+			t := time.NewTimer(30 * time.Second).C //TODO configurable pipeline-level timeout
+			for {
+				select {
+				case c.output <- element:
+					return
+				case <-t:
+					pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
+					panic(fmt.Errorf("timeout while trying to push into the root output buffer"))
+				}
+			}
 		}
 	}
 	acks := make(chan uint64, cap)

@@ -34,6 +34,8 @@ func (d *IgnoreKeyDecoder) OutType() reflect.Type {
 	return goc.BinaryType
 }
 
-func (d *IgnoreKeyDecoder) Process(input interface{}) interface{} {
-	return input.(*goc.KVBinary).Value
+func (d *IgnoreKeyDecoder) Materialize() func(input interface{}) interface{} {
+	return func(input interface{}) interface{} {
+		return input.(*goc.KVBinary).Value
+	}
 }

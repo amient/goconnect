@@ -34,6 +34,8 @@ func (d *Encoder) OutType() reflect.Type {
 	return goc.BinaryType
 }
 
-func (d *Encoder) Process(input interface{}) interface{} {
-	return []byte(input.(string))
+func (d *Encoder)  Materialize() func(input interface{}) interface{} {
+	return func(input interface{}) interface{} {
+		return []byte(input.(string))
+	}
 }

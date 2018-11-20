@@ -43,14 +43,16 @@ func (r *Reader) OutType() reflect.Type {
 	return ByteStreamType
 }
 
-func (r *Reader) Process(input interface{}) interface{} {
-	url := input.(*url.Url)
-	//TODO based on the url.Proto chose the appropriate reader type and convert into a
-	if file, err := os.Open(url.AbsolutePath()); err != nil {
-		panic(err)
-	} else {
-		return &LocalFileByteStream{
-			file: file,
+func (r *Reader)  Materialize() func(input interface{}) interface{} {
+	return func(input interface{}) interface{} {
+		url := input.(*url.Url)
+		//TODO based on the url.Proto chose the appropriate reader type and convert into a
+		if file, err := os.Open(url.AbsolutePath()); err != nil {
+			panic(err)
+		} else {
+			return &LocalFileByteStream{
+				file: file,
+			}
 		}
 	}
 }

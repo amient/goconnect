@@ -36,14 +36,16 @@ func (d *Encoder) OutType() reflect.Type {
 	return goc.BinaryType
 }
 
-func (d *Encoder) Process(input interface{}) interface{} {
-	var b bytes.Buffer
-	w := bufio.NewWriter(&b)
-	_, err := WriteNode(w, input.(Node))
-	w.Flush()
-	if err != nil {
-		panic(err)
-	} else {
-		return b.Bytes()
+func (d *Encoder)  Materialize() func(input interface{}) interface{} {
+	return func(input interface{}) interface{} {
+		var b bytes.Buffer
+		w := bufio.NewWriter(&b)
+		_, err := WriteNode(w, input.(Node))
+		w.Flush()
+		if err != nil {
+			panic(err)
+		} else {
+			return b.Bytes()
+		}
 	}
 }

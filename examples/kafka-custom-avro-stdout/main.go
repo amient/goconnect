@@ -65,24 +65,26 @@ func (m *KafkaMetricsAvroRegistry) OutType() reflect.Type {
 	return avro.BinaryType
 }
 
-func (m *KafkaMetricsAvroRegistry) Process(input interface{}) interface{} {
-	kvBinary := input.(*goc.KVBinary)
-	switch kvBinary.Value[0] {
-	case 0:
-		panic("cannot use rest schema registry for kafka metrics formats")
-	case 1:
-		switch int(kvBinary.Value[1]) {
+func (m *KafkaMetricsAvroRegistry)  Materialize() func(input interface{}) interface{} {
+	return func(input interface{}) interface{} {
+		kvBinary := input.(*goc.KVBinary)
+		switch kvBinary.Value[0] {
+		case 0:
+			panic("cannot use rest schema registry for kafka metrics formats")
 		case 1:
-			return &avro.Binary{
-				Schema: io_amient_kafka_metrics.MeasurementSchemaV1,
-				Data:   kvBinary.Value[2:],
+			switch int(kvBinary.Value[1]) {
+			case 1:
+				return &avro.Binary{
+					Schema: io_amient_kafka_metrics.MeasurementSchemaV1,
+					Data:   kvBinary.Value[2:],
+				}
+			default:
+				panic("there is no other version at this time")
 			}
+		case '{':
+			fallthrough
 		default:
-			panic("there is no other version at this time")
+			panic(fmt.Errorf("invalid kafka metrics avro format"))
 		}
-	case '{':
-		fallthrough
-	default:
-		panic(fmt.Errorf("invalid kafka metrics avro format"))
 	}
 }

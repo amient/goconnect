@@ -30,7 +30,7 @@ type Pipeline struct {
 	Defs       []*Def
 	defaultPar int
 	stamp      uint64
-	coders     []MapFn
+	coders     []Transform
 }
 
 func NewPipeline() *Pipeline {
@@ -47,7 +47,7 @@ func (p *Pipeline) Run() {
 	log.Printf("All stages completed in %f0.0 s", time.Now().Sub(start).Seconds())
 }
 
-func (p *Pipeline) WithCoders(coders []MapFn) *Pipeline {
+func (p *Pipeline) WithCoders(coders []Transform) *Pipeline {
 	p.coders = coders
 	return p
 }
@@ -63,24 +63,24 @@ func (p *Pipeline) Root(source Root) *Def {
 
 func (p *Pipeline) Apply(def *Def, f Fn) *Def {
 	switch fn := f.(type) {
-	case Transform:
+	case NetTransform:
 		return p.Transform(def, fn)
 	case Sink:
 		return p.Sink(def, fn)
 	case FoldFn:
 		return p.Fold(def, fn)
-	case MapFn:
-		return p.Map(def, fn)
-	case FilterFn:
-		return p.Filter(def, fn)
 	case Processor:
 		return p.Processor(def, fn)
+	case Mapper:
+		return p.Mapper(def, fn)
+	case Filter:
+		return p.Filter(def, fn)
 	default:
 		panic(fmt.Errorf("only one of the interfaces defined in goc/Fn.go can be applied, got: %q", reflect.TypeOf(fn)))
 	}
 }
 
-func (p *Pipeline) Transform(that *Def, fn Transform) *Def {
+func (p *Pipeline) Transform(that *Def, fn NetTransform) *Def {
 	if !that.Type.AssignableTo(fn.InType()) {
 		return p.Transform(p.injectCoder(that, fn.InType()), fn)
 	}
@@ -100,15 +100,20 @@ func (p *Pipeline) Processor(that *Def, fn Processor) *Def {
 	}
 }
 
-func (p *Pipeline) Map(that *Def, fn MapFn) *Def {
-	if !that.Type.AssignableTo(fn.InType()) {
-		return p.Map(p.injectCoder(that, fn.InType()), fn)
+func (p *Pipeline) Mapper(that *Def, fn Mapper) *Def {
+	if input, is := fn.(Input); is {
+		if !that.Type.AssignableTo(input.InType()) {
+			return p.Mapper(p.injectCoder(that, input.InType()), fn)
+		}
 	}
-
-	return p.register(&Def{Type: fn.OutType(), Fn: fn, Up: that})
+	if output, is := fn.(Output); is {
+		return p.register(&Def{Type: output.OutType(), Fn: fn, Up: that})
+	} else {
+		return p.register(&Def{Type: ErrorType, Fn: fn, Up: that})
+	}
 }
 
-func (p *Pipeline) Filter(that *Def, fn FilterFn) *Def {
+func (p *Pipeline) Filter(that *Def, fn Filter) *Def {
 	if !that.Type.AssignableTo(fn.Type()) {
 		return p.Filter(p.injectCoder(that, fn.Type()), fn)
 	}
@@ -133,8 +138,9 @@ func (p *Pipeline) Sink(that *Def, fn Sink) *Def {
 func (p *Pipeline) register(def *Def) *Def {
 	//validate previous stage which may have been configured with constraint methods
 	if def.Up != nil {
+		//TODO buffer must be at least as big as the upstream stage or bigger, if smaller: correct and warn - pipelines with large root buffers may emit thousands of elements which if combined with out-of-order sink may lead to hangs if the intermediate buffers are smaller than that of root
 		switch def.Up.Fn.(type) {
-		case Root, Transform:
+		case Root, NetTransform:
 			if def.Up.maxVerticalParallelism > 1 {
 				panic(fmt.Errorf("roots cannot have vertical parallelism greater than 1, got: %v", def.Up.maxVerticalParallelism))
 			}
@@ -160,12 +166,12 @@ func (p *Pipeline) register(def *Def) *Def {
 }
 
 func (p *Pipeline) injectCoder(that *Def, to reflect.Type) *Def {
-	var scan func(in reflect.Type, out reflect.Type, d int, chain []MapFn) []MapFn
-	scan = func(in reflect.Type, out reflect.Type, d int, chain []MapFn) []MapFn {
+	var scan func(in reflect.Type, out reflect.Type, d int, chain []Transform) []Transform
+	scan = func(in reflect.Type, out reflect.Type, d int, chain []Transform) []Transform {
 		if d <= 5 {
 			for _, c := range p.coders {
 				if c.InType().AssignableTo(in) && c.OutType().AssignableTo(out) {
-					branch := make([]MapFn, len(chain), len(chain)+1)
+					branch := make([]Transform, len(chain), len(chain)+1)
 					copy(branch, chain)
 					branch = append(branch, c)
 					return branch
@@ -173,7 +179,7 @@ func (p *Pipeline) injectCoder(that *Def, to reflect.Type) *Def {
 			}
 			for _, c := range p.coders {
 				if c.InType().AssignableTo(in) {
-					branch := make([]MapFn, len(chain), len(chain)+1)
+					branch := make([]Transform, len(chain), len(chain)+1)
 					copy(branch, chain)
 					branch = append(branch, c)
 					return scan(c.OutType(), out, d+1, branch)
@@ -183,7 +189,7 @@ func (p *Pipeline) injectCoder(that *Def, to reflect.Type) *Def {
 		panic(fmt.Errorf("cannot find any coders to satisfy: %v => %v, depth %d", in, out, d))
 	}
 	//log.Printf("Injecting coders to satisfy: %v => %v ", that.Type, to)
-	for _, mapper := range scan(that.Type, to, 1, []MapFn{}) {
+	for _, mapper := range scan(that.Type, to, 1, []Transform{}) {
 		log.Printf("Injecting coder: %v => %v using default parallelism %d", that.Type, mapper.OutType(), p.defaultPar)
 		that = that.Apply(mapper).Par(p.defaultPar)
 	}
