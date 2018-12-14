@@ -44,7 +44,7 @@ func (sink *Sink) Process(input *goc.Element, ctx *goc.Context) {
 	if ctx.Get(0) != nil {
 		producer = ctx.Get(0).(*kafka.Producer)
 	} else {
-		sink.ProducerConfig.SetKey("go.delivery.reports", true)
+		sink.ProducerConfig["go.delivery.reports"] = true
 		producer, err = kafka.NewProducer(&sink.ProducerConfig)
 		if err != nil {
 			panic(err)

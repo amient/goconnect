@@ -18,10 +18,10 @@ func (p *GenericProjector) OutType() reflect.Type {
 }
 
 func (p *GenericProjector) Materialize() func(input interface{}) interface{} {
-	projections := make(map[fingerprint]avrolib.DatumReader)
+	projections := make(map[avrolib.Fingerprint]avrolib.DatumReader)
 	return func(input interface{}) interface{} {
 		avroBinary := input.(*Binary)
-		var f fingerprint = avroBinary.Schema.Fingerprint()
+		var f = avroBinary.Schema.Fingerprint()
 		projection := projections[f]
 		if projection == nil {
 			projection = avrolib.NewDatumProjector(p.TargetSchema, avroBinary.Schema)

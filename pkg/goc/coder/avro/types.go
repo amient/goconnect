@@ -19,4 +19,3 @@ var BinaryType = reflect.TypeOf(&Binary{})
 var KVBinaryType = reflect.TypeOf(&KVBinary{})
 var GenericRecordType = reflect.TypeOf(&avro.GenericRecord{})
 
-type fingerprint [32]byte

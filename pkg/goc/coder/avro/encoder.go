@@ -90,10 +90,10 @@ func (cf *SchemaRegistryEncoder) Materialize() func(input interface{}) interface
 		//TODO if no subject is provided use schema.namespace + . + name
 		panic("Subject not defined for SchemaRegistryEncoder")
 	}
-	client := &schemaRegistryClient{url: cf.Url}
+	client := &avro.SchemaRegistryClient{Url: cf.Url}
 	return func(input interface{}) interface{} {
 		ab := input.(*Binary)
-		schemaId := client.getSchemaId(ab.Schema, cf.Subject)
+		schemaId := client.GetSchemaId(ab.Schema, cf.Subject)
 		buf := new(bytes.Buffer)
 		if err := buf.WriteByte(0); err != nil {
 			panic(err)

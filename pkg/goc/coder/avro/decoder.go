@@ -43,13 +43,13 @@ func (cf *SchemaRegistryDecoder) OutType() reflect.Type {
 }
 
 func (cf *SchemaRegistryDecoder) Materialize() func(input interface{}) interface{} {
-	client := &schemaRegistryClient{url: cf.Url}
+	client := &avro.SchemaRegistryClient{Url: cf.Url}
 	return func(input interface{}) interface{} {
 		bytes := input.([]byte)
 		switch bytes[0] {
 		case 0:
 			schemaId := binary.BigEndian.Uint32(bytes[1:])
-			schema := client.get(schemaId)
+			schema := client.Get(schemaId)
 			return &Binary{
 				Schema: schema,
 				Data:   bytes[5:],

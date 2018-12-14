@@ -76,6 +76,10 @@ a lot more efficient and has a low package and memory footprint - it can run hap
     - avro applied to kv pairs: goc.KVBinary -> avro.KVGenericDecoder -> avro.KVBinary -> SchemaRegistryKVEncoder(topic) -> goc.KVBinary
 - persistent checkpoints
 - avro: specific decoder and encoder
+- avro-parquet converter
+- converter abstraction for decoupling source and sink schemas 
+- s3 sink
+- sftp source/sink
 - processing epochs: dynamic node join/leave potentially using Raft algo
 - coder injection shortest path in case there are mutliple combinations satisfying the in/out types
 - analyse pipeline network constraints and decide warn/recommend single/network runners
