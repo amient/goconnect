@@ -82,10 +82,10 @@ func main() {
 			Topic: *kafkaTopic,
 			ProducerConfig: kafka.ConfigMap{
 				"bootstrap.servers": *kafkaBootstrap,
-				//"security.protocol": "SASL_SSL",
-				//"sasl.mechanisms":   "PLAIN",
-				//"sasl.username":     *kafkaUsername,
-				//"sasl.password":     *kafkaPassword,
+				"security.protocol": "SASL_SSL",
+				"sasl.mechanisms":   "PLAIN",
+				"sasl.username":     *kafkaUsername,
+				"sasl.password":     *kafkaPassword,
 				"linger.ms":         50,
 				"compression.type":  "snappy",
 			}})

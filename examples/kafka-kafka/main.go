@@ -28,31 +28,46 @@ import (
 )
 
 var (
-	kafkaSourceBootstrap = flag.String("kafka.source.bootstrap", "localhost:9092", "Kafka Bootstrap servers for the source topis")
-	kafkaSourceGroup     = flag.String("kafka.source.group", "goconnect-mirror", "Source Kafka Consumer Group")
-	kafkaSourceTopic     = flag.String("kafka.source.topic", "test", "Source Kafka Topic")
+	kafkaSourceBootstrap = flag.String("source-bootstrap", "localhost:9092", "Kafka Bootstrap servers for the source topis")
+	kafkaSourceGroup     = flag.String("source-group", "goconnect-mirror", "Source Kafka Consumer Group")
+	kafkaSourceTopic     = flag.String("source-topic", "test", "Source Kafka Topic")
 	//
-	kafkaSinkBootstrap = flag.String("kafka.sink.bootstrap", "localhost:9092", "Kafka Destination Bootstrap servers")
-	kafkaSinkTopic     = flag.String("kafka.sink.topic", "test-copy", "Destination Kafka Topic")
+	kafkaUsername = flag.String("username", "", "Kafka Principal")
+	kafkaPassword = flag.String("password", "", "Kafka Principal Password")
+	//
+	kafkaSinkBootstrap = flag.String("sink-bootstrap", "localhost:9092", "Kafka Destination Bootstrap servers")
+	kafkaSinkTopic     = flag.String("sink-topic", "test-copy", "Destination Kafka Topic")
 )
 
 func main() {
+
+	flag.Parse()
 
 	pipeline := goc.NewPipeline().WithCoders(coder.Registry())
 
 	source := pipeline.Root(&kafka1.Source{
 		Topic: *kafkaSourceTopic,
 		ConsumerConfig: kafka.ConfigMap{
-			"bootstrap.servers": *kafkaSourceBootstrap,
-			"group.id":          *kafkaSourceGroup,
-			"auto.offset.reset": "earliest",
+			"bootstrap.servers":       *kafkaSourceBootstrap,
+			"group.id":                *kafkaSourceGroup,
+			"auto.offset.reset":       "earliest",
+			"security.protocol":       "SASL_SSL",
+			"fetch.message.max.bytes": 10000,
+			"sasl.mechanisms":         "PLAIN",
+			"sasl.username":           *kafkaUsername,
+			"sasl.password":           *kafkaPassword,
 		}}).Buffer(100000)
 
 	source.Apply(&kafka1.Sink{
 		Topic: *kafkaSinkTopic,
 		ProducerConfig: kafka.ConfigMap{
 			"bootstrap.servers": *kafkaSinkBootstrap,
-			"linger.ms": 100}})
+			"security.protocol": "SASL_SSL",
+			"sasl.mechanisms":   "PLAIN",
+			"sasl.username":     *kafkaUsername,
+			"sasl.password":     *kafkaPassword,
+			"compression.type":  "snappy",
+			"linger.ms":         10}})
 
 	pipeline.Run()
 
