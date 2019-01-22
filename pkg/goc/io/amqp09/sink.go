@@ -43,7 +43,7 @@ func (s *Sink) Process(element *goc.Element, ctx *goc.Context) {
 	var channel *amqp.Channel
 
 	if ctx.Get(0) == nil {
-		log.Printf("dialing %q", s.Uri)
+		log.Printf("AMQP dialing %q ..", s.Uri)
 		conn, err = amqp.Dial(s.Uri)
 		if err != nil {
 			panic(err)
@@ -59,7 +59,7 @@ func (s *Sink) Process(element *goc.Element, ctx *goc.Context) {
 			panic(err)
 		}
 		ctx.Put(1, channel)
-		log.Printf("Got Channel bound to Exchange")
+		log.Printf("AMQP got connection, getting channel..")
 		//confirmations := make(chan amqp.Confirmation)
 		//channel.NotifyPublish(confirmations)
 		//doClose := make(chan *amqp.Error)

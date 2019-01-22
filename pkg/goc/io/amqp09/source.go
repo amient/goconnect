@@ -45,7 +45,7 @@ func (source *Source) OutType() reflect.Type {
 func (source *Source) Run(context *goc.Context) {
 	var err error
 
-	log.Printf("dialing %q", source.Uri)
+	log.Printf("AMQP dialing %q ..", source.Uri)
 	conn, err := amqp.Dial(source.Uri)
 	if err != nil {
 		panic(err)
@@ -53,23 +53,23 @@ func (source *Source) Run(context *goc.Context) {
 
 	go func() {
 		err := <-conn.NotifyClose(make(chan *amqp.Error))
-		log.Printf("Closing AMQP source: %v", err)
+		log.Printf("AMQP Closing: %v", err)
 	}()
 
-	log.Printf("got Connection, getting channel")
+	log.Printf("AMQP got connection, getting channel..")
 	channel, err := conn.Channel()
 	if err != nil {
 		panic(err)
 	}
 
 	if source.BindingKey != "" {
-		log.Printf("binding to Exchange (key %q)", source.BindingKey)
+		log.Printf("AMQP binding to Exchange (key %q)", source.BindingKey)
 		if err := channel.QueueBind(source.QueueName, source.BindingKey, source.Exchange, false, nil, ); err != nil {
 			panic(err)
 		}
 	}
 
-	log.Printf("Queue bound to Exchange, starting Consume with Consumer Tag: %q", source.ConsumerTag)
+	log.Printf("AMQP bound to queue %q via exchange %q", source.QueueName, source.Exchange)
 
 	context.Put(0, conn)
 	context.Put(1, channel)
@@ -84,6 +84,8 @@ func (source *Source) Run(context *goc.Context) {
 	if err != nil {
 		panic(err)
 	}
+
+	log.Printf("AMQP Consumer starting with tag: %q", source.ConsumerTag)
 
 	for {
 		select {
