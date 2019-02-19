@@ -32,7 +32,7 @@ import avrolib "github.com/amient/avro"
 
 var (
 	kafkaBootstrap    = flag.String("kafka-bootstrap", "localhost:9092", "Kafka Destination Bootstrap servers")
-	kafkaTopic        = flag.String("kafka-topic", "test-avro", "Destination Kafka Topic")
+	kafkaTopic        = flag.String("kafka-topic", "avro-test", "Destination Kafka Topic")
 	kafkaUsername     = flag.String("username", "", "Destination Kafka Principal")
 	kafkaPassword     = flag.String("password", "", "Destination Kafka Password")
 	schemaRegistryUrl = flag.String("schema-registry-url", "http://localhost:8082", "Destination Schema Registry")
@@ -74,7 +74,7 @@ func main() {
 	r2.Set("timestamp", int64(19834723000))
 
 	pipeline.
-		Root(io.RoundRobin(10, []*avrolib.GenericRecord{r1, r2})).Buffer(5000).
+		Root(io.RoundRobin(10000000, []*avrolib.GenericRecord{r1, r2})).Buffer(5000).
 		Apply(new(avro.GenericEncoder)).
 		//Apply(new(std.Out)).TriggerEach(1)
 		Apply(&avro.SchemaRegistryEncoder{Url: *schemaRegistryUrl, Subject: *kafkaTopic + "-value"}).
