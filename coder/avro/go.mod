@@ -1,4 +1,4 @@
-module github.com/amient/goconnect/avro
+module github.com/amient/goconnect/coder/avro
 
 go 1.12
 

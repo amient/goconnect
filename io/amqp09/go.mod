@@ -1,4 +1,4 @@
-module github.com/amient/goconnect/amqp09
+module github.com/amient/goconnect/io/amqp09
 
 go 1.12
 

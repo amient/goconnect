@@ -1,4 +1,4 @@
-module github.com/amient/goconnect/kafka1
+module github.com/amient/goconnect/io/kafka1
 
 go 1.12
 

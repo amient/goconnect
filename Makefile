@@ -3,4 +3,4 @@ all: test
 .PHONY: test
 
 test:
-	@go test all
+	@go test network/network_test.go
