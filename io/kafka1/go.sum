@@ -1,8 +1,12 @@
+github.com/amient/avro v0.4.8/go.mod h1:PfrRH0jlz9J3UXfW1MgmBri7eiJEztRD6No7jEAvDpc=
+github.com/amient/goconnect/coder/avro v0.0.0-20190819192709-dda28ed7ae5e/go.mod h1:/vcN1MXUb9ZdGVDAvO9lcWTkkO6rPqaAUiYNtH9ADNc=
+github.com/amient/goconnect/io/amqp09 v0.0.0-20190819192709-dda28ed7ae5e/go.mod h1:wicYuRX9h1Q+ADu17V88OTiEfMo9mGD9hbg5RGNYVAw=
 github.com/amient/goconnect/io/kafka1 v0.0.0-20190819191431-05833c1f1719/go.mod h1:bZn0IQjA3py7ndRtJX5rPJ7siAlrH5vD8yvaXGoV18g=
 github.com/confluentinc/confluent-kafka-go v1.1.0/go.mod h1:u2zNLny2xq+5rWeTQjFHbDzzNuba4P1vo31r9r4uAdg=
 github.com/google/go-cmp v0.3.0/go.mod h1:8QqcDgzrUqlUb/G2PQTWiueGozuR1884gddMywk6iLU=
 github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/spf13/pflag v1.0.3/go.mod h1:DYY7MBk1bdzusC3SYhjObp+wFpr4gzcvqqNjLnInEg4=
+github.com/streadway/amqp v0.0.0-20190815230801-eade30b20f1d/go.mod h1:AZpEONHx3DKn8O/DFsRAY58/XVQiIPMTMB1SddzLXVw=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/net v0.0.0-20190311183353-d8887717615a/go.mod h1:t9HGtf8HONx5eT2rtn7q6eTqICYqUVnKs3thJo3Qplg=
 golang.org/x/sync v0.0.0-20190423024810-112230192c58/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=

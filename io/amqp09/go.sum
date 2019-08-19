@@ -1,3 +1,6 @@
+github.com/amient/avro v0.4.8/go.mod h1:PfrRH0jlz9J3UXfW1MgmBri7eiJEztRD6No7jEAvDpc=
+github.com/amient/goconnect/coder/avro v0.0.0-20190819192709-dda28ed7ae5e/go.mod h1:/vcN1MXUb9ZdGVDAvO9lcWTkkO6rPqaAUiYNtH9ADNc=
+github.com/amient/goconnect/io/amqp09 v0.0.0-20190819192709-dda28ed7ae5e/go.mod h1:wicYuRX9h1Q+ADu17V88OTiEfMo9mGD9hbg5RGNYVAw=
 github.com/amient/goconnect/io/kafka1 v0.0.0-20190819191431-05833c1f1719/go.mod h1:bZn0IQjA3py7ndRtJX5rPJ7siAlrH5vD8yvaXGoV18g=
 github.com/confluentinc/confluent-kafka-go v1.1.0/go.mod h1:u2zNLny2xq+5rWeTQjFHbDzzNuba4P1vo31r9r4uAdg=
 github.com/google/go-cmp v0.3.0/go.mod h1:8QqcDgzrUqlUb/G2PQTWiueGozuR1884gddMywk6iLU=
