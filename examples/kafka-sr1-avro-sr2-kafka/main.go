@@ -63,7 +63,7 @@ func main() {
 
 	flag.Parse()
 
-	pipeline := goc.NewPipeline().WithCoders(coder.Registry())
+	pipeline := goconnect.NewPipeline().WithCoders(coder.Registry())
 
 	pipeline.
 		Root(&kafka1.Source{

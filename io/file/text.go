@@ -34,17 +34,17 @@ func (r *Text) InType() reflect.Type {
 }
 
 func (r *Text) OutType() reflect.Type {
-	return goc.StringType
+	return goconnect.StringType
 }
 
-func (r *Text) Materialize() func(input *goc.Element, context goc.PContext) {
-	return func(input *goc.Element, ctx goc.PContext) {
+func (r *Text) Materialize() func(input *goconnect.Element, context goconnect.PContext) {
+	return func(input *goconnect.Element, ctx goconnect.PContext) {
 		bs := input.Value.(ByteStream)
 		buf := new(bytes.Buffer)
 		b := make([]byte, 1)
 		emit := func() {
 			if buf.Len() > 0 {
-				ctx.Emit(&goc.Element{Value: string(buf.Bytes())})
+				ctx.Emit(&goconnect.Element{Value: string(buf.Bytes())})
 				buf.Reset()
 			}
 		}

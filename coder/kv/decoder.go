@@ -27,15 +27,15 @@ import (
 type IgnoreKeyDecoder struct{}
 
 func (d *IgnoreKeyDecoder) InType() reflect.Type {
-	return goc.KVBinaryType
+	return goconnect.KVBinaryType
 }
 
 func (d *IgnoreKeyDecoder) OutType() reflect.Type {
-	return goc.BinaryType
+	return goconnect.BinaryType
 }
 
 func (d *IgnoreKeyDecoder) Materialize() func(input interface{}) interface{} {
 	return func(input interface{}) interface{} {
-		return input.(*goc.KVBinary).Value
+		return input.(*goconnect.KVBinary).Value
 	}
 }

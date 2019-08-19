@@ -37,7 +37,7 @@ var (
 
 func main() {
 
-	pipeline := goc.NewPipeline().WithCoders(coder.Registry())
+	pipeline := goconnect.NewPipeline().WithCoders(coder.Registry())
 
 	source := pipeline.Root(&kafka1.Source{
 		Topic: *kafkaSourceTopic,

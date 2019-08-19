@@ -61,7 +61,7 @@ func main() {
 
 	flag.Parse()
 
-	pipeline := goc.NewPipeline().WithCoders(coder.Registry())
+	pipeline := goconnect.NewPipeline().WithCoders(coder.Registry())
 
 	pipeline.
 		Root(io.RoundRobin(10000000, data)).Buffer(5000).

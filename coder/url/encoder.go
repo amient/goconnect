@@ -34,7 +34,7 @@ func (e *Encoder) InType() reflect.Type {
 }
 
 func (e *Encoder) OutType() reflect.Type {
-	return goc.BinaryType
+	return goconnect.BinaryType
 }
 
 func (e *Encoder)  Materialize() func(input interface{}) interface{} {

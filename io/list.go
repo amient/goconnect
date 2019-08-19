@@ -49,7 +49,7 @@ func (it *iterable) OutType() reflect.Type {
 	return it.typ.Elem()
 }
 
-func (it *iterable) Run(context *goc.Context) {
+func (it *iterable) Run(context *goconnect.Context) {
 	if context.GetNodeID() == 1 {
 		limit := it.val.Len()
 		for l := 0; l < it.n; l++ {
@@ -58,16 +58,16 @@ func (it *iterable) Run(context *goc.Context) {
 				return
 			default:
 				i := l % limit
-				context.Emit(&goc.Element{
+				context.Emit(&goconnect.Element{
 					Value:      it.val.Index(i).Interface(),
-					Checkpoint: goc.Checkpoint{Data: l},
+					Checkpoint: goconnect.Checkpoint{Data: l},
 				})
 			}
 		}
 	}
 }
 
-func (it *iterable) Commit(watermark goc.Watermark, ctx *goc.Context) error {
+func (it *iterable) Commit(watermark goconnect.Watermark, ctx *goconnect.Context) error {
 	it.offset = watermark[0].(int)
 	//log.Println("ITERABLE COMMIT: ", watermark[0])
 	return nil

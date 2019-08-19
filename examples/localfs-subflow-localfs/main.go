@@ -36,10 +36,10 @@ var (
 
 func main() {
 
-	//TODO var subflow goc.MapFn =  str.Split('\n') >
+	//TODO var subflow goconnect.MapFn =  str.Split('\n') >
 	//TODO the flat map stage has to be able to resume mid-way through a file
 
-	pipeline := goc.NewPipeline().WithCoders(coder.Registry()).Par(2)
+	pipeline := goconnect.NewPipeline().WithCoders(coder.Registry()).Par(2)
 
 	//root source of text elements
 	pipeline.
@@ -50,7 +50,7 @@ func main() {
 		//TODO Map( subflow ).
 		Apply(new(file.Text)).
 		Map(func(in string) string { return strings.ToUpper(in) }).Par(4).
-		//TODO Apply(new(network.NetMergeOrdered)). - this is not working atm because the there is a flat map after network spli
+		//TODO Apply(new(network.NetMergeOrdered)). - this is not working atm because the there is a flat map after network split
 		Apply(new(std.Out)).TriggerEach(1)
 
 	//pipeline.Run()

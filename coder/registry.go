@@ -8,8 +8,8 @@ import (
 	"github.com/amient/goconnect/coder/xml"
 )
 
-func Registry() []goc.Transform {
-	return []goc.Transform{
+func Registry() []goconnect.Transform {
+	return []goconnect.Transform{
 		new(xml.Decoder),
 		new(xml.Encoder),
 		new(str.Decoder),

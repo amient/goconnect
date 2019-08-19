@@ -50,11 +50,11 @@ func (node *Node) GetNumPeers() uint16 {
 	return uint16(len(node.nodes))
 }
 
-func (node *Node) MakeReceiver(stageId uint16) goc.Receiver {
+func (node *Node) MakeReceiver(stageId uint16) goconnect.Receiver {
 	return node.server.NewReceiver(stageId)
 }
 
-func (node *Node) NewSender(targetNodeId uint16, stageId uint16) goc.Sender {
+func (node *Node) NewSender(targetNodeId uint16, stageId uint16) goconnect.Sender {
 	addr := node.nodes[targetNodeId-1]
 	sender := newSender(addr, stageId, node.server.ID)
 	if err := sender.Start(); err != nil {

@@ -25,7 +25,7 @@ import (
 	"strings"
 )
 
-func Split(separator string) goc.Processor {
+func Split(separator string) goconnect.Processor {
 	return &Splitter{separator: separator}
 }
 
@@ -34,17 +34,17 @@ type Splitter struct {
 }
 
 func (s *Splitter) InType() reflect.Type {
-	return goc.StringType
+	return goconnect.StringType
 }
 
 func (s *Splitter) OutType() reflect.Type {
-	return goc.StringType
+	return goconnect.StringType
 }
 
-func (s *Splitter) Materialize() func(input *goc.Element, ctx goc.PContext) {
-	return func(input *goc.Element, ctx goc.PContext) {
+func (s *Splitter) Materialize() func(input *goconnect.Element, ctx goconnect.PContext) {
+	return func(input *goconnect.Element, ctx goconnect.PContext) {
 		for _, s := range strings.Split(input.Value.(string), s.separator) {
-			ctx.Emit(&goc.Element{Value: s})
+			ctx.Emit(&goconnect.Element{Value: s})
 		}
 	}
 }

@@ -27,7 +27,7 @@ import (
 	"time"
 )
 
-func Runner(pipeline *goc.Pipeline, addrLists ...string) {
+func Runner(pipeline *goconnect.Pipeline, addrLists ...string) {
 
 	addrs := make([]string, 0)
 	for _, list := range addrLists {
@@ -36,14 +36,14 @@ func Runner(pipeline *goc.Pipeline, addrLists ...string) {
 
 	localNodes := JoinCluster(addrs...)
 
-	graphs := make([]goc.Graph, len(localNodes))
+	graphs := make([]goconnect.Graph, len(localNodes))
 	for i, node := range localNodes {
-		graphs[i] = goc.ConnectStages(node, pipeline)
+		graphs[i] = goconnect.ConnectStages(node, pipeline)
 	}
 
 	start := time.Now()
 	log.Println("Running all graphs")
-	goc.RunGraphs(graphs...)
+	goconnect.RunGraphs(graphs...)
 
 	log.Printf("All stages completed in %f0.0 s", time.Now().Sub(start).Seconds())
 	for _, node := range localNodes {

@@ -29,31 +29,31 @@ import (
 type Out struct {}
 
 func (sink *Out) InType() reflect.Type {
-	return goc.AnyType
+	return goconnect.AnyType
 }
 
-func (sink *Out) Process(input *goc.Element, ctx *goc.Context) {
+func (sink *Out) Process(input *goconnect.Element, ctx *goconnect.Context) {
 	if ctx.Get(0) == nil {
-		ctx.Put(0,  new([]*goc.Element))
+		ctx.Put(0,  new([]*goconnect.Element))
 		ctx.Put(1,  bufio.NewWriter(os.Stdout))
 	}
-	buffer := ctx.Get(0).(*[]*goc.Element)
+	buffer := ctx.Get(0).(*[]*goconnect.Element)
 	stdout := ctx.Get(1).(*bufio.Writer)
 	process(stdout, input.Value)
 	*buffer = append(*buffer, input)
 }
 
-func (sink *Out) Flush(ctx *goc.Context) error {
+func (sink *Out) Flush(ctx *goconnect.Context) error {
 	var result error
 	if ctx.Get(0) != nil {
-		buffer := ctx.Get(0).(*[]*goc.Element)
+		buffer := ctx.Get(0).(*[]*goconnect.Element)
 		stdout := ctx.Get(1).(*bufio.Writer)
 		if len(*buffer) > 0 {
 			result = stdout.Flush()
 			for _, e := range *buffer {
 				e.Ack()
 			}
-			*buffer = make([]*goc.Element, 0, 100)
+			*buffer = make([]*goconnect.Element, 0, 100)
 		}
 	}
 	return result

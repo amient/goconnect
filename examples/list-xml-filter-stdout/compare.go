@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func main() {
+func main_() {
 
 	start := time.Now()
 

@@ -117,7 +117,7 @@ func (server *Server) NewReceiver(handlerId uint16) *TCPReceiver {
 		server:   server,
 		eosCount: int32(server.numNodes),
 		duplex:   make(map[uint16]*Duplex),
-		down:     make(chan *goc.Element, 100), //TODO the capacity should be the number of nodes
+		down:     make(chan *goconnect.Element, 100), //TODO the capacity should be the number of nodes
 	}
 	if handlerId > 0 {
 		//log.Printf("REGISTER[%v] %d", server.addr, handlerId)
@@ -129,7 +129,7 @@ func (server *Server) NewReceiver(handlerId uint16) *TCPReceiver {
 type TCPReceiver struct {
 	id       uint16
 	server   *Server
-	down     chan *goc.Element
+	down     chan *goconnect.Element
 	eosCount int32
 	refCount int32
 	duplex   map[uint16]*Duplex
@@ -180,13 +180,13 @@ func (h *TCPReceiver) handle(duplex *Duplex, conn net.Conn) {
 			fromNodeId := duplex.readUInt16()
 			unix := int64(duplex.readUInt64())
 			uniq := duplex.readUInt64()
-			stamp := goc.Stamp{
+			stamp := goconnect.Stamp{
 				Unix: unix,
 				Uniq: uniq,
 			}
 			//element value second
 			value := duplex.readSlice()
-			h.down <- &goc.Element{
+			h.down <- &goconnect.Element{
 				Stamp:      stamp,
 				Value:      value,
 				FromNodeId: fromNodeId,
@@ -207,7 +207,7 @@ func (h *TCPReceiver) handle(duplex *Duplex, conn net.Conn) {
 
 }
 
-func (h *TCPReceiver) Elements() <-chan *goc.Element {
+func (h *TCPReceiver) Elements() <-chan *goconnect.Element {
 	return h.down
 }
 

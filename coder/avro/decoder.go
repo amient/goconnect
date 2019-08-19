@@ -35,7 +35,7 @@ type SchemaRegistryDecoder struct {
 }
 
 func (cf *SchemaRegistryDecoder) InType() reflect.Type {
-	return goc.BinaryType
+	return goconnect.BinaryType
 }
 
 func (cf *SchemaRegistryDecoder) OutType() reflect.Type {

@@ -63,7 +63,7 @@ func main() {
 
 	flag.Parse()
 
-	pipeline := goc.NewPipeline().WithCoders(coder.Registry())
+	pipeline := goconnect.NewPipeline().WithCoders(coder.Registry())
 
 	r1 := avrolib.NewGenericRecord(schema)
 	r1.Set("seqNo", int64(1000))

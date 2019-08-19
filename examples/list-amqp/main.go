@@ -64,7 +64,7 @@ func main() {
 
 	amqp09.DeclareExchange(*uri, *exchange, *exchangeType, *queue)
 
-	pipeline := goc.NewPipeline().WithCoders(coder.Registry())
+	pipeline := goconnect.NewPipeline().WithCoders(coder.Registry())
 
 	pipeline.
 		Root(io.RoundRobin(100000, data)).

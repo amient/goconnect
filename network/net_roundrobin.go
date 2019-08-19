@@ -27,14 +27,14 @@ import (
 type NetRoundRobin struct{}
 
 func (n *NetRoundRobin) InType() reflect.Type {
-	return goc.BinaryType
+	return goconnect.BinaryType
 }
 
 func (n *NetRoundRobin) OutType() reflect.Type {
-	return goc.BinaryType
+	return goconnect.BinaryType
 }
 
-func (n *NetRoundRobin) Run(input <-chan *goc.Element, context *goc.Context) {
+func (n *NetRoundRobin) Run(input <-chan *goconnect.Element, context *goconnect.Context) {
 	receiver := context.GetReceiver()
 	senders := context.MakeSenders()
 	go func() {

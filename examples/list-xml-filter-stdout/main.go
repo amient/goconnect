@@ -36,7 +36,7 @@ var data = []string{
 
 func main() {
 
-	pipeline := goc.NewPipeline().WithCoders(coder.Registry()).Par(2)
+	pipeline := goconnect.NewPipeline().WithCoders(coder.Registry()).Par(2)
 
 	//root source of text elements
 	pipeline.

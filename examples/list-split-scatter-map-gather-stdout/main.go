@@ -37,7 +37,7 @@ var (
 
 func main() {
 
-	pipeline := goc.NewPipeline().WithCoders(coder.Registry()).Par(4)
+	pipeline := goconnect.NewPipeline().WithCoders(coder.Registry()).Par(4)
 
 	pipeline.
 		Root(io.From([]string{"aaa\tbbb\tccc", "ddd", "eee", "fff", "ggg\thhh"})).

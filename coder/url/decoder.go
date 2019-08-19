@@ -30,7 +30,7 @@ import (
 type Decoder struct{}
 
 func (d *Decoder) InType() reflect.Type {
-	return goc.BinaryType
+	return goconnect.BinaryType
 }
 
 func (d *Decoder) OutType() reflect.Type {

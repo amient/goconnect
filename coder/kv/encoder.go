@@ -27,16 +27,16 @@ import (
 type NilKeyEncoder struct{}
 
 func (d *NilKeyEncoder) InType() reflect.Type {
-	return goc.BinaryType
+	return goconnect.BinaryType
 }
 
 func (d *NilKeyEncoder) OutType() reflect.Type {
-	return goc.KVBinaryType
+	return goconnect.KVBinaryType
 }
 
 func (d *NilKeyEncoder)  Materialize() func(input interface{}) interface{} {
 	return func(input interface{}) interface{} {
-		return &goc.KVBinary{
+		return &goconnect.KVBinary{
 			Key:   nil,
 			Value: input.([]byte),
 		}

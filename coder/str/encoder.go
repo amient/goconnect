@@ -27,11 +27,11 @@ import (
 type Encoder struct{}
 
 func (d *Encoder) InType() reflect.Type {
-	return goc.StringType
+	return goconnect.StringType
 }
 
 func (d *Encoder) OutType() reflect.Type {
-	return goc.BinaryType
+	return goconnect.BinaryType
 }
 
 func (d *Encoder)  Materialize() func(input interface{}) interface{} {

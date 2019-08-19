@@ -105,7 +105,7 @@ func (sender *TCPSender) SendJoin(nodeId int, server *Server, numNodes int) {
 	sender.Close()
 }
 
-func (sender *TCPSender) Send(e *goc.Element) {
+func (sender *TCPSender) Send(e *goconnect.Element) {
 	sender.duplex.writeUInt16(2) //magic
 	sender.duplex.writeUInt16(sender.nodeId)
 	sender.duplex.writeUInt64(uint64(e.Stamp.Unix))

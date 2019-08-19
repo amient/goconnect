@@ -34,7 +34,7 @@ func (e *JsonEncoder) InType() reflect.Type {
 }
 
 func (e *JsonEncoder) OutType() reflect.Type {
-	return goc.StringType
+	return goconnect.StringType
 }
 
 func (e *JsonEncoder)  Materialize() func(input interface{}) interface{} {
@@ -82,7 +82,7 @@ func (cf *SchemaRegistryEncoder) InType() reflect.Type {
 }
 
 func (cf *SchemaRegistryEncoder) OutType() reflect.Type {
-	return goc.BinaryType
+	return goconnect.BinaryType
 }
 
 func (cf *SchemaRegistryEncoder) Materialize() func(input interface{}) interface{} {

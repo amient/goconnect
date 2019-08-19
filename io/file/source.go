@@ -35,7 +35,7 @@ func (s *Source) OutType() reflect.Type {
 	return url.UrlType
 }
 
-func (s *Source) Run(ctx *goc.Context) {
+func (s *Source) Run(ctx *goconnect.Context) {
 	//TODO select one node on each host, not one node out of all nodes
 	if ctx.GetNodeID() == 1 {
 		if files, err := ioutil.ReadDir(s.Path); err != nil {
@@ -45,8 +45,8 @@ func (s *Source) Run(ctx *goc.Context) {
 			for i, f := range files {
 				//TODO generate local dir complex checkpoint (timestamp + []incomplete)
 				//TODO general representation of a file (not io.FileInfo or sftp.Url but goc.Url)
-				ctx.Emit(&goc.Element{
-					Checkpoint: goc.Checkpoint{0, i},
+				ctx.Emit(&goconnect.Element{
+					Checkpoint: goconnect.Checkpoint{0, i},
 					Value: &url.Url{
 						Proto: "file",
 						Path:  s.Path,
@@ -59,6 +59,6 @@ func (s *Source) Run(ctx *goc.Context) {
 	}
 }
 
-func (s *Source) Commit(goc.Watermark, *goc.Context) error {
+func (s *Source) Commit(goconnect.Watermark, *goconnect.Context) error {
 	return nil
 }

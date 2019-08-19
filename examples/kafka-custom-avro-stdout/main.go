@@ -42,7 +42,7 @@ func main() {
 
 	flag.Parse()
 
-	pipeline := goc.NewPipeline().WithCoders(coder.Registry())
+	pipeline := goconnect.NewPipeline().WithCoders(coder.Registry())
 
 	consumerConfig := kafka.ConfigMap{"bootstrap.servers": *kafkaSourceBootstrap, "group.id": *kafkaSourceGroup}
 
@@ -58,7 +58,7 @@ func main() {
 type KafkaMetricsAvroRegistry struct{}
 
 func (m *KafkaMetricsAvroRegistry) InType() reflect.Type {
-	return goc.KVBinaryType
+	return goconnect.KVBinaryType
 }
 
 func (m *KafkaMetricsAvroRegistry) OutType() reflect.Type {
@@ -67,7 +67,7 @@ func (m *KafkaMetricsAvroRegistry) OutType() reflect.Type {
 
 func (m *KafkaMetricsAvroRegistry)  Materialize() func(input interface{}) interface{} {
 	return func(input interface{}) interface{} {
-		kvBinary := input.(*goc.KVBinary)
+		kvBinary := input.(*goconnect.KVBinary)
 		switch kvBinary.Value[0] {
 		case 0:
 			panic("cannot use rest schema registry for kafka metrics formats")

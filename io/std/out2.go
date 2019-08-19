@@ -31,20 +31,20 @@ import (
 type Out2 struct {}
 
 func (sink *Out2) InType() reflect.Type {
-	return goc.AnyType
+	return goconnect.AnyType
 }
 
 //this type of implementation doesn't work well because it doesn't have a way of hooking into the termination condition
 //TODO in other words we need a processor that takes a channel input which can be exhausted
 //TODO also the meaning of .TriggerEach and .TriggerEvery is not clear
-func (sink *Out2) Materialize() func(input *goc.Element, context goc.PContext) {
+func (sink *Out2) Materialize() func(input *goconnect.Element, context goconnect.PContext) {
 
-	processed := make(chan *goc.Element)
+	processed := make(chan *goconnect.Element)
 
 	go func() {
 		defer log.Println("!!!")
 		stdout := bufio.NewWriter(os.Stdout)
-		buffer := make([]*goc.Element, 0, 100)
+		buffer := make([]*goconnect.Element, 0, 100)
 		flush := func() {
 			if len(buffer) > 0 {
 				if err := stdout.Flush(); err != nil {
@@ -53,7 +53,7 @@ func (sink *Out2) Materialize() func(input *goc.Element, context goc.PContext) {
 				for _, e := range buffer {
 					e.Ack()
 				}
-				buffer = make([]*goc.Element, 0, 100)
+				buffer = make([]*goconnect.Element, 0, 100)
 			}
 		}
 		t := time.NewTicker(50 * time.Millisecond).C
@@ -77,7 +77,7 @@ func (sink *Out2) Materialize() func(input *goc.Element, context goc.PContext) {
 		}
 	}()
 
-	return func(input *goc.Element, context goc.PContext) {
+	return func(input *goconnect.Element, context goconnect.PContext) {
 		processed <- input
 	}
 }

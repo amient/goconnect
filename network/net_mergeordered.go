@@ -27,18 +27,18 @@ import (
 type NetMergeOrdered struct{}
 
 func (n *NetMergeOrdered) InType() reflect.Type {
-	return goc.BinaryType
+	return goconnect.BinaryType
 }
 
 func (n *NetMergeOrdered) OutType() reflect.Type {
-	return goc.BinaryType
+	return goconnect.BinaryType
 }
 
-func (n *NetMergeOrdered) Run(input <-chan *goc.Element, context *goc.Context) {
+func (n *NetMergeOrdered) Run(input <-chan *goconnect.Element, context *goconnect.Context) {
 
 	LastNode := context.GetNumPeers()
 	mergeOnThisNode := context.GetNodeID() == LastNode
-	var recv goc.Receiver
+	var recv goconnect.Receiver
 	if mergeOnThisNode {
 		recv = context.GetReceiver()
 	}
@@ -52,7 +52,7 @@ func (n *NetMergeOrdered) Run(input <-chan *goc.Element, context *goc.Context) {
 	}()
 
 	if mergeOnThisNode {
-		buf := goc.NewOrderedElementSet(10)
+		buf := goconnect.NewOrderedElementSet(10)
 		for e := range recv.Elements() {
 			buf.AddElement(e, context)
 		}

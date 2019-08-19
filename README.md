@@ -73,7 +73,7 @@ a lot more efficient and has a low package and memory footprint - it can run hap
 - file source using network split internally to spread the URLs 
 - subflows
     - file-for-a-file use case
-    - avro applied to kv pairs: goc.KVBinary -> avro.KVGenericDecoder -> avro.KVBinary -> SchemaRegistryKVEncoder(topic) -> goc.KVBinary
+    - avro applied to kv pairs: goconnect.KVBinary -> avro.KVGenericDecoder -> avro.KVBinary -> SchemaRegistryKVEncoder(topic) -> goconnect.KVBinary
 - persistent checkpoints
 - avro: specific decoder and encoder
 - avro-parquet converter

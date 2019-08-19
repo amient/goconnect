@@ -11,7 +11,7 @@ func process(stdout *bufio.Writer, element interface{}) {
 	switch e := element.(type) {
 	case []byte:
 		stdout.Write(e)
-	case *goc.KVBinary:
+	case *goconnect.KVBinary:
 		stdout.Write(e.Key)
 		stdout.WriteString(" -> ")
 		stdout.Write(e.Value)
