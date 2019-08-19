@@ -29,7 +29,7 @@ import (
 
 type Sink struct {
 	Topic           string
-	ProducerConfig  kafka.ConfigMap
+	ProducerConfig  ConfigMap
 	//numProduced     int32 //FIXME this must be done in the Materialize()..
 }
 
@@ -41,11 +41,15 @@ func (sink *Sink) Process(input *goconnect.Element, ctx *goconnect.Context) {
 	var err error
 
 	var producer *kafka.Producer
+	config := kafka.ConfigMap{}
+	for k,v := range sink.ProducerConfig {
+		config.SetKey(k, v)
+	}
 	if ctx.Get(0) != nil {
 		producer = ctx.Get(0).(*kafka.Producer)
 	} else {
 		sink.ProducerConfig["go.delivery.reports"] = true
-		producer, err = kafka.NewProducer(&sink.ProducerConfig)
+		producer, err = kafka.NewProducer(&config)
 		if err != nil {
 			panic(err)
 		}

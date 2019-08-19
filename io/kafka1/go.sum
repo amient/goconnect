@@ -1,3 +1,4 @@
+github.com/amient/goconnect/io/kafka1 v0.0.0-20190819191431-05833c1f1719/go.mod h1:bZn0IQjA3py7ndRtJX5rPJ7siAlrH5vD8yvaXGoV18g=
 github.com/confluentinc/confluent-kafka-go v1.1.0/go.mod h1:u2zNLny2xq+5rWeTQjFHbDzzNuba4P1vo31r9r4uAdg=
 github.com/google/go-cmp v0.3.0/go.mod h1:8QqcDgzrUqlUb/G2PQTWiueGozuR1884gddMywk6iLU=
 github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=

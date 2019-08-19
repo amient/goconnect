@@ -38,7 +38,7 @@ func (c ConsumerCheckpoint) String() string {
 
 type Source struct {
 	Topic          string
-	ConsumerConfig kafka.ConfigMap
+	ConsumerConfig ConfigMap
 }
 
 func (source *Source) OutType() reflect.Type {
@@ -49,7 +49,10 @@ func (source *Source) Run(context *goconnect.Context) {
 	//var start time.Time
 	var total uint64
 	counter := make(map[int32]uint64)
-	config := &source.ConsumerConfig
+	config := kafka.ConfigMap{}
+	for k,v := range source.ConsumerConfig {
+		config.SetKey(k, v)
+	}
 	config.SetKey("go.events.channel.enable", true)
 	config.SetKey("enable.auto.commit", false)
 	defaultTopicConfig, _ := config.Get("default.topic.config", kafka.ConfigMap{})
@@ -61,14 +64,14 @@ func (source *Source) Run(context *goconnect.Context) {
 	SetConfig("auto.offset.reset", "earliest")
 	config.SetKey("default.topic.config", defaultTopicConfig)
 
-	consumer, err := kafka.NewConsumer(config)
+	consumer, err := kafka.NewConsumer(&config)
 	if err != nil {
 		panic(err)
 	}
 
 	context.Put(0, consumer)
 
-	log.Printf("Subscribing to kafka topic %s with group %q", source.Topic, (*config)["group.id"])
+	log.Printf("Subscribing to kafka topic %s with group %q", source.Topic, (config)["group.id"])
 	if err := consumer.Subscribe(source.Topic, nil); err != nil {
 		panic(err)
 	}
