@@ -3,7 +3,7 @@ all: test
 .PHONY: test release
 
 test:
-	@go test
+	@go test ./...
 
 
 release: test
