@@ -25,7 +25,6 @@ import (
 	"github.com/amient/goconnect/coder"
 	"github.com/amient/goconnect/coder/avro"
 	"github.com/amient/goconnect/io/kafka1"
-	"github.com/confluentinc/confluent-kafka-go/kafka"
 	avrolib "github.com/amient/avro"
 )
 
@@ -68,7 +67,7 @@ func main() {
 	pipeline.
 		Root(&kafka1.Source{
 			Topic: *sourceKafkaTopic,
-			ConsumerConfig: kafka.ConfigMap{
+			ConsumerConfig: kafka1.ConfigMap{
 				"bootstrap.servers": *sourceKafkaBootstrap,
 				"group.id":          *sourceKafkaGroup,
 				"sasl.username":     *soureKafkaUsername,
@@ -85,7 +84,7 @@ func main() {
 
 		Apply(&kafka1.Sink{
 			Topic: *sinkKafkaTopic,
-			ProducerConfig: kafka.ConfigMap{
+			ProducerConfig: kafka1.ConfigMap{
 				"bootstrap.servers": *sinkKafkaBootstrap,
 				"sasl.username":     *sinkKafkaUsername,
 				"sasl.password":     *sinkKafkaPassword,

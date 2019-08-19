@@ -25,7 +25,6 @@ import (
 	"github.com/amient/goconnect/coder"
 	"github.com/amient/goconnect/io/kafka1"
 	"github.com/amient/goconnect/io/std"
-	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"time"
 )
 
@@ -41,7 +40,7 @@ func main() {
 
 	source := pipeline.Root(&kafka1.Source{
 		Topic: *kafkaSourceTopic,
-		ConsumerConfig: kafka.ConfigMap{
+		ConsumerConfig: kafka1.ConfigMap{
 			"bootstrap.servers":        *kafkaSourceBootstrap,
 			"group.id":                 *kafkaSourceGroup,
 			"auto.offset.reset":        "earliest",

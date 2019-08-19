@@ -34,10 +34,10 @@ type Sink struct {
 }
 
 func (s *Sink) InType() reflect.Type {
-	return goc.BinaryType
+	return goconnect.BinaryType
 }
 
-func (s *Sink) Process(element *goc.Element, ctx *goc.Context) {
+func (s *Sink) Process(element *goconnect.Element, ctx *goconnect.Context) {
 	var err error
 	var conn *amqp.Connection
 	var channel *amqp.Channel
@@ -95,12 +95,12 @@ func (s *Sink) Process(element *goc.Element, ctx *goc.Context) {
 
 }
 
-func (s *Sink) Flush(ctx *goc.Context) error {
+func (s *Sink) Flush(ctx *goconnect.Context) error {
 	//TODO wait for all confirmations to complete
 	return nil
 }
 
-func (s *Sink) Close(ctx *goc.Context) error {
+func (s *Sink) Close(ctx *goconnect.Context) error {
 	conn := ctx.Get(0).(*amqp.Connection)
 	channel := ctx.Get(1).(*amqp.Channel)
 	if err := channel.Close(); err != nil {

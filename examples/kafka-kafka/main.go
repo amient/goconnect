@@ -47,7 +47,7 @@ func main() {
 
 	source := pipeline.Root(&kafka1.Source{
 		Topic: *kafkaSourceTopic,
-		ConsumerConfig: kafka.ConfigMap{
+		ConsumerConfig: kafka1.ConfigMap{
 			"bootstrap.servers":       *kafkaSourceBootstrap,
 			"group.id":                *kafkaSourceGroup,
 			"auto.offset.reset":       "earliest",

@@ -44,7 +44,7 @@ func (s *Source) Run(ctx *goconnect.Context) {
 			//TODO termination handling
 			for i, f := range files {
 				//TODO generate local dir complex checkpoint (timestamp + []incomplete)
-				//TODO general representation of a file (not io.FileInfo or sftp.Url but goc.Url)
+				//TODO general representation of a file (not io.FileInfo or sftp.Url but goconnect.Url)
 				ctx.Emit(&goconnect.Element{
 					Checkpoint: goconnect.Checkpoint{0, i},
 					Value: &url.Url{

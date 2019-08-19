@@ -25,7 +25,6 @@ import (
 	"github.com/amient/goconnect/coder"
 	"github.com/amient/goconnect/io/amqp09"
 	"github.com/amient/goconnect/io/kafka1"
-	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 var (
@@ -62,7 +61,7 @@ func main() {
 
 	messages.Apply(&kafka1.Sink{
 		Topic: *kafkaSinkTopic,
-		ProducerConfig: kafka.ConfigMap{
+		ProducerConfig: kafka1.ConfigMap{
 			"bootstrap.servers": *kafkaSinkBootstrap,
 			"linger.ms":         100,
 			"message.max.bytes": 200000000,

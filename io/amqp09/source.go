@@ -39,10 +39,10 @@ type Source struct {
 }
 
 func (source *Source) OutType() reflect.Type {
-	return goc.BinaryType
+	return goconnect.BinaryType
 }
 
-func (source *Source) Run(context *goc.Context) {
+func (source *Source) Run(context *goconnect.Context) {
 	var err error
 
 	log.Printf("AMQP dialing %q ..", source.Uri)
@@ -95,16 +95,16 @@ func (source *Source) Run(context *goc.Context) {
 			if !ok {
 				return
 			}
-			context.Emit(&goc.Element{
-				Stamp:      goc.Stamp{Unix: delivery.Timestamp.Unix()},
-				Checkpoint: goc.Checkpoint{Data: delivery.DeliveryTag},
+			context.Emit(&goconnect.Element{
+				Stamp:      goconnect.Stamp{Unix: delivery.Timestamp.Unix()},
+				Checkpoint: goconnect.Checkpoint{Data: delivery.DeliveryTag},
 				Value:      delivery.Body,
 			})
 		}
 	}
 }
 
-func (source *Source) Commit(checkpoint goc.Watermark, ctx *goc.Context) error {
+func (source *Source) Commit(checkpoint goconnect.Watermark, ctx *goconnect.Context) error {
 	channel := ctx.Get(1).(*amqp.Channel)
 	lastCommitTag := ctx.Get(2).(uint64)
 	lastCommitTime := ctx.Get(3).(time.Time)
@@ -126,7 +126,7 @@ func (source *Source) Commit(checkpoint goc.Watermark, ctx *goc.Context) error {
 	return nil
 }
 
-func (source *Source) Close(ctx *goc.Context) error {
+func (source *Source) Close(ctx *goconnect.Context) error {
 	conn := ctx.Get(0).(*amqp.Connection)
 	channel := ctx.Get(1).(*amqp.Channel)
 

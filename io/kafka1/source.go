@@ -42,10 +42,10 @@ type Source struct {
 }
 
 func (source *Source) OutType() reflect.Type {
-	return goc.KVBinaryType
+	return goconnect.KVBinaryType
 }
 
-func (source *Source) Run(context *goc.Context) {
+func (source *Source) Run(context *goconnect.Context) {
 	//var start time.Time
 	var total uint64
 	counter := make(map[int32]uint64)
@@ -94,13 +94,13 @@ func (source *Source) Run(context *goc.Context) {
 					counter[e.TopicPartition.Partition] = 0
 				}
 				counter[e.TopicPartition.Partition]++
-				context.Emit(&goc.Element{
-					Stamp: goc.Stamp{Unix: e.Timestamp.Unix()},
-					Checkpoint: goc.Checkpoint{
+				context.Emit(&goconnect.Element{
+					Stamp: goconnect.Stamp{Unix: e.Timestamp.Unix()},
+					Checkpoint: goconnect.Checkpoint{
 						Part: int(e.TopicPartition.Partition),
 						Data: e.TopicPartition.Offset,
 					},
-					Value: &goc.KVBinary{
+					Value: &goconnect.KVBinary{
 						Key:   e.Key,
 						Value: e.Value,
 					},
@@ -120,7 +120,7 @@ func (source *Source) Run(context *goc.Context) {
 	}
 }
 
-func (source *Source) Commit(checkpoint goc.Watermark, ctx *goc.Context) error {
+func (source *Source) Commit(checkpoint goconnect.Watermark, ctx *goconnect.Context) error {
 	consumer := ctx.Get(0).(*kafka.Consumer)
 	var offsets []kafka.TopicPartition
 	for k, v := range checkpoint {
@@ -140,7 +140,7 @@ func (source *Source) Commit(checkpoint goc.Watermark, ctx *goc.Context) error {
 	return nil
 }
 
-func (source *Source) Close(ctx *goc.Context) error {
+func (source *Source) Close(ctx *goconnect.Context) error {
 	consumer := ctx.Get(0).(*kafka.Consumer)
 	log.Println("Closing Kafka Consumer")
 	//FIXME closing kafka consumer doesn't remove the client from the group, only after zk timeout

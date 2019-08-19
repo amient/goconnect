@@ -36,8 +36,8 @@ func TestNetworkTools(t *testing.T) {
 	server.Start()
 	sender.Start()
 
-	fixture := goc.Element{
-		Stamp: goc.Stamp{
+	fixture := goconnect.Element{
+		Stamp: goconnect.Stamp{
 			Unix: time.Now().Unix(),
 			Uniq: 1,
 		},

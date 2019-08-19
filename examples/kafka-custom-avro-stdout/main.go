@@ -28,7 +28,6 @@ import (
 	"github.com/amient/goconnect/coder/avro"
 	"github.com/amient/goconnect/io/kafka1"
 	"github.com/amient/goconnect/io/std"
-	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"reflect"
 )
 
@@ -44,7 +43,7 @@ func main() {
 
 	pipeline := goconnect.NewPipeline().WithCoders(coder.Registry())
 
-	consumerConfig := kafka.ConfigMap{"bootstrap.servers": *kafkaSourceBootstrap, "group.id": *kafkaSourceGroup}
+	consumerConfig := kafka1.ConfigMap{"bootstrap.servers": *kafkaSourceBootstrap, "group.id": *kafkaSourceGroup}
 
 	pipeline.Root(&kafka1.Source{*kafkaSourceTopic, consumerConfig}).
 		Apply(new(KafkaMetricsAvroRegistry)).

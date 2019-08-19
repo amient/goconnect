@@ -34,10 +34,10 @@ type Sink struct {
 }
 
 func (sink *Sink) InType() reflect.Type {
-	return goc.KVBinaryType
+	return goconnect.KVBinaryType
 }
 
-func (sink *Sink) Process(input *goc.Element, ctx *goc.Context) {
+func (sink *Sink) Process(input *goconnect.Element, ctx *goconnect.Context) {
 	var err error
 
 	var producer *kafka.Producer
@@ -57,7 +57,7 @@ func (sink *Sink) Process(input *goc.Element, ctx *goc.Context) {
 		}()
 
 	}
-	kv := input.Value.(*goc.KVBinary)
+	kv := input.Value.(*goconnect.KVBinary)
 
 	for {
 		select {
@@ -77,7 +77,7 @@ func (sink *Sink) Process(input *goc.Element, ctx *goc.Context) {
 	}
 }
 
-func (sink *Sink) Flush(ctx *goc.Context) error {
+func (sink *Sink) Flush(ctx *goconnect.Context) error {
 	if ctx.Get(0) != nil {
 		producer := ctx.Get(0).(*kafka.Producer)
 		var outstanding int
@@ -98,7 +98,7 @@ func (sink *Sink) processKafkaEvent(e kafka.Event) {
 		if ev.TopicPartition.Error != nil {
 			panic(fmt.Errorf("Delivery failed: %v\n", ev.TopicPartition))
 		} else {
-			ev.Opaque.(*goc.Element).Ack()
+			ev.Opaque.(*goconnect.Element).Ack()
 			//n := atomic.AddInt32(&sink.numProduced, -1)
 			//if n == 0 {
 			//	log.Println("Kafka Sink in a clean state")
@@ -107,7 +107,7 @@ func (sink *Sink) processKafkaEvent(e kafka.Event) {
 	}
 }
 
-func (sink *Sink) Close(ctx *goc.Context) error {
+func (sink *Sink) Close(ctx *goconnect.Context) error {
 	if ctx.Get(0) != nil {
 		producer := ctx.Get(0).(*kafka.Producer)
 		producer.Close()

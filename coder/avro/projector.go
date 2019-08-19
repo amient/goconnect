@@ -26,7 +26,10 @@ func (p *GenericProjector) Materialize() func(input interface{}) interface{} {
 		} else {
 			projection := projections[*f]
 			if projection == nil {
-				projection = avrolib.NewDatumProjector(p.TargetSchema, avroBinary.Schema)
+				projection, err = avrolib.NewDatumProjector(p.TargetSchema, avroBinary.Schema)
+				if err != nil {
+					panic(err)
+				}
 				projections[*f] = projection
 			}
 			decodedRecord := avrolib.NewGenericRecord(p.TargetSchema)

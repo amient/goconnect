@@ -109,7 +109,7 @@ func (cf *SchemaRegistryEncoder) Materialize() func(input interface{}) interface
 
 //TODO SpecificEncoder
 
-//TODO KVGenericEncoder (avro.KVBinary > goc.KVBinary)
+//TODO KVGenericEncoder (avro.KVBinary > goconnect.KVBinary)
 
 //TODO type SchemaRegistryKVEncoder struct {
 //	Url   string
@@ -125,10 +125,10 @@ func (cf *SchemaRegistryEncoder) Materialize() func(input interface{}) interface
 //}
 //
 //func (cf *SchemaRegistryKVEncoder) OutType() reflect.Type {
-//	return goc.KVBinaryType
+//	return goconnect.KVBinaryType
 //}
 //
-//func (cf *SchemaRegistryKVEncoder) Materialize() func(input *goc.Element, context goc.PContext) {
+//func (cf *SchemaRegistryKVEncoder) Materialize() func(input *goconnect.Element, context goconnect.PContext) {
 //	if cf.Topic == "" {
 //		panic("Topic not defined for SchemaRegistryKVEncoder")
 //	}

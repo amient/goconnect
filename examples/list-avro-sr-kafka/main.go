@@ -26,7 +26,6 @@ import (
 	"github.com/amient/goconnect/coder/avro"
 	"github.com/amient/goconnect/io"
 	"github.com/amient/goconnect/io/kafka1"
-	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 import avrolib "github.com/amient/avro"
 
@@ -80,7 +79,7 @@ func main() {
 		Apply(&avro.SchemaRegistryEncoder{Url: *schemaRegistryUrl, Subject: *kafkaTopic + "-value"}).
 		Apply(&kafka1.Sink{
 			Topic: *kafkaTopic,
-			ProducerConfig: kafka.ConfigMap{
+			ProducerConfig: kafka1.ConfigMap{
 				"bootstrap.servers": *kafkaBootstrap,
 				"security.protocol": "SASL_SSL",
 				"sasl.mechanisms":   "PLAIN",
