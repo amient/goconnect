@@ -21,10 +21,10 @@ package main
 
 import (
 	"flag"
-	"github.com/amient/goconnect/pkg/goc"
-	"github.com/amient/goconnect/pkg/goc/coder"
-	"github.com/amient/goconnect/pkg/goc/io"
-	"github.com/amient/goconnect/pkg/goc/io/amqp09"
+	"github.com/amient/goconnect"
+	"github.com/amient/goconnect/coder"
+	"github.com/amient/goconnect/io"
+	"github.com/amient/goconnect/io/amqp09"
 )
 
 var (

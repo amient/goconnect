@@ -21,9 +21,9 @@ package main
 
 import (
 	"flag"
-	"github.com/amient/goconnect/pkg/goc"
-	"github.com/amient/goconnect/pkg/goc/coder"
-	"github.com/amient/goconnect/pkg/goc/io/kafka1"
+	"github.com/amient/goconnect"
+	"github.com/amient/goconnect/coder"
+	"github.com/amient/goconnect/io/kafka1"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 

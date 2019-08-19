@@ -20,11 +20,11 @@
 package main
 
 import (
-	"github.com/amient/goconnect/pkg/goc"
-	"github.com/amient/goconnect/pkg/goc/coder"
-	"github.com/amient/goconnect/pkg/goc/coder/xml"
-	"github.com/amient/goconnect/pkg/goc/io"
-	"github.com/amient/goconnect/pkg/goc/io/std"
+	"github.com/amient/goconnect"
+	"github.com/amient/goconnect/coder"
+	"github.com/amient/goconnect/coder/xml"
+	"github.com/amient/goconnect/io"
+	"github.com/amient/goconnect/io/std"
 	"strings"
 )
 

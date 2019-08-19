@@ -21,12 +21,12 @@ package main
 
 import (
 	"flag"
-	"github.com/amient/goconnect/pkg/goc"
-	"github.com/amient/goconnect/pkg/goc/coder"
-	"github.com/amient/goconnect/pkg/goc/coder/str"
-	"github.com/amient/goconnect/pkg/goc/io"
-	"github.com/amient/goconnect/pkg/goc/io/std"
-	"github.com/amient/goconnect/pkg/goc/network"
+	"github.com/amient/goconnect"
+	"github.com/amient/goconnect/coder"
+	"github.com/amient/goconnect/coder/str"
+	"github.com/amient/goconnect/io"
+	"github.com/amient/goconnect/io/std"
+	"github.com/amient/goconnect/network"
 	"strings"
 )
 

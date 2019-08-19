@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/amient/goconnect/pkg/goc/coder/xml"
+	"github.com/amient/goconnect/coder/xml"
 	"log"
 	"strings"
 	"time"
