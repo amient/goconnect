@@ -51,7 +51,7 @@ func main() {
 
 	//Apply(&kafka1.Sink{
 	//	Topic:          "test",
-	//	ProducerConfig: kafka.ConfigMap{
+	//	ProducerConfig: kafka1.ConfigMap{
 	//		"bootstrap.servers": "localhost:9092",
 	//		"linger.ms": 100,
 	//	},

@@ -24,7 +24,6 @@ import (
 	"github.com/amient/goconnect"
 	"github.com/amient/goconnect/coder"
 	"github.com/amient/goconnect/io/kafka1"
-	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 var (
@@ -60,7 +59,7 @@ func main() {
 
 	source.Apply(&kafka1.Sink{
 		Topic: *kafkaSinkTopic,
-		ProducerConfig: kafka.ConfigMap{
+		ProducerConfig: kafka1.ConfigMap{
 			"bootstrap.servers": *kafkaSinkBootstrap,
 			"security.protocol": "SASL_SSL",
 			"sasl.mechanisms":   "PLAIN",
