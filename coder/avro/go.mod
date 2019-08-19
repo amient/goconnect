@@ -6,4 +6,4 @@ require github.com/amient/avro v0.4.8
 
 require github.com/amient/goconnect v0.0.0
 
-replace github.com/amient/goconnect => ../../
+replace github.com/amient/goconnect v0.0.0 => ../../

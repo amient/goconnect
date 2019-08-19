@@ -7,4 +7,4 @@ require (
 	github.com/streadway/amqp v0.0.0-20190815230801-eade30b20f1d
 )
 
-replace github.com/amient/goconnect => ../../
+replace github.com/amient/goconnect v0.0.0 => ../../

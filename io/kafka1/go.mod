@@ -8,4 +8,4 @@ require (
 	gotest.tools/v3 v3.0.0
 )
 
-replace github.com/amient/goconnect => ../../
+replace github.com/amient/goconnect v0.0.0 => ../../
