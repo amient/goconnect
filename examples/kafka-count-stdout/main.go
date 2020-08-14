@@ -29,21 +29,32 @@ import (
 )
 
 var (
-	kafkaSourceBootstrap = flag.String("kafka.source.bootstrap", "localhost:9092", "Kafka Bootstrap servers for the source topis")
-	kafkaSourceGroup     = flag.String("kafka.source.group", "santest", "Source Kafka Consumer Group")
-	kafkaSourceTopic     = flag.String("kafka.source.topic", "santest", "Source Kafka Topic")
+	kafkaSourceBootstrap = flag.String("source-bootstrap", "localhost:9092", "Kafka Bootstrap servers for the source topis")
+	kafkaSourceGroup     = flag.String("source-group", "santest", "Source Kafka Consumer Group")
+	kafkaSourceTopic     = flag.String("source-topic", "santest", "Source Kafka Topic")
+	kafkaCaCert          = flag.String("source-ca-cert", "", "Source Kafka CA Certificate")
+	kafkaUsername        = flag.String("source-username", "", "Source Kafka Principal")
+	kafkaPassword        = flag.String("source-password", "", "Source Kafka Principal Password")
 )
 
 func main() {
+
+	flag.Parse()
 
 	pipeline := goconnect.NewPipeline().WithCoders(coder.Registry())
 
 	source := pipeline.Root(&kafka1.Source{
 		Topic: *kafkaSourceTopic,
 		ConsumerConfig: kafka1.ConfigMap{
-			"bootstrap.servers":        *kafkaSourceBootstrap,
-			"group.id":                 *kafkaSourceGroup,
-			"auto.offset.reset":        "earliest",
+			"bootstrap.servers": *kafkaSourceBootstrap,
+			"security.protocol": "SASL_SSL",
+			"sasl.mechanisms":   "PLAIN",
+			"sasl.username":     *kafkaUsername,
+			"sasl.password":     *kafkaPassword,
+			//"debug": 			"protocol,cgrp",
+			"ssl.ca.location":  *kafkaCaCert,
+			"group.id":          *kafkaSourceGroup,
+			"auto.offset.reset": "earliest",
 		}}).Buffer(100000)
 
 	source.Count().TriggerEvery(time.Second).Apply(new(std.Out)).TriggerEach(1)

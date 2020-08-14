@@ -60,7 +60,6 @@ func (source *Source) Run(context *goconnect.Context) {
 		v, _ := config.Get(key, defVal)
 		defaultTopicConfig.(kafka.ConfigMap).SetKey(key, v)
 	}
-	SetConfig("enable.auto.commit", false)
 	SetConfig("auto.offset.reset", "earliest")
 	config.SetKey("default.topic.config", defaultTopicConfig)
 
@@ -117,7 +116,11 @@ func (source *Source) Run(context *goconnect.Context) {
 				}
 
 			case kafka.Error:
-				panic(e)
+				if !e.IsFatal()  {
+					fmt.Println(e)
+				} else {
+					panic(e)
+				}
 			}
 		}
 	}

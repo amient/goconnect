@@ -30,8 +30,9 @@ import (
 var (
 	kafkaBootstrap = flag.String("kafka-bootstrap", "localhost:9092", "Kafka Destination Bootstrap servers")
 	kafkaTopic     = flag.String("kafka-topic", "test", "Destination Kafka Topic")
-	kafkaUsername  = flag.String("username", "", "Kafka Principal")
-	kafkaPassword  = flag.String("password", "", "Kafka Principal Password")
+	kafkaCaCert    = flag.String("ca-cert", "", "Destination Kafka CA Certificate")
+	kafkaUsername  = flag.String("username", "", "Destination Kafka Principal")
+	kafkaPassword  = flag.String("password", "", "Destination Kafka Principal Password")
 
 	data = []string{
 		`<?xml version="1.0" encoding="UTF-8"?>
@@ -72,8 +73,10 @@ func main() {
 				"sasl.mechanisms":   "PLAIN",
 				"sasl.username":     *kafkaUsername,
 				"sasl.password":     *kafkaPassword,
-				"linger.ms":         50,
-				"compression.type":  "snappy",
+				//"debug": 			"protocol,cgrp",
+				"ssl.ca.location":  *kafkaCaCert,
+				"linger.ms":        50,
+				"compression.type": "snappy",
 			}})
 	pipeline.Run()
 

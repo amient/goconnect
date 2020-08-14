@@ -1,6 +1,6 @@
 module github.com/amient/goconnect/examples
 
-go 1.12
+go 1.13
 
 require (
 	github.com/amient/goconnect v0.0.0-20190819193555-d609bdff049f
