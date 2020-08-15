@@ -28,10 +28,10 @@ import (
 
 type SchemaRegistryDecoder struct {
 	Url string
-	//TODO add ca cert
-	//TODO add ssl cert
-	//TODO add ssl key
-	//TODO add ssl key password
+	CaCertFile     string
+	ClientCertFile string
+	ClientKeyFile  string
+	ClientKeyPass  string
 }
 
 func (cf *SchemaRegistryDecoder) InType() reflect.Type {
@@ -44,6 +44,11 @@ func (cf *SchemaRegistryDecoder) OutType() reflect.Type {
 
 func (cf *SchemaRegistryDecoder) Materialize() func(input interface{}) interface{} {
 	client := &avro.SchemaRegistryClient{Url: cf.Url}
+	var err error
+	client.Tls, err = avro.TlsConfigFromPEM(cf.ClientCertFile, cf.ClientKeyFile, cf.ClientKeyPass, cf.CaCertFile)
+	if err != nil {
+		panic(err)
+	}
 	return func(input interface{}) interface{} {
 		bytes := input.([]byte)
 		switch bytes[0] {

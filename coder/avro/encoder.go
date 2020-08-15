@@ -21,13 +21,9 @@ package avro
 
 import (
 	"bytes"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/binary"
-	"encoding/pem"
 	"github.com/amient/avro"
 	"github.com/amient/goconnect"
-	"io/ioutil"
 	"reflect"
 )
 
@@ -41,7 +37,7 @@ func (e *JsonEncoder) OutType() reflect.Type {
 	return goconnect.StringType
 }
 
-func (e *JsonEncoder)  Materialize() func(input interface{}) interface{} {
+func (e *JsonEncoder) Materialize() func(input interface{}) interface{} {
 	return func(input interface{}) interface{} {
 		return input.(*avro.GenericRecord).String()
 	}
@@ -57,7 +53,7 @@ func (e *GenericEncoder) OutType() reflect.Type {
 	return BinaryType
 }
 
-func (e *GenericEncoder)  Materialize() func(input interface{}) interface{} {
+func (e *GenericEncoder) Materialize() func(input interface{}) interface{} {
 	return func(input interface{}) interface{} {
 		schema := input.(*avro.GenericRecord).Schema()
 		writer := avro.NewGenericDatumWriter().SetSchema(schema)
@@ -73,12 +69,12 @@ func (e *GenericEncoder)  Materialize() func(input interface{}) interface{} {
 }
 
 type SchemaRegistryEncoder struct {
-	Url     	string
-	Subject 	string
-	CaCertFile 	string
-	//TODO add ssl cert
-	//TODO add ssl key
-	//TODO add ssl key password
+	Url            string
+	Subject        string
+	CaCertFile     string
+	ClientCertFile string
+	ClientKeyFile  string
+	ClientKeyPass  string
 }
 
 func (cf *SchemaRegistryEncoder) InType() reflect.Type {
@@ -95,21 +91,10 @@ func (cf *SchemaRegistryEncoder) Materialize() func(input interface{}) interface
 		panic("Subject not defined for SchemaRegistryEncoder")
 	}
 	client := &avro.SchemaRegistryClient{Url: cf.Url}
-	if cf.CaCertFile != "" {
-		rootCAs := x509.NewCertPool()
-		certData, err := ioutil.ReadFile(cf.CaCertFile)
-		if err != nil {
-			panic(err)
-		}
-		block, _ := pem.Decode(certData)
-		cert, err := x509.ParseCertificate(block.Bytes)
-		if err != nil {
-			panic(err)
-		}
-		rootCAs.AddCert(cert)
-		client.Tls = &tls.Config {
-			RootCAs: rootCAs,
-		}
+	var err error
+	client.Tls, err = avro.TlsConfigFromPEM(cf.ClientCertFile, cf.ClientKeyFile, cf.ClientKeyPass, cf.CaCertFile)
+	if err != nil {
+		panic(err)
 	}
 	return func(input interface{}) interface{} {
 		ab := input.(*Binary)
