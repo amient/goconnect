@@ -77,12 +77,12 @@ func main() {
 	pipeline.
 		Root(io.RoundRobin(10000000, []*avrolib.GenericRecord{r1, r2})).Buffer(5000).
 		Apply(new(avro.GenericEncoder)).
-		//Apply(new(std.Out)).TriggerEach(1)
 		Apply(&avro.SchemaRegistryEncoder{
 			Url: *schemaRegistryUrl,
 			Subject: *kafkaTopic + "-value",
 			CaCertFile: *kafkaCaCert,
 		}).
+		//Apply(new(std.Out)).TriggerEach(1).
 		Apply(&kafka1.Sink{
 			Topic: *kafkaTopic,
 			ProducerConfig: kafka1.ConfigMap{
@@ -92,6 +92,7 @@ func main() {
 				"sasl.username":     *kafkaUsername,
 				"sasl.password":     *kafkaPassword,
 				"linger.ms":         50,
+				"ssl.ca.location":   *kafkaCaCert,
 				"compression.type":  "snappy",
 			}})
 	pipeline.Run()

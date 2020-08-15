@@ -108,6 +108,12 @@ func (sink *Sink) processKafkaEvent(e kafka.Event) {
 			//	log.Println("Kafka Sink in a clean state")
 			//}
 		}
+	case *kafka.Error:
+		if ev.IsFatal() {
+			panic(ev)
+		} else {
+			fmt.Println(ev)
+		}
 	}
 }
 
