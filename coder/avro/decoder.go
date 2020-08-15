@@ -49,7 +49,10 @@ func (cf *SchemaRegistryDecoder) Materialize() func(input interface{}) interface
 		switch bytes[0] {
 		case 0:
 			schemaId := binary.BigEndian.Uint32(bytes[1:])
-			schema := client.Get(schemaId)
+			schema, err := client.Get(schemaId)
+			if err != nil {
+				panic(err)
+			}
 			return &Binary{
 				Schema: schema,
 				Data:   bytes[5:],

@@ -21,19 +21,21 @@ package main
 
 import (
 	"flag"
+	avrolib "github.com/amient/avro"
 	"github.com/amient/goconnect"
 	"github.com/amient/goconnect/coder"
 	"github.com/amient/goconnect/coder/avro"
 	"github.com/amient/goconnect/io"
 	"github.com/amient/goconnect/io/kafka1"
 )
-import avrolib "github.com/amient/avro"
+
 
 var (
 	kafkaBootstrap    = flag.String("kafka-bootstrap", "localhost:9092", "Kafka Destination Bootstrap servers")
+	kafkaCaCert       = flag.String("kafka-ca-cert", "", "Destination Kafka CA Certificate")
 	kafkaTopic        = flag.String("kafka-topic", "avro-test", "Destination Kafka Topic")
-	kafkaUsername     = flag.String("username", "", "Destination Kafka Principal")
-	kafkaPassword     = flag.String("password", "", "Destination Kafka Password")
+	kafkaUsername     = flag.String("kafka-username", "", "Destination Kafka Principal")
+	kafkaPassword     = flag.String("kafka-password", "", "Destination Kafka Password")
 	schemaRegistryUrl = flag.String("schema-registry-url", "http://localhost:8082", "Destination Schema Registry")
 
 	schema, err = avrolib.ParseSchema(`{
@@ -76,7 +78,11 @@ func main() {
 		Root(io.RoundRobin(10000000, []*avrolib.GenericRecord{r1, r2})).Buffer(5000).
 		Apply(new(avro.GenericEncoder)).
 		//Apply(new(std.Out)).TriggerEach(1)
-		Apply(&avro.SchemaRegistryEncoder{Url: *schemaRegistryUrl, Subject: *kafkaTopic + "-value"}).
+		Apply(&avro.SchemaRegistryEncoder{
+			Url: *schemaRegistryUrl,
+			Subject: *kafkaTopic + "-value",
+			CaCertFile: *kafkaCaCert,
+		}).
 		Apply(&kafka1.Sink{
 			Topic: *kafkaTopic,
 			ProducerConfig: kafka1.ConfigMap{

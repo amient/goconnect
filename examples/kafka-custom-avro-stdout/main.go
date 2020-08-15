@@ -22,10 +22,10 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/amient/goconnect/examples/kafka-custom-avro-stdout/io.amient.kafka.metrics"
 	"github.com/amient/goconnect"
 	"github.com/amient/goconnect/coder"
 	"github.com/amient/goconnect/coder/avro"
+	"github.com/amient/goconnect/examples/kafka-custom-avro-stdout/io.amient.kafka.metrics"
 	"github.com/amient/goconnect/io/kafka1"
 	"github.com/amient/goconnect/io/std"
 	"reflect"
@@ -35,6 +35,9 @@ var (
 	kafkaSourceBootstrap = flag.String("kafka.source.bootstrap", "localhost:9092", "Kafka Bootstrap servers for the source topis")
 	kafkaSourceGroup     = flag.String("kafka.source.group", "goc-avro-poc", "Source Kafka Consumer Group")
 	kafkaSourceTopic     = flag.String("kafka.source.topic", "_metrics", "Source Kafka Topic")
+	kafkaCaCert          = flag.String("source-ca-cert", "", "Source Kafka CA Certificate")
+	kafkaUsername        = flag.String("source-username", "", "Source Kafka Principal")
+	kafkaPassword        = flag.String("source-password", "", "Source Kafka Principal Password")
 )
 
 func main() {
@@ -43,7 +46,16 @@ func main() {
 
 	pipeline := goconnect.NewPipeline().WithCoders(coder.Registry())
 
-	consumerConfig := kafka1.ConfigMap{"bootstrap.servers": *kafkaSourceBootstrap, "group.id": *kafkaSourceGroup}
+	consumerConfig := kafka1.ConfigMap{
+		"bootstrap.servers": *kafkaSourceBootstrap,
+		"group.id":          *kafkaSourceGroup,
+		"security.protocol": "SASL_SSL",
+		"sasl.mechanisms":   "PLAIN",
+		"sasl.username":     *kafkaUsername,
+		"sasl.password":     *kafkaPassword,
+		"ssl.ca.location":   *kafkaCaCert,
+		//"debug": 			"protocol,cgrp",
+	}
 
 	pipeline.Root(&kafka1.Source{*kafkaSourceTopic, consumerConfig}).
 		Apply(new(KafkaMetricsAvroRegistry)).
@@ -64,7 +76,7 @@ func (m *KafkaMetricsAvroRegistry) OutType() reflect.Type {
 	return avro.BinaryType
 }
 
-func (m *KafkaMetricsAvroRegistry)  Materialize() func(input interface{}) interface{} {
+func (m *KafkaMetricsAvroRegistry) Materialize() func(input interface{}) interface{} {
 	return func(input interface{}) interface{} {
 		kvBinary := input.(*goconnect.KVBinary)
 		switch kvBinary.Value[0] {

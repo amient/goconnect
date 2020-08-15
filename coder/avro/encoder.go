@@ -21,9 +21,13 @@ package avro
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
+	"encoding/pem"
 	"github.com/amient/avro"
 	"github.com/amient/goconnect"
+	"io/ioutil"
 	"reflect"
 )
 
@@ -69,9 +73,9 @@ func (e *GenericEncoder)  Materialize() func(input interface{}) interface{} {
 }
 
 type SchemaRegistryEncoder struct {
-	Url     string
-	Subject string
-	//TODO add ca cert
+	Url     	string
+	Subject 	string
+	CaCertFile 	string
 	//TODO add ssl cert
 	//TODO add ssl key
 	//TODO add ssl key password
@@ -91,9 +95,28 @@ func (cf *SchemaRegistryEncoder) Materialize() func(input interface{}) interface
 		panic("Subject not defined for SchemaRegistryEncoder")
 	}
 	client := &avro.SchemaRegistryClient{Url: cf.Url}
+	if cf.CaCertFile != "" {
+		rootCAs := x509.NewCertPool()
+		certData, err := ioutil.ReadFile(cf.CaCertFile)
+		if err != nil {
+			panic(err)
+		}
+		block, _ := pem.Decode(certData)
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			panic(err)
+		}
+		rootCAs.AddCert(cert)
+		client.Tls = &tls.Config {
+			RootCAs: rootCAs,
+		}
+	}
 	return func(input interface{}) interface{} {
 		ab := input.(*Binary)
-		schemaId := client.GetSchemaId(ab.Schema, cf.Subject)
+		schemaId, err := client.GetSchemaId(ab.Schema, cf.Subject)
+		if err != nil {
+			panic(err)
+		}
 		buf := new(bytes.Buffer)
 		if err := buf.WriteByte(0); err != nil {
 			panic(err)

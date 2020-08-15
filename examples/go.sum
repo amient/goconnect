@@ -1,5 +1,7 @@
 github.com/amient/avro v0.4.8 h1:o9CavU4hL+CZK8ya4OpQ0poVWHMArp+PmMbrVh7QgdY=
 github.com/amient/avro v0.4.8/go.mod h1:PfrRH0jlz9J3UXfW1MgmBri7eiJEztRD6No7jEAvDpc=
+github.com/amient/avro v0.6.1 h1:QWYXrVGuXWGSDhZWLxtfV6/UlRJulRbA0emkR8Flfog=
+github.com/amient/avro v0.6.1/go.mod h1:PfrRH0jlz9J3UXfW1MgmBri7eiJEztRD6No7jEAvDpc=
 github.com/amient/goconnect v0.0.0-20190819191431-05833c1f1719/go.mod h1:EQCjiZdQ4BUgift8XVF2cG4AYiP6ZylzPrREK6IVQIk=
 github.com/amient/goconnect v0.0.0-20190819193555-d609bdff049f h1:hv1M5sc+8j3BaVj1AfS3uA8eOUGFcmqWV1dAej5rPI8=
 github.com/amient/goconnect v0.0.0-20190819193555-d609bdff049f/go.mod h1:EQCjiZdQ4BUgift8XVF2cG4AYiP6ZylzPrREK6IVQIk=
