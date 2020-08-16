@@ -17,6 +17,8 @@ func Registry() []goconnect.Transform {
 		new(url.Decoder),
 		new(url.Encoder),
 		new(kv.NilKeyEncoder),
+		new(kv.NoMetaEncoder),
 		new(kv.IgnoreKeyDecoder),
+		new(kv.NoMetaDecoder),
 	}
 }

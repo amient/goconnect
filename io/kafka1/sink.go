@@ -34,7 +34,7 @@ type Sink struct {
 }
 
 func (sink *Sink) InType() reflect.Type {
-	return goconnect.KVBinaryType
+	return goconnect.KVMBinaryType
 }
 
 func (sink *Sink) Process(input *goconnect.Element, ctx *goconnect.Context) {
@@ -61,13 +61,23 @@ func (sink *Sink) Process(input *goconnect.Element, ctx *goconnect.Context) {
 		}()
 
 	}
-	kv := input.Value.(*goconnect.KVBinary)
+	kv := input.Value.(*goconnect.KVMBinary)
+	var headers []kafka.Header
+	if kv.Headers != nil {
+		headers = make([]kafka.Header, len(kv.Headers))
+		h := 0
+		for k, v := range kv.Headers {
+			headers[h] = kafka.Header{Key: k, Value: v}
+			h++
+		}
+	}
 
 	for {
 		select {
 		case producer.ProduceChannel() <- &kafka.Message{
 			TopicPartition: kafka.TopicPartition{Topic: &sink.Topic, Partition: kafka.PartitionAny},
 			Key:            kv.Key,
+			Headers: 		headers,
 			Value:          kv.Value,
 			Timestamp:      time.Unix(input.Stamp.Unix, 0),
 			Opaque:         input,

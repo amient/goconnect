@@ -42,7 +42,7 @@ type Source struct {
 }
 
 func (source *Source) OutType() reflect.Type {
-	return goconnect.KVBinaryType
+	return goconnect.KVMBinaryType
 }
 
 func (source *Source) Run(context *goconnect.Context) {
@@ -95,6 +95,13 @@ func (source *Source) Run(context *goconnect.Context) {
 				if _, contains := counter[e.TopicPartition.Partition]; !contains {
 					counter[e.TopicPartition.Partition] = 0
 				}
+				var headers map[string][]byte
+				if e.Headers != nil {
+					headers = make(map[string][]byte)
+					for _, h := range e.Headers {
+						headers[h.Key] = h.Value
+					}
+				}
 				counter[e.TopicPartition.Partition]++
 				context.Emit(&goconnect.Element{
 					Stamp: goconnect.Stamp{Unix: e.Timestamp.Unix()},
@@ -102,9 +109,10 @@ func (source *Source) Run(context *goconnect.Context) {
 						Part: int(e.TopicPartition.Partition),
 						Data: e.TopicPartition.Offset,
 					},
-					Value: &goconnect.KVBinary{
+					Value: &goconnect.KVMBinary{
 						Key:   e.Key,
 						Value: e.Value,
+						Headers: headers,
 					},
 				})
 			case kafka.PartitionEOF:

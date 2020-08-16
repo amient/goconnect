@@ -39,3 +39,19 @@ func (d *IgnoreKeyDecoder) Materialize() func(input interface{}) interface{} {
 		return input.(*goconnect.KVBinary).Value
 	}
 }
+
+type NoMetaDecoder struct{}
+
+func (d *NoMetaDecoder) InType() reflect.Type {
+	return goconnect.KVMBinaryType
+}
+
+func (d *NoMetaDecoder) OutType() reflect.Type {
+	return goconnect.BinaryType
+}
+
+func (d *NoMetaDecoder) Materialize() func(input interface{}) interface{} {
+	return func(input interface{}) interface{} {
+		return input.(*goconnect.KVMBinary).Value
+	}
+}

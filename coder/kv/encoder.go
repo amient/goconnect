@@ -42,3 +42,23 @@ func (d *NilKeyEncoder)  Materialize() func(input interface{}) interface{} {
 		}
 	}
 }
+
+type NoMetaEncoder struct{}
+
+func (d *NoMetaEncoder) InType() reflect.Type {
+	return goconnect.BinaryType
+}
+
+func (d *NoMetaEncoder) OutType() reflect.Type {
+	return goconnect.KVMBinaryType
+}
+
+func (d *NoMetaEncoder)  Materialize() func(input interface{}) interface{} {
+	return func(input interface{}) interface{} {
+		return &goconnect.KVMBinary{
+			Key:   nil,
+			Headers: make(map[string][]byte),
+			Value: input.([]byte),
+		}
+	}
+}
