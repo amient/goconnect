@@ -33,10 +33,10 @@ import (
 var (
 	kafkaBootstrap    = flag.String("kafka-bootstrap", "localhost:9092", "Kafka Destination Bootstrap servers")
 	kafkaCaCert       = flag.String("kafka-ca-cert", "", "Destination Kafka CA Certificate")
-	kafkaTopic        = flag.String("kafka-topic", "avro-test", "Destination Kafka Topic")
+	kafkaTopic        = flag.String("kafka-topic", "test_avro", "Destination Kafka Topic")
 	kafkaUsername     = flag.String("kafka-username", "", "Destination Kafka Principal")
 	kafkaPassword     = flag.String("kafka-password", "", "Destination Kafka Password")
-	schemaRegistryUrl = flag.String("schema-registry-url", "http://localhost:8082", "Destination Schema Registry")
+	schemaRegistryUrl = flag.String("schema-registry-url", "http://localhost:8081", "Destination Schema Registry")
 
 	schema, err = avrolib.ParseSchema(`{
   "type": "record",
@@ -94,6 +94,7 @@ func main() {
 				"linger.ms":         50,
 				"ssl.ca.location":   *kafkaCaCert,
 				"compression.type":  "snappy",
+				//"debug": 			"protocol,cgrp",
 			}})
 	pipeline.Run()
 

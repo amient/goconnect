@@ -25,11 +25,12 @@ import (
 	"github.com/amient/goconnect/coder"
 	"github.com/amient/goconnect/io"
 	"github.com/amient/goconnect/io/kafka1"
+	"time"
 )
 
 var (
 	kafkaBootstrap = flag.String("kafka-bootstrap", "localhost:9092", "Kafka Destination Bootstrap servers")
-	kafkaTopic     = flag.String("kafka-topic", "test", "Destination Kafka Topic")
+	kafkaTopic     = flag.String("kafka-topic", "test_abc", "Destination Kafka Topic")
 	kafkaCaCert    = flag.String("ca-cert", "", "Destination Kafka CA Certificate")
 	kafkaUsername  = flag.String("username", "", "Destination Kafka Principal")
 	kafkaPassword  = flag.String("password", "", "Destination Kafka Principal Password")
@@ -64,7 +65,11 @@ func main() {
 	pipeline := goconnect.NewPipeline().WithCoders(coder.Registry())
 
 	pipeline.
-		Root(io.RoundRobin(10000000, data)).Buffer(5000).
+		Root(io.RoundRobin(10000000, data)).
+		//TODO .Throttle()
+		Map(func(in string) string {  time.Sleep(500 * time.Millisecond); return in; }).
+
+		//Buffer(5000).
 		Apply(&kafka1.Sink{
 			Topic: *kafkaTopic,
 			ProducerConfig: kafka1.ConfigMap{
