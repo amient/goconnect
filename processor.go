@@ -24,11 +24,12 @@ import (
 	"github.com/amient/goconnect/util"
 	"math"
 	"sync"
+	"time"
 )
 
 /**
- * A Processor is an element-wise function that can be parallelised vertically with prserved ordering.
- * It is a fundamental runtime concept which also implements buffering, limiting and termination conditions.
+ * A Processor is an element-wise function that can be parallelised vertically with preserved ordering.
+ * It is a fundamental runtime concept which also implements buffering, throttling, limiting and termination conditions.
  */
 
 type Work struct {
@@ -74,6 +75,9 @@ func (g *WorkerGroup) Start(input chan *Element) *WorkerGroup {
 		for in := range input {
 			stamp++
 			work <- Work{stamp, in, results}
+			if g.c.def.throttle > 0 {
+				time.Sleep(g.c.def.throttle)
+			}
 		}
 	}()
 

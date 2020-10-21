@@ -27,6 +27,7 @@ import (
 	"github.com/amient/goconnect/coder/avro"
 	"github.com/amient/goconnect/io"
 	"github.com/amient/goconnect/io/kafka1"
+	"time"
 )
 
 
@@ -75,8 +76,10 @@ func main() {
 	r2.Set("timestamp", int64(19834723000))
 
 	pipeline.
-		Root(io.RoundRobin(10000000, []*avrolib.GenericRecord{r1, r2})).Buffer(5000).
+		Root(io.RoundRobin(10000000, []*avrolib.GenericRecord{r1, r2})).
 		Apply(new(avro.GenericEncoder)).
+		Buffer(5000).
+		Throttle(2, time.Second).
 		Apply(&avro.SchemaRegistryEncoder{
 			Url: *schemaRegistryUrl,
 			Subject: *kafkaTopic + "-value",

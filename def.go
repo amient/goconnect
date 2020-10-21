@@ -35,6 +35,7 @@ type Def struct {
 	triggerEvery           time.Duration
 	bufferCap              int
 	limit                  uint64
+	throttle               time.Duration
 }
 
 func (def *Def) Apply(f Fn) *Def {
@@ -86,5 +87,10 @@ func (def *Def) TriggerEvery(i time.Duration) *Def {
 }
 func (def *Def) Limit(i uint64) *Def {
 	def.limit = i
+	return def
+}
+
+func (def *Def) Throttle(count int64, period time.Duration) *Def {
+	def.throttle = time.Duration(period.Nanoseconds() / count)
 	return def
 }

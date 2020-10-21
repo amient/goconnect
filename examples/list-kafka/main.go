@@ -66,10 +66,8 @@ func main() {
 
 	pipeline.
 		Root(io.RoundRobin(10000000, data)).
-		//TODO .Throttle()
-		Map(func(in string) string {  time.Sleep(500 * time.Millisecond); return in; }).
-
-		//Buffer(5000).
+		Buffer(5000).
+		Throttle(2, time.Second).
 		Apply(&kafka1.Sink{
 			Topic: *kafkaTopic,
 			ProducerConfig: kafka1.ConfigMap{
