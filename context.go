@@ -21,6 +21,7 @@ package goconnect
 
 import (
 	"fmt"
+	"github.com/amient/goconnect/util"
 	"log"
 	"math"
 	"os"
@@ -460,7 +461,11 @@ func (c *Context) Start() {
 
 func (c *Context) initializeCheckpointer(cap int, pending chan PC, fn Root) {
 	var highestPending uint64 //FIXME volatile
+	var nextAllowedEmit time.Time
 	c.Emit = func(element *Element) {
+		if c.def.throttle > 0 {
+			nextAllowedEmit = util.Thorttle(c.def.throttle, nextAllowedEmit)
+		}
 		element.Stamp.Uniq = atomic.AddUint64(&c.autoi, 1)
 		highestPending = element.Stamp.Uniq
 		element.ack = c.ack
@@ -635,6 +640,7 @@ func (c *Context) initializeCheckpointer(cap int, pending chan PC, fn Root) {
 		}
 	}()
 }
+
 
 func (c *Context) close() {
 	if ! c.closed {

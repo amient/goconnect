@@ -27,6 +27,7 @@ import (
 	"github.com/amient/goconnect/coder/avro"
 	"github.com/amient/goconnect/io"
 	"github.com/amient/goconnect/io/kafka1"
+	"github.com/amient/goconnect/io/std"
 	"time"
 )
 
@@ -79,7 +80,7 @@ func main() {
 		Root(io.RoundRobin(10000000, []*avrolib.GenericRecord{r1, r2})).
 		Apply(new(avro.GenericEncoder)).
 		Buffer(5000).
-		Throttle(2, time.Second).
+		Throttle(4, time.Second).
 		Apply(&avro.SchemaRegistryEncoder{
 			Url: *schemaRegistryUrl,
 			Subject: *kafkaTopic + "-value",
@@ -98,7 +99,7 @@ func main() {
 				"ssl.ca.location":   *kafkaCaCert,
 				"compression.type":  "snappy",
 				//"debug": 			"protocol,cgrp",
-			}})
+			}}).Apply(new(std.Out))
 	pipeline.Run()
 
 }

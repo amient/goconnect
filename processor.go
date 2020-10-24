@@ -69,15 +69,16 @@ func (g *WorkerGroup) Start(input chan *Element) *WorkerGroup {
 	results := make(chan WorkResult, g.c.def.bufferCap*par)
 
 	work := make(chan Work, 32)
+	var nextAllowedWork time.Time
 	go func() {
 		defer close(work)
 		stamp := uint64(0)
 		for in := range input {
+			if g.c.def.throttle > 0 {
+				nextAllowedWork = util.Thorttle(g.c.def.throttle, nextAllowedWork)
+			}
 			stamp++
 			work <- Work{stamp, in, results}
-			if g.c.def.throttle > 0 {
-				time.Sleep(g.c.def.throttle)
-			}
 		}
 	}()
 

@@ -76,7 +76,7 @@ func main() {
 				"sasl.mechanisms":   "PLAIN",
 				"sasl.username":     *kafkaUsername,
 				"sasl.password":     *kafkaPassword,
-				//"debug": 			"protocol,cgrp",
+				//"debug": 			"all", //cgrp,protocol,broker
 				"ssl.ca.location":  *kafkaCaCert,
 				"linger.ms":        50,
 				"compression.type": "snappy",
