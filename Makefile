@@ -11,7 +11,7 @@ release: test
 	@LANG=en_GB git tag "v$(v)"
 	@LANG=en_GB git tag "io/kafka1/v$(v)"
 	@LANG=en_GB git tag "io/amqp09/v$(v)"
-	@LANG=en_GB git tag "coder/avro/v$(v)"
+	@LANG=en_GB git tag "coder/serde/v$(v)"
 	@LANG=en_GB git push --tags
 
 

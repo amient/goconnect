@@ -17,12 +17,13 @@
  * limitations under the License.
  */
 
-package avro
+package serde
 
 import (
-	"bytes"
-	"encoding/binary"
+	"context"
+	"encoding/json"
 	"github.com/amient/avro"
+	schema_registry "github.com/amient/go-schema-registry-client"
 	"github.com/amient/goconnect"
 	"reflect"
 )
@@ -39,32 +40,11 @@ func (e *JsonEncoder) OutType() reflect.Type {
 
 func (e *JsonEncoder) Materialize() func(input interface{}) interface{} {
 	return func(input interface{}) interface{} {
-		return input.(*avro.GenericRecord).String()
-	}
-}
-
-type GenericEncoder struct{}
-
-func (e *GenericEncoder) InType() reflect.Type {
-	return GenericRecordType
-}
-
-func (e *GenericEncoder) OutType() reflect.Type {
-	return BinaryType
-}
-
-func (e *GenericEncoder) Materialize() func(input interface{}) interface{} {
-	return func(input interface{}) interface{} {
-		schema := input.(*avro.GenericRecord).Schema()
-		writer := avro.NewGenericDatumWriter().SetSchema(schema)
-		buf := new(bytes.Buffer)
-		if err := writer.Write(input, avro.NewBinaryEncoder(buf)); err != nil {
+		j, err := json.Marshal(input)
+		if err != nil {
 			panic(err)
 		}
-		return &Binary{
-			Schema: schema,
-			Data:   buf.Bytes(),
-		}
+		return string(j)
 	}
 }
 
@@ -78,7 +58,7 @@ type SchemaRegistryEncoder struct {
 }
 
 func (cf *SchemaRegistryEncoder) InType() reflect.Type {
-	return BinaryType
+	return GenericRecordType
 }
 
 func (cf *SchemaRegistryEncoder) OutType() reflect.Type {
@@ -86,32 +66,25 @@ func (cf *SchemaRegistryEncoder) OutType() reflect.Type {
 }
 
 func (cf *SchemaRegistryEncoder) Materialize() func(input interface{}) interface{} {
-	if cf.Subject == "" {
-		//TODO if no subject is provided use schema.namespace + . + name
-		panic("Subject not defined for SchemaRegistryEncoder")
-	}
-	client := &avro.SchemaRegistryClient{Url: cf.Url}
-	var err error
-	client.Tls, err = avro.TlsConfigFromPEM(cf.ClientCertFile, cf.ClientKeyFile, cf.ClientKeyPass, cf.CaCertFile)
+	tlsConfig, err := avro.TlsConfigFromPEM(cf.ClientCertFile, cf.ClientKeyFile, cf.ClientKeyPass, cf.CaCertFile)
 	if err != nil {
 		panic(err)
 	}
+	if cf.Subject == "" {
+		panic("Subject not defined for SchemaRegistryEncoder")
+	}
+	client := schema_registry.NewClientWith(&schema_registry.Config{
+		Url: cf.Url,
+		Tls: tlsConfig,
+		LogLevel: schema_registry.LogEverything,
+	})
+	ctx := context.Background()
 	return func(input interface{}) interface{} {
-		ab := input.(*Binary)
-		schemaId, err := client.GetSchemaId(ab.Schema, cf.Subject)
+		data, err := client.Serialize(ctx, cf.Subject, input)
 		if err != nil {
 			panic(err)
 		}
-		buf := new(bytes.Buffer)
-		if err := buf.WriteByte(0); err != nil {
-			panic(err)
-		} else if err := binary.Write(buf, binary.BigEndian, schemaId); err != nil {
-			panic(err)
-		} else if _, err := buf.Write(ab.Data); err != nil {
-			panic(err)
-		} else {
-			return buf.Bytes()
-		}
+		return data
 	}
 }
 

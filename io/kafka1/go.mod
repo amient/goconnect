@@ -4,7 +4,7 @@ go 1.13
 
 require (
 	github.com/amient/goconnect v0.0.0-20190819191431-05833c1f1719
-	github.com/confluentinc/confluent-kafka-go v1.4.2
+	github.com/confluentinc/confluent-kafka-go v1.5.2
 	gotest.tools/v3 v3.0.2
 )
 

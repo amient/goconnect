@@ -22,9 +22,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	schema_registry "github.com/amient/go-schema-registry-client"
 	"github.com/amient/goconnect"
 	"github.com/amient/goconnect/coder"
-	"github.com/amient/goconnect/coder/avro"
+	"github.com/amient/goconnect/coder/serde"
 	"github.com/amient/goconnect/examples/kafka-custom-avro-stdout/io.amient.kafka.metrics"
 	"github.com/amient/goconnect/io/kafka1"
 	"github.com/amient/goconnect/io/std"
@@ -59,7 +60,7 @@ func main() {
 
 	pipeline.Root(&kafka1.Source{*kafkaSourceTopic, consumerConfig}).
 		Apply(new(KafkaMetricsAvroRegistry)).
-		Apply(new(avro.GenericDecoder)).
+		Apply(new(serde.GenericDecoder)).
 		Apply(new(std.Out)).TriggerEach(1)
 
 	pipeline.Run()
@@ -73,7 +74,7 @@ func (m *KafkaMetricsAvroRegistry) InType() reflect.Type {
 }
 
 func (m *KafkaMetricsAvroRegistry) OutType() reflect.Type {
-	return avro.BinaryType
+	return serde.BinaryType
 }
 
 func (m *KafkaMetricsAvroRegistry) Materialize() func(input interface{}) interface{} {
@@ -85,8 +86,12 @@ func (m *KafkaMetricsAvroRegistry) Materialize() func(input interface{}) interfa
 		case 1:
 			switch int(kvBinary.Value[1]) {
 			case 1:
-				return &avro.Binary{
-					Schema: io_amient_kafka_metrics.MeasurementSchemaV1,
+				schema, err := schema_registry.NewAvroSchema(io_amient_kafka_metrics.MeasurementSchemaV1.String())
+				if err != nil {
+					panic(err)
+				}
+				return &serde.Binary{
+					Schema: schema,
 					Data:   kvBinary.Value[2:],
 				}
 			default:

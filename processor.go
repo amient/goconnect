@@ -89,7 +89,7 @@ func (g *WorkerGroup) Start(input chan *Element) *WorkerGroup {
 		go func(worker int) {
 			defer group.Done()
 			fn := g.p.Materialize()
-			for w := range work {
+			for w := range work { //FIXME this needs to be a select of <- done or <- work
 				w.element.ack = g.c.up.ack
 				fn(w.element, &w)
 				results <- WorkResult{w.id, w.element.Stamp.Uniq, nil}

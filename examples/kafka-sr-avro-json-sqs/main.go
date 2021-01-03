@@ -21,12 +21,12 @@ package main
 
 import (
 	"flag"
+	avrolib "github.com/amient/avro"
 	"github.com/amient/goconnect"
 	"github.com/amient/goconnect/coder"
-	"github.com/amient/goconnect/coder/avro"
+	"github.com/amient/goconnect/coder/serde"
 	"github.com/amient/goconnect/io/kafka1"
 	"github.com/amient/goconnect/io/std"
-	avrolib "github.com/amient/avro"
 )
 
 var (
@@ -61,9 +61,9 @@ func main() {
 	consumerConfig := kafka1.ConfigMap{"bootstrap.servers": *kafkaBootstrap, "group.id": *kafkaGroup}
 
 	pipeline.Root(&kafka1.Source{*kafkaTopic, consumerConfig}).
-		Apply(&avro.SchemaRegistryDecoder{Url: *schemaRegistryUrl}).
-		Apply(&avro.GenericProjector{targetSchema }).
-		Apply(new(avro.JsonEncoder)).
+		Apply(&serde.SchemaRegistryDecoder{Url: *schemaRegistryUrl}).
+		Apply(&serde.GenericProjector{targetSchema }).
+		Apply(new(serde.JsonEncoder)).
 		Apply(new(std.Out)).TriggerEach(1)
 	//TODO Apply(&aws.SqsSink{"..."})
 

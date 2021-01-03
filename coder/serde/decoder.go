@@ -17,17 +17,19 @@
  * limitations under the License.
  */
 
-package avro
+package serde
 
 import (
+	"context"
 	"encoding/binary"
 	"github.com/amient/avro"
+	schema_registry "github.com/amient/go-schema-registry-client"
 	"github.com/amient/goconnect"
 	"reflect"
 )
 
 type SchemaRegistryDecoder struct {
-	Url string
+	Url            string
 	CaCertFile     string
 	ClientCertFile string
 	ClientKeyFile  string
@@ -43,22 +45,29 @@ func (cf *SchemaRegistryDecoder) OutType() reflect.Type {
 }
 
 func (cf *SchemaRegistryDecoder) Materialize() func(input interface{}) interface{} {
-	client := &avro.SchemaRegistryClient{Url: cf.Url}
-	var err error
-	client.Tls, err = avro.TlsConfigFromPEM(cf.ClientCertFile, cf.ClientKeyFile, cf.ClientKeyPass, cf.CaCertFile)
+	tlsConfig, err := avro.TlsConfigFromPEM(cf.ClientCertFile, cf.ClientKeyFile, cf.ClientKeyPass, cf.CaCertFile)
 	if err != nil {
 		panic(err)
 	}
+	//client := &avro.SchemaRegistryClient{Url: cf.Url}
+	client2 := schema_registry.NewClientWith(&schema_registry.Config{
+		Url: cf.Url,
+		Tls: tlsConfig,
+	})
+	//client.Tls = tlsConfig
+	ctx := context.Background() //TODO this should be passed to Materialize(ctx)
+
 	return func(input interface{}) interface{} {
 		bytes := input.([]byte)
 		switch bytes[0] {
 		case 0:
 			schemaId := binary.BigEndian.Uint32(bytes[1:])
-			schema, err := client.Get(schemaId)
+			schema, err := client2.GetSchema(ctx, schemaId)
 			if err != nil {
 				panic(err)
 			}
 			return &Binary{
+				Client: client2,
 				Schema: schema,
 				Data:   bytes[5:],
 			}
@@ -78,20 +87,14 @@ func (d *GenericDecoder) OutType() reflect.Type {
 	return GenericRecordType
 }
 
-func (d *GenericDecoder)  Materialize() func(input interface{}) interface{} {
+func (d *GenericDecoder) Materialize() func(input interface{}) interface{} {
+	ctx := context.Background()
 	return func(input interface{}) interface{} {
-		avroBinary := input.(*Binary)
-		decodedRecord := avro.NewGenericRecord(avroBinary.Schema)
-		reader := avro.NewDatumReader(avroBinary.Schema)
-		if err := reader.Read(decodedRecord, avro.NewBinaryDecoder(avroBinary.Data)); err != nil {
+		binary := input.(*Binary)
+		record, err := binary.Client.Deserialize(ctx, binary.Data)
+		if err != nil {
 			panic(err)
 		}
-		return decodedRecord
+		return record
 	}
 }
-
-//TODO KVGenericDecoder
-
-//TODO SpecificDecoder
-
-//TODO JsonDecoder
