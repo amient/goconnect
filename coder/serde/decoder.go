@@ -22,7 +22,6 @@ package serde
 import (
 	"context"
 	"encoding/binary"
-	"github.com/amient/avro"
 	schema_registry "github.com/amient/go-schema-registry-client"
 	"github.com/amient/goconnect"
 	"reflect"
@@ -45,15 +44,21 @@ func (cf *SchemaRegistryDecoder) OutType() reflect.Type {
 }
 
 func (cf *SchemaRegistryDecoder) Materialize() func(input interface{}) interface{} {
-	tlsConfig, err := avro.TlsConfigFromPEM(cf.ClientCertFile, cf.ClientKeyFile, cf.ClientKeyPass, cf.CaCertFile)
-	if err != nil {
-		panic(err)
+	cfg := &schema_registry.Config{Url: cf.Url}
+	if cf.CaCertFile != "" {
+		err := cfg.AddCaCert(cf.CaCertFile)
+		if err != nil {
+			panic(err)
+		}
+	}
+	if cf.ClientCertFile != "" {
+		err := cfg.AddClientCert(cf.ClientCertFile, cf.ClientKeyFile, cf.ClientKeyPass)
+		if err != nil {
+			panic(err)
+		}
 	}
 	//client := &avro.SchemaRegistryClient{Url: cf.Url}
-	client2 := schema_registry.NewClientWith(&schema_registry.Config{
-		Url: cf.Url,
-		Tls: tlsConfig,
-	})
+	client2 := schema_registry.NewClientWith(cfg)
 	//client.Tls = tlsConfig
 	ctx := context.Background() //TODO this should be passed to Materialize(ctx)
 

@@ -22,7 +22,6 @@ package serde
 import (
 	"context"
 	"encoding/json"
-	"github.com/amient/avro"
 	schema_registry "github.com/amient/go-schema-registry-client"
 	"github.com/amient/goconnect"
 	"reflect"
@@ -66,18 +65,26 @@ func (cf *SchemaRegistryEncoder) OutType() reflect.Type {
 }
 
 func (cf *SchemaRegistryEncoder) Materialize() func(input interface{}) interface{} {
-	tlsConfig, err := avro.TlsConfigFromPEM(cf.ClientCertFile, cf.ClientKeyFile, cf.ClientKeyPass, cf.CaCertFile)
-	if err != nil {
+	cfg := &schema_registry.Config{
+		Url: cf.Url,
+		LogLevel: schema_registry.LogEverything,
+	}
+	if cf.ClientCertFile != "" {
+		err := cfg.AddClientCert(cf.ClientCertFile, cf.ClientKeyFile, cf.ClientKeyPass)
+		if err != nil {
+			panic(err)
+		}
+	}
+	if cf.CaCertFile != "" {
+		err := cfg.AddCaCert(cf.CaCertFile)
+		if err != nil {
 		panic(err)
+	}
 	}
 	if cf.Subject == "" {
 		panic("Subject not defined for SchemaRegistryEncoder")
 	}
-	client := schema_registry.NewClientWith(&schema_registry.Config{
-		Url: cf.Url,
-		Tls: tlsConfig,
-		LogLevel: schema_registry.LogEverything,
-	})
+	client := schema_registry.NewClientWith(cfg)
 	ctx := context.Background()
 	return func(input interface{}) interface{} {
 		data, err := client.Serialize(ctx, cf.Subject, input)
